@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# build output
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# runtime data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# env
+.env
+.env.local
+.env*.local
+
+# test artifacts
+coverage/
+playwright-report/
+test-results/
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
+*.swp

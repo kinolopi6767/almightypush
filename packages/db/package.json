@@ -1,0 +1,43 @@
+{
+  "name": "@pushpanel/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "default": "./dist/schema/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/schema/index.ts src/migrations-generated.ts --format esm --out-dir dist --target node22 --dts --clean --external better-sqlite3 --external drizzle-orm --external zod --external dotenv",
+    "generate": "drizzle-kit generate && node scripts/sync-migrations.mjs",
+    "sync-migrations": "node scripts/sync-migrations.mjs",
+    "migrate": "tsx src/scripts/migrate.ts",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "test:unit": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.44.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@pushpanel/tsconfig": "workspace:*",
+    "@types/better-sqlite3": "^7.6.12",
+    "drizzle-kit": "^0.31.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

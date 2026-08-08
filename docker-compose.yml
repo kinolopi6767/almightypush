@@ -1,0 +1,44 @@
+services:
+  web:
+    build: .
+    container_name: pushpanel-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      DATABASE_PATH: /app/data/pushpanel.db
+      APP_ENC_KEY: ${APP_ENC_KEY:?set APP_ENC_KEY}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      OWNER_NAME: ${OWNER_NAME:-}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+    volumes:
+      - pushdata:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # Same image; the worker process runs the sender/scheduler loop
+  # against the shared volume. One writer + concurrent readers = WAL-safe.
+  worker:
+    build: .
+    container_name: pushpanel-worker
+    restart: unless-stopped
+    command: ["node", "./worker/index.mjs"]
+    environment:
+      NODE_ENV: production
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      DATABASE_PATH: /app/data/pushpanel.db
+      APP_ENC_KEY: ${APP_ENC_KEY:?set APP_ENC_KEY}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+    volumes:
+      - pushdata:/app/data
+
+volumes:
+  pushdata:
