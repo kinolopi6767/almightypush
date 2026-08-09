@@ -1,32 +1,23 @@
 {
-  "name": "@pushpanel/core",
+  "name": "@pushpanel/sdk-client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "import": "./dist/index.js"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --out-dir dist --clean --dts --external @node-rs/argon2 --external zod",
-    "dev": "tsup --watch",
+    "build": "tsup && node scripts/copy-to-web.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run --passWithNoTests"
   },
-  "dependencies": {
-    "@node-rs/argon2": "^2.0.2",
-    "web-push": "^3.6.7",
-    "zod": "^3.24.1"
-  },
   "devDependencies": {
     "@pushpanel/tsconfig": "workspace:*",
-    "@types/web-push": "^3.6.4",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   }

@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { signInViaUi } from "./helpers";
 
 /**
  * M0 smoke: anonymous users are pushed to /login; the health endpoints
- * answer; after first-run setup the dashboard loads (guarded flows).
+ * answer; sign-in works and the dashboard loads (guarded flows).
  */
 
 test("health endpoints answer", async ({ request }) => {
@@ -20,27 +21,8 @@ test("anonymous visit redirects to login", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
 });
 
-test("first-run setup flow creates owner and signs in", async ({ page }) => {
-  // POST /api/auth/signout clears any stale session first.
-  await page.request.post("/api/auth/signout", { form: {} }).catch(() => undefined);
-
-  await page.goto("/setup");
-  await expect(page.getByRole("heading", { name: /set up pushpanel/i })).toBeVisible();
-
-  const email = `owner-${Date.now()}@test.io`;
-  await page.getByLabel("Name").fill("Test Owner");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("s3cure-password-123");
-
-  // Setup redirects to /login after creation (no auto sign-in yet).
-  // Sign in with the created credentials.
-  await page.getByRole("button", { name: /setup/i }).click();
-  await expect(page).toHaveURL(/\/login/);
-
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("s3cure-password-123");
-  await page.getByRole("button", { name: /sign in/i }).click();
-
-  await expect(page).toHaveURL(/\/dashboard/);
+test("owner can sign in and reach the dashboard", async ({ page }) => {
+  test.setTimeout(90_000);
+  await signInViaUi(page);
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });

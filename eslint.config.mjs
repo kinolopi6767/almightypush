@@ -14,6 +14,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/.drizzle/**",
       "**/*.d.ts",
+      "apps/web/public/sdk/**",
     ],
   },
   js.configs.recommended,
@@ -21,6 +22,10 @@ export default tseslint.config(
   {
     files: ["**/*.mjs", "**/*.cjs"],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: ["**/public/sw.js"],
+    languageOptions: { globals: { ...globals.worker, clients: "readonly" } },
   },
   {
     plugins: { drizzle },

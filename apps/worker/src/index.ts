@@ -4,11 +4,14 @@ import { sql } from "drizzle-orm";
 import { pino } from "pino";
 import { createDb, resolveDbPath } from "@pushpanel/db";
 import { baseEnvSchema, parseEnv } from "@pushpanel/core";
+import { runSendCycle } from "./sender";
+
+const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
+let running = false;
 
 /**
- * Background worker process: sender + scheduler + automation + cleanup.
- * M0 skeleton — the worker boots, verifies the DB, and idles while the
- * queue tables wait for M1's sender engine.
+ * Background worker process: sender engine (M1) + scheduler/automations later.
+ * Every tick: run one send cycle against the shared SQLite file.
  */
 function main() {
   const env = parseEnv(baseEnvSchema);
@@ -23,14 +26,27 @@ function main() {
   const probe = db.get<{ ok: number }>(sql`SELECT 1 AS ok`);
   logger.info({ path, dbOk: probe?.ok === 1 }, "database open");
 
-  if (env.NODE_ENV !== "production") {
-    logger.warn("worker running in development mode");
-  }
-  // M1: sender engine, scheduler tick loop, automation dispatch, cleanup job.
-  logger.info("worker idle — queue engines land in M1");
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const stats = await runSendCycle(db, env.APP_ENC_KEY);
+      if (stats.claimed > 0) {
+        logger.info({ ...stats }, "send cycle complete");
+      }
+    } catch (error) {
+      logger.error({ err: error }, "send cycle failed");
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(() => void tick(), TICK_MS);
+  void tick();
 
   const shutdown = () => {
     logger.info("worker shutting down");
+    clearInterval(timer);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
