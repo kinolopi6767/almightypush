@@ -178,6 +178,7 @@ export async function subscribeViaApi(
   mock: MockPushServer,
   domainId: number,
   label = "sub",
+  device?: string,
 ): Promise<void> {
   const res = await request.post("/api/v1/subscribe", {
     data: {
@@ -188,6 +189,7 @@ export async function subscribeViaApi(
       },
       browser: "chromium",
       os: "linux",
+      device: device ?? "desktop",
     },
   });
   if (!res.ok()) throw new Error(`subscribe failed: ${res.status()} ${await res.text()}`);

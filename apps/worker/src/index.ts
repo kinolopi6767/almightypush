@@ -6,6 +6,7 @@ import { createDb, resolveDbPath } from "@pushpanel/db";
 import { baseEnvSchema, parseEnv } from "@pushpanel/core";
 import { runSendCycle } from "./sender";
 import { runScheduler } from "./scheduler";
+import { readSetting, runCleanup } from "./cleanup";
 
 const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
 let running = false;
@@ -39,6 +40,13 @@ function main() {
       const stats = await runSendCycle(db, env.APP_ENC_KEY);
       if (stats.claimed > 0) {
         logger.info({ ...stats }, "send cycle complete");
+      }
+      const retention = Number(readSetting(db, "cleanup_unsubs_retention_days") ?? 0);
+      if (retention > 0) {
+        const cleanup = runCleanup(db, { retentionDays: retention });
+        if (cleanup.ran && cleanup.deleted > 0) {
+          logger.info({ deleted: cleanup.deleted }, "cleanup purged unsubscribed subscribers");
+        }
       }
     } catch (error) {
       logger.error({ err: error }, "tick failed");

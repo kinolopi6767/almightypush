@@ -1,0 +1,129 @@
+"use server";
+
+import { mkdir, stat, unlink } from "node:fs/promises";
+import path from "node:path";
+import { revalidatePath } from "next/cache";
+import { auth } from "@/auth";
+import { db } from "@/lib/db";
+import { resolveDbPath } from "@pushpanel/db";
+import { backups, settings } from "@pushpanel/db/schema";
+import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
+
+export type SettingsFormState =
+  | {
+      ok?: boolean;
+      error?: string;
+      backupId?: number;
+      deleted?: number;
+    }
+  | undefined;
+
+async function requireOwner() {
+  const session = await auth();
+  if (!session?.user) throw new Error("Not signed in");
+  return session;
+}
+
+const generalSchema = z.object({
+  timezone: z.string().trim().min(1).max(64).optional(),
+  cleanupRetentionDays: z.coerce.number().int().min(0).max(3650).optional(),
+});
+
+export async function updateSettingsAction(
+  _prev: SettingsFormState,
+  formData: FormData,
+): Promise<NonNullable<SettingsFormState>> {
+  try {
+    await requireOwner();
+  } catch {
+    return { error: "Not signed in" };
+  }
+
+  const parsed = generalSchema.safeParse({
+    timezone: formData.get("timezone") ?? undefined,
+    cleanupRetentionDays: formData.get("cleanupRetentionDays") ?? undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+
+  const values: { key: string; value: string }[] = [];
+  if (parsed.data.timezone !== undefined) values.push({ key: "timezone", value: parsed.data.timezone });
+  if (parsed.data.cleanupRetentionDays !== undefined) {
+    values.push({ key: "cleanup_unsubs_retention_days", value: String(parsed.data.cleanupRetentionDays) });
+  }
+
+  for (const v of values) {
+    db.insert(settings)
+      .values(v)
+      .onConflictDoUpdate({ target: settings.key, set: { value: sql`excluded.value` } })
+      .run();
+  }
+
+  revalidatePath("/dashboard/settings");
+  return { ok: true };
+}
+
+export async function createBackupAction(): Promise<NonNullable<SettingsFormState>> {
+  try {
+    await requireOwner();
+  } catch {
+    return { error: "Not signed in" };
+  }
+
+  const dbFile = resolveDbPath(process.env.DATABASE_PATH);
+  const backupDir = path.join(path.dirname(dbFile), "backups");
+  await mkdir(backupDir, { recursive: true });
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const target = path.join(backupDir, `backup-${stamp}.db`);
+
+  try {
+    // SQLite literal path — escape single quotes
+    db.run(sql.raw(`VACUUM INTO '${target.replace(/'/g, "''")}'`));
+  } catch (err) {
+    return { error: `Backup failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  let size = 0;
+  try {
+    size = (await stat(target)).size;
+  } catch {
+    return { error: "Backup file missing after creation" };
+  }
+
+  const inserted = db
+    .insert(backups)
+    .values({
+      kind: "manual",
+      status: "done",
+      size_bytes: size,
+      location: target,
+    })
+    .run();
+
+  revalidatePath("/dashboard/settings");
+  return { ok: true, backupId: Number(inserted.lastInsertRowid) };
+}
+
+export async function deleteBackupAction(backupId: number): Promise<NonNullable<SettingsFormState>> {
+  try {
+    await requireOwner();
+  } catch {
+    return { error: "Not signed in" };
+  }
+
+  const [row] = db.select({ id: backups.id, location: backups.location }).from(backups).where(eq(backups.id, backupId)).limit(1).all();
+  if (!row) return { error: "Backup not found" };
+
+  db.delete(backups).where(eq(backups.id, row.id)).run();
+  if (row.location) {
+    try {
+      await unlink(row.location);
+    } catch {
+      // file may already be gone — row removal is what matters
+    }
+  }
+
+  revalidatePath("/dashboard/settings");
+  return { ok: true, deleted: backupId };
+}

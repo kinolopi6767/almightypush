@@ -72,6 +72,12 @@ export default async function DomainDetailPage({ params }: Props) {
         <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
           {domain.status}
         </span>
+        <Link
+          href={`/dashboard/domains/${domainId}/subscribers`}
+          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Subscribers
+        </Link>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
@@ -86,7 +92,6 @@ export default async function DomainDetailPage({ params }: Props) {
           </div>
         ))}
       </div>
-
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <div className="rounded-xl border bg-card p-5">

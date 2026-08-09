@@ -7,7 +7,8 @@ const NAV = [
   { href: "/dashboard/domains", label: "Domains" },
   { href: "/dashboard/campaigns", label: "Campaigns" },
   { href: "/dashboard/automations", label: "Automations", disabled: true },
-  { href: "/dashboard/settings", label: "Settings", disabled: true },
+  { href: "/dashboard/settings", label: "Settings" },
+  { href: "/dashboard/profile", label: "Profile" },
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
