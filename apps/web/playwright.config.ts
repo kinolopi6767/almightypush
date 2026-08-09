@@ -22,6 +22,9 @@ const appEnv = {
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
+  // One process: specs share one ephemeral SQLite DB + one web server.
+  // Parallel workers would race the first-run setup and DB migrations.
+  workers: 1,
   retries: 1,
   reporter: "list",
   use: {
@@ -30,7 +33,10 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: {
-    command: "pnpm dev --port 3100",
+    // Production build (must run `pnpm build` first, like CI): `next dev` is
+    // flaky under e2e — its compiler stalls requests intermittently on cold
+    // runs, hanging navigations for the full test timeout.
+    command: "pnpm exec next start -p 3100",
     url: "http://127.0.0.1:3100/api/health",
     reuseExistingServer: false,
     timeout: 120_000,

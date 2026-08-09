@@ -34,7 +34,13 @@ export async function setupAction(_prev: AuthFormState, formData: FormData): Pro
   const passwordHash = await hashPassword(parsed.data.password);
 
   // better-sqlite3 driver: everything inside db.transaction is synchronous.
-  db.transaction((tx) => {
+  // The count is re-checked inside the write transaction — a concurrent
+  // second setup (e.g. parallel tests) would otherwise crash on the UNIQUE
+  // constraint instead of reporting "already set up".
+  const result = db.transaction((tx) => {
+    const [current] = tx.select({ value: count() }).from(users).all();
+    if ((current?.value ?? 0) > 0) return "exists";
+
     const inserted = tx.insert(workspaces).values({ name: "My Workspace", slug: "main" }).run();
     if (!inserted.lastInsertRowid) throw new Error("Failed to create workspace");
 
@@ -47,7 +53,10 @@ export async function setupAction(_prev: AuthFormState, formData: FormData): Pro
         workspace_id: Number(inserted.lastInsertRowid),
       })
       .run();
+    return "ok";
   });
+
+  if (result === "exists") return { error: "Already set up — sign in instead" };
 
   return { ok: true };
 }

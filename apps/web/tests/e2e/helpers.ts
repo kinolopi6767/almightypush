@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
-import type { Page } from "@playwright/test";
+import type { Page, APIRequestContext } from "@playwright/test";
 
 const WEB_DIR = fileURLToPath(new URL("../..", import.meta.url));
 const WORKER_ENTRY = path.join(WEB_DIR, "..", "worker", "dist", "index.mjs");
@@ -151,10 +151,51 @@ export async function signInViaUi(page: Page): Promise<void> {
     await page.getByLabel("Email").fill(OWNER_EMAIL);
     await page.getByLabel("Password").fill(OWNER_PASSWORD);
     await page.getByRole("button", { name: /setup/i }).click();
-    await page.waitForURL(/\/login/);
+    // The action either redirects to /login (success) or reports that the
+    // owner already exists (stays on /setup) — both mean "proceed to
+    // sign-in". Never hang waiting on one specific outcome.
+    await page.waitForURL(/\/login|\/dashboard/, { timeout: 30_000 }).catch(() => undefined);
+    if (!/\/login|\/dashboard/.test(page.url())) await page.goto("/login");
   }
   await page.getByLabel("Email").fill(OWNER_EMAIL);
   await page.getByLabel("Password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: /sign in/i }).click();
   await page.waitForURL(/\/dashboard/);
+}
+
+/** Creates a domain through the panel UI and returns its id. */
+export async function createDomain(page: Page, hostname: string): Promise<number> {
+  await page.goto("/dashboard/domains");
+  await page.getByLabel("Hostname").fill(hostname);
+  await page.getByRole("button", { name: /create domain/i }).click();
+  await page.waitForURL(/\/dashboard\/domains\/\d+/);
+  return Number(new URL(page.url()).pathname.split("/").pop());
+}
+
+/** SDK-equivalent subscribe call against the mock push service. */
+export async function subscribeViaApi(
+  request: APIRequestContext,
+  mock: MockPushServer,
+  domainId: number,
+  label = "sub",
+): Promise<void> {
+  const res = await request.post("/api/v1/subscribe", {
+    data: {
+      domainId,
+      subscription: {
+        endpoint: `https://127.0.0.1:${mock.port}/push/${label}`,
+        keys: browserKeys(),
+      },
+      browser: "chromium",
+      os: "linux",
+    },
+  });
+  if (!res.ok()) throw new Error(`subscribe failed: ${res.status()} ${await res.text()}`);
+}
+
+/** Local datetime-local value (browser-local time) for `ms` from now. */
+export function localDateTime(msFromNow: number): string {
+  const d = new Date(Date.now() + msFromNow);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

@@ -9,6 +9,10 @@ import { setupAction } from "./setup-action";
 
 export const metadata = { title: "Setup" };
 
+// Reads user count from SQLite — must not be prerendered at build time
+// (the build-time "no users yet" state would be baked in forever).
+export const dynamic = "force-dynamic";
+
 export default async function SetupPage() {
   const [row] = await db.select({ value: count() }).from(users);
   if ((row?.value ?? 0) > 0) redirect("/login");

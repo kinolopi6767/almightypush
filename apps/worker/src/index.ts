@@ -5,13 +5,15 @@ import { pino } from "pino";
 import { createDb, resolveDbPath } from "@pushpanel/db";
 import { baseEnvSchema, parseEnv } from "@pushpanel/core";
 import { runSendCycle } from "./sender";
+import { runScheduler } from "./scheduler";
 
 const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
 let running = false;
 
 /**
- * Background worker process: sender engine (M1) + scheduler/automations later.
- * Every tick: run one send cycle against the shared SQLite file.
+ * Background worker process: sender engine (M1) + scheduler (M2) + more later.
+ * Every tick: start due scheduled campaigns, then run one send cycle against
+ * the shared SQLite file.
  */
 function main() {
   const env = parseEnv(baseEnvSchema);
@@ -30,12 +32,16 @@ function main() {
     if (running) return;
     running = true;
     try {
+      const sched = runScheduler(db);
+      if (sched.campaignsStarted > 0) {
+        logger.info({ ...sched }, "scheduler started campaigns");
+      }
       const stats = await runSendCycle(db, env.APP_ENC_KEY);
       if (stats.claimed > 0) {
         logger.info({ ...stats }, "send cycle complete");
       }
     } catch (error) {
-      logger.error({ err: error }, "send cycle failed");
+      logger.error({ err: error }, "tick failed");
     } finally {
       running = false;
     }

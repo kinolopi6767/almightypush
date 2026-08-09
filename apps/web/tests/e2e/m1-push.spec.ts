@@ -1,12 +1,6 @@
 import { expect, test } from "@playwright/test";
 import Database from "better-sqlite3";
-import {
-  browserKeys,
-  signInViaUi,
-  startMockPushServer,
-  startWorker,
-  type MockPushServer,
-} from "./helpers";
+import { browserKeys, createDomain, signInViaUi, startMockPushServer, startWorker, subscribeViaApi, type MockPushServer } from "./helpers";
 
 /**
  * M1 vertical slice: subscribe → campaign → worker delivery → click beacon.
@@ -40,11 +34,7 @@ test("sandbox push loop: subscribe → test push → worker delivery → click b
   await signInViaUi(page);
 
   // --- create a domain through the panel UI (generates the VAPID keypair) ---
-  await page.goto("/dashboard/domains");
-  await page.getByLabel("Hostname").fill("sandbox.example.test");
-  await page.getByRole("button", { name: /create domain/i }).click();
-  await page.waitForURL(/\/dashboard\/domains\/\d+/);
-  domainId = Number(new URL(page.url()).pathname.split("/").pop());
+  domainId = await createDomain(page, "sandbox.example.test");
 
   // --- /api/v1/info exposes the public key for the SDK ---
   const info = await request.get(`/api/v1/info?domain=${domainId}`);
@@ -53,19 +43,7 @@ test("sandbox push loop: subscribe → test push → worker delivery → click b
   expect(infoJson.publicKey).toMatch(/^[A-Za-z0-9_-]{80,90}$/);
 
   // --- SDK-equivalent subscribe against the mock push service ---
-  const subscribe = await request.post("/api/v1/subscribe", {
-    data: {
-      domainId,
-      subscription: {
-        endpoint: `https://127.0.0.1:${mock.port}/push/sandbox-1`,
-        keys: browserKeys(),
-      },
-      browser: "chromium",
-      os: "linux",
-    },
-  });
-  expect(subscribe.ok()).toBe(true);
-  expect((await subscribe.json()).ok).toBe(true);
+  await subscribeViaApi(request, mock, domainId, "sandbox-1");
 
   // --- send a test push from the domain detail page ---
   await page.goto(`/dashboard/domains/${domainId}`);

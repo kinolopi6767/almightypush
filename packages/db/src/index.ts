@@ -94,16 +94,28 @@ export function runMigrations(db: BetterSQLite3Database<typeof allTables>, clien
     client.prepare("SELECT tag FROM __pushpanel_migrations").all().map((row) => (row as { tag: string }).tag),
   );
 
-  const applyMigration = client.transaction((entry: { tag: string; sql: string }) => {
-    client.exec(entry.sql);
-    client
-      .prepare("INSERT INTO __pushpanel_migrations (tag, applied_at) VALUES (?, ?)")
-      .run(entry.tag, new Date().toISOString());
-  });
-
+  // BEGIN IMMEDIATE takes the write lock up front, so if another process
+  // (web server + worker share one SQLite file) is mid-migration, this waits
+  // for its commit and the re-check sees the already-applied tag instead of
+  // blindly re-running CREATE TABLE and crashing on "already exists".
   for (const entry of migrations) {
     if (applied.has(entry.tag)) continue;
-    applyMigration(entry);
+    client.exec("BEGIN IMMEDIATE");
+    try {
+      const already = client.prepare("SELECT 1 FROM __pushpanel_migrations WHERE tag = ?").get(entry.tag);
+      if (already) {
+        client.exec("COMMIT");
+        continue;
+      }
+      client.exec(entry.sql);
+      client
+        .prepare("INSERT INTO __pushpanel_migrations (tag, applied_at) VALUES (?, ?)")
+        .run(entry.tag, new Date().toISOString());
+      client.exec("COMMIT");
+    } catch (err) {
+      client.exec("ROLLBACK");
+      throw err;
+    }
   }
 
   // WAL checkpoint so the -wal file doesn't linger on a fresh run.
