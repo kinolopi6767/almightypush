@@ -2,7 +2,8 @@ import { createECDH, randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createServer } from "node:https";
+import { createServer as createHttpsServer } from "node:https";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Page, APIRequestContext } from "@playwright/test";
 
@@ -118,7 +119,7 @@ export function startWorker(): Promise<{ stop: () => Promise<void> }> {
 
 export async function startMockPushServer(): Promise<MockPushServer> {
   const received: MockPushServer["received"] = [];
-  const server = createServer({ key: TLS_KEY, cert: TLS_CERT }, (req, res) => {
+  const server = createHttpsServer({ key: TLS_KEY, cert: TLS_CERT }, (req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c) => chunks.push(c as Buffer));
     req.on("end", () => {
@@ -130,6 +131,36 @@ export async function startMockPushServer(): Promise<MockPushServer> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
   return { port, received, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+}
+
+export interface MockHttpServer {
+  port: number;
+  /** responses keyed by path (or "default"); body is JSON-serialized unless contentType is xml/plain */
+  responses: Map<string, { status?: number; contentType?: string; body: unknown }>;
+  close: () => Promise<void>;
+}
+
+/** Plain-HTTP mock for upstream fetches (WP REST API, RSS feeds) in worker tests. */
+export async function startMockHttpServer(): Promise<MockHttpServer> {
+  const responses = new Map<string, { status?: number; contentType?: string; body: unknown }>();
+  const server = createServer((req, res) => {
+    const hit = responses.get(req.url ?? "/") ?? responses.get("default");
+    if (!hit) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "not found" }));
+      return;
+    }
+    const body = typeof hit.body === "string" && hit.contentType?.startsWith("text") ? String(hit.body) : JSON.stringify(hit.body);
+    res.writeHead(hit.status ?? 200, { "content-type": hit.contentType ?? "application/json" });
+    res.end(body);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+  return {
+    port,
+    responses,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
 }
 
 /** Realistic browser-style subscription keys (P-256 65-byte public key). */

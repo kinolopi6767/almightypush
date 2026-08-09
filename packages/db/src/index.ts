@@ -9,6 +9,7 @@ import { allTables } from "./schema";
 
 export type { BetterSQLite3Database };
 export * from "./schema";
+export * from "./services/automation";
 
 export interface DbOptions {
   /** file path or ":memory:" */

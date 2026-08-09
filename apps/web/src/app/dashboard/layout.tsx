@@ -2,11 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 
-const NAV = [
+const NAV: { href: string; label: string; disabled?: boolean }[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/dashboard/domains", label: "Domains" },
   { href: "/dashboard/campaigns", label: "Campaigns" },
-  { href: "/dashboard/automations", label: "Automations", disabled: true },
+  { href: "/dashboard/automations", label: "Automations" },
   { href: "/dashboard/settings", label: "Settings" },
   { href: "/dashboard/profile", label: "Profile" },
 ];

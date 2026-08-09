@@ -4,6 +4,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { createCipher, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
+import { automations } from "@pushpanel/db/schema";
+import { enqueueAutomationCampaign } from "@pushpanel/db";
+import { parseAutomationConfig } from "@pushpanel/core";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +39,7 @@ export async function POST(req: Request) {
 
   const data = parsed.data;
   const [domain] = db
-    .select({ id: domains.id })
+    .select({ id: domains.id, workspace_id: domains.workspace_id })
     .from(domains)
     .where(and(eq(domains.id, data.domainId), eq(domains.status, "active")))
     .limit(1)
@@ -84,7 +87,35 @@ export async function POST(req: Request) {
   db.insert(events).values({ domain_id: domain.id, subscriber_id: subscriberId, type: "subscribed" }).run();
   db.update(domains).set({ subscribers_count: activeSubscribers(domain.id) }).where(eq(domains.id, domain.id)).run();
 
+  if (!existing) {
+    fireWelcomeAutomations(domain.id, domain.workspace_id, subscriberId);
+  }
+
   return NextResponse.json({ ok: true, id: subscriberId });
+}
+
+/** M4: event-driven welcome pushes — one campaign per active welcome automation. */
+function fireWelcomeAutomations(domainId: number, workspaceId: number, subscriberId: number): void {
+  const rows = db
+    .select({ id: automations.id, config_json: automations.config_json })
+    .from(automations)
+    .where(and(eq(automations.workspace_id, workspaceId), eq(automations.domain_id, domainId), eq(automations.type, "welcome_push"), eq(automations.status, "active")))
+    .all();
+  for (const row of rows) {
+    const config = parseAutomationConfig(row.config_json);
+    try {
+      enqueueAutomationCampaign({
+        db,
+        workspaceId,
+        domainId,
+        automationId: row.id,
+        subscriberIds: [subscriberId],
+        delaySeconds: config.delay_seconds ?? 0,
+      });
+    } catch {
+      // a broken welcome automation must never break the subscribe flow
+    }
+  }
 }
 
 function activeSubscribers(domainId: number): number {

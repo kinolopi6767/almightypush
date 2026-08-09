@@ -6,6 +6,7 @@ import { createDb, resolveDbPath } from "@pushpanel/db";
 import { baseEnvSchema, parseEnv } from "@pushpanel/core";
 import { runSendCycle } from "./sender";
 import { runScheduler } from "./scheduler";
+import { runAutomations } from "./automation";
 import { readSetting, runCleanup } from "./cleanup";
 
 const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
@@ -36,6 +37,10 @@ function main() {
       const sched = runScheduler(db);
       if (sched.campaignsStarted > 0) {
         logger.info({ ...sched }, "scheduler started campaigns");
+      }
+      const auto = await runAutomations(db);
+      if (auto.ran > 0) {
+        logger.info({ ...auto }, "automations ran");
       }
       const stats = await runSendCycle(db, env.APP_ENC_KEY);
       if (stats.claimed > 0) {

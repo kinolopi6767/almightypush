@@ -85,6 +85,24 @@ export const automations = sqliteTable(
   (t) => [index("idx_automations_next").on(t.status, t.next_run_at)],
 );
 
+/** Per-run log for automations — one row per tick/webhook-triggered run. */
+export const automationRuns = sqliteTable(
+  "automation_runs",
+  {
+    id: id(),
+    automation_id: integer("automation_id")
+      .notNull()
+      .references(() => automations.id, { onDelete: "cascade" }),
+    /** ok | error */
+    status: text("status").notNull(),
+    detail: text("detail"),
+    created_at: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [index("idx_automation_runs_auto").on(t.automation_id, t.created_at)],
+);
+
 /** Collection links with redirect + optional force-subscribe. */
 export const lpLinks = sqliteTable("lp_links", {
   id: id(),

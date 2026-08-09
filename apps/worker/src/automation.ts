@@ -1,0 +1,262 @@
+import { and, eq, sql } from "drizzle-orm";
+import { automations } from "@pushpanel/db";
+import type { allTables } from "@pushpanel/db/schema";
+import { assertPublicHttpUrl, parseAutomationConfig, type AutomationConfig } from "@pushpanel/core";
+import { enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
+import Parser from "rss-parser";
+
+export interface AutomationRunStats {
+  ran: number;
+  ok: number;
+  failed: number;
+  campaigns: number;
+}
+
+interface AutomationRow {
+  id: number;
+  workspace_id: number;
+  domain_id: number | null;
+  type: string;
+  config_json: string | null;
+}
+
+/**
+ * M4 automation runner — runs once per worker tick.
+ * Picks active automations whose `next_run_at` is due, dispatches the type
+ * handler, re-arms the interval, and records a run in automation_runs.
+ * `push_on_publish`/`welcome_push` are event-driven: the webhook/subscribe
+ * path sets `next_run_at` to now; after a run their slot is cleared.
+ */
+export async function runAutomations(db: PushDb, now: Date = new Date()): Promise<AutomationRunStats> {
+  const nowIso = now.toISOString();
+  const stats: AutomationRunStats = { ran: 0, ok: 0, failed: 0, campaigns: 0 };
+
+  const rows = db
+    .select({
+      id: automations.id,
+      workspace_id: automations.workspace_id,
+      domain_id: automations.domain_id,
+      type: automations.type,
+      config_json: automations.config_json,
+    })
+    .from(automations)
+    .where(
+      and(
+        eq(automations.status, "active"),
+        sql`(${automations.next_run_at} IS NOT NULL AND ${automations.next_run_at} <= ${nowIso})`,
+      ),
+    )
+    .orderBy(automations.id)
+    .all();
+
+  for (const row of rows) {
+    const config = parseAutomationConfig(row.config_json);
+    const outcome = await handleAutomation(db, row, config, now);
+    stats.ran++;
+    if (outcome.ok) {
+      stats.ok++;
+      stats.campaigns += outcome.campaigns;
+    } else {
+      stats.failed++;
+    }
+
+    const next = nextRunAt(row, config, now);
+    db.update(automations)
+      .set({
+        last_run_at: nowIso,
+        next_run_at: next ? next.toISOString() : null,
+        error: outcome.ok ? null : outcome.error,
+      })
+      .where(eq(automations.id, row.id))
+      .run();
+    recordAutomationRun(db, row.id, outcome.ok ? "ok" : "error", outcome.ok ? `queued ${outcome.queued} deliveries` : outcome.error);
+  }
+
+  return stats;
+}
+
+interface HandlerResult {
+  ok: boolean;
+  campaigns: number;
+  queued: number;
+  error?: string;
+}
+
+function ok(campaigns: number, queued: number): HandlerResult {
+  return { ok: true, campaigns, queued };
+}
+
+async function handleAutomation(db: PushDb, row: AutomationRow, config: AutomationConfig, now: Date): Promise<HandlerResult> {
+  if (!row.domain_id) return { ok: false, campaigns: 0, queued: 0, error: "No domain assigned" };
+
+  try {
+    switch (row.type) {
+      case "welcome_push":
+      case "push_on_publish": {
+        const result = enqueueAutomationCampaign({
+          db,
+          workspaceId: row.workspace_id,
+          domainId: row.domain_id,
+          automationId: row.id,
+          payload: config.payload,
+          now,
+        });
+        return ok(1, result.queued);
+      }
+      case "automagic_dynamic": {
+        const post = await pickRandomPost(config);
+        if (!post) return { ok: false, campaigns: 0, queued: 0, error: "No posts available from source" };
+        const result = enqueueAutomationCampaign({
+          db,
+          workspaceId: row.workspace_id,
+          domainId: row.domain_id,
+          automationId: row.id,
+          payload: post,
+          now,
+        });
+        return ok(1, result.queued);
+      }
+      case "automagic_static": {
+        const post = pickStaticPost(db, row, config);
+        if (!post) return { ok: false, campaigns: 0, queued: 0, error: "Rotation list is empty" };
+        const result = enqueueAutomationCampaign({
+          db,
+          workspaceId: row.workspace_id,
+          domainId: row.domain_id,
+          automationId: row.id,
+          payload: { ...config.payload, title: post.title ?? config.payload.title, message: post.body ?? config.payload.message, launch_url: post.url ?? config.payload.launch_url },
+          now,
+        });
+        return ok(1, result.queued);
+      }
+      case "youtube_push": {
+        const video = await awaitLatestVideo(db, row, config);
+        if (!video) return ok(0, 0);
+        const result = enqueueAutomationCampaign({
+          db,
+          workspaceId: row.workspace_id,
+          domainId: row.domain_id,
+          automationId: row.id,
+          payload: { ...config.payload, title: video.title ?? config.payload.title, launch_url: video.url ?? config.payload.launch_url },
+          now,
+        });
+        return ok(1, result.queued);
+      }
+      default:
+        return { ok: false, campaigns: 0, queued: 0, error: `Unknown automation type: ${row.type}` };
+    }
+  } catch (error) {
+    const err = error as Error & { cause?: unknown };
+    const cause = err.cause instanceof Error ? ` (cause: ${err.cause.message})` : err.cause ? ` (cause: ${String(err.cause)})` : "";
+    return { ok: false, campaigns: 0, queued: 0, error: `${err.message}${cause}` };
+  }
+}
+
+/** AutoMagic dynamic: newest `range` posts from a WordPress REST API, random pick. */
+async function pickRandomPost(config: AutomationConfig): Promise<AutomationPayload | null> {
+  if (!config.source_url) throw new Error("source_url is required");
+  const posts = await fetchPosts(config.source_url, config.range ?? 10);
+  if (posts.length === 0) return null;
+  const pick = posts[Math.floor(Math.random() * posts.length)]!;
+  return normalizePost(pick as Record<string, unknown>);
+}
+
+interface FeedItem {
+  title?: string;
+  body?: string;
+  url?: string;
+}
+
+/** AutoMagic static: round-robin over the curated rotation list. */
+function pickStaticPost(db: PushDb, row: AutomationRow, config: AutomationConfig): FeedItem | null {
+  let list: FeedItem[] = [];
+  try {
+    const parsed = config.rotation_json ? JSON.parse(config.rotation_json) : [];
+    list = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    list = [];
+  }
+  if (list.length === 0) return null;
+
+  const idx = config.rotation_index ?? 0;
+  const post = list[idx % list.length] ?? null;
+  if (post) {
+    const updated: AutomationConfig = { ...config, rotation_index: idx + 1 };
+    db.update(automations)
+      .set({ config_json: JSON.stringify(updated) })
+      .where(eq(automations.id, row.id))
+      .run();
+  }
+  return post;
+}
+
+/** YouTube push: RSS feed poll; only fires when a newer video appears. */
+async function awaitLatestVideo(db: PushDb, row: AutomationRow, config: AutomationConfig): Promise<FeedItem | null> {
+  if (!config.feed_url) throw new Error("feed_url is required");
+  const xml = await fetchText(config.feed_url);
+  const parser = new Parser();
+  const feed = await parser.parseString(xml);
+  const entry = feed.items[0];
+  if (!entry) return null;
+
+  const videoId = entry.guid?.replace("yt:video:", "") ?? entry.link ?? null;
+  const lastId = config.last_video_id ?? null;
+  if (lastId && (!videoId || videoId === lastId)) return null;
+
+  const updated: AutomationConfig = { ...config, last_video_id: videoId ?? undefined };
+  db.update(automations)
+    .set({ config_json: JSON.stringify(updated) })
+    .where(eq(automations.id, row.id))
+    .run();
+
+  return { title: entry.title ?? undefined, body: undefined, url: entry.link ?? undefined };
+}
+
+function nextRunAt(row: AutomationRow, config: AutomationConfig, now: Date): Date | null {
+  if (row.type === "push_on_publish" || row.type === "welcome_push") return null;
+  return new Date(now.getTime() + (config.interval_minutes ?? 15) * 60_000);
+}
+
+async function fetchPosts(sourceUrl: string, range: number): Promise<unknown[]> {
+  const checked = await assertPublicHttpUrl(sourceUrl);
+  if (!checked.ok) throw new Error(checked.error ?? "Invalid source URL");
+  const url = new URL(`${sourceUrl.replace(/\/+$/, "")}/wp-json/wp/v2/posts`);
+  url.searchParams.set("per_page", String(Math.min(range, 100)));
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`Source returned HTTP ${res.status}`);
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data)) throw new Error("Source did not return a post array");
+  return data.slice(0, range);
+}
+
+async function fetchText(sourceUrl: string): Promise<string> {
+  const checked = await assertPublicHttpUrl(sourceUrl);
+  if (!checked.ok) throw new Error(checked.error ?? "Invalid feed URL");
+  const res = await fetch(sourceUrl, { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`Feed returned HTTP ${res.status}`);
+  return res.text();
+}
+
+function normalizePost(item: Record<string, unknown>): AutomationPayload {
+  const title = typeof item.title === "object" && item.title !== null
+    ? (item.title as Record<string, unknown>).rendered
+    : item.title;
+  const excerpt = typeof item.excerpt === "object" && item.excerpt !== null
+    ? (item.excerpt as Record<string, unknown>).rendered
+    : null;
+  const body = typeof excerpt === "string" ? stripHtml(excerpt) : "";
+  return {
+    title: stripHtml(String(title ?? "Update")).slice(0, 200),
+    message: body.slice(0, 500) || null,
+    launch_url: typeof item.link === "string" ? item.link : null,
+  };
+}
+
+function stripHtml(input: string): string {
+  return input
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
