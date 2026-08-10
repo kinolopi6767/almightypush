@@ -6,3 +6,4 @@ export * from "./providers";
 export * from "./automation";
 export * from "./net";
 export * from "./webhook";
+export * from "./segments";

@@ -20,7 +20,7 @@ test.afterAll(async () => {
 test("subscribers page: list, filter, clean unsubscribed", async ({ page, request }) => {
   test.setTimeout(180_000);
   await signInViaUi(page);
-  const domainId = await createDomain(page, "subs.m3.test");
+  const domainId = await createDomain(page, `subs-${Date.now()}.m3.test`);
 
   await subscribeViaApi(request, mock, domainId, "subs-1", "desktop");
   await subscribeViaApi(request, mock, domainId, "subs-2", "mobile");
@@ -64,7 +64,7 @@ test("subscribers page: list, filter, clean unsubscribed", async ({ page, reques
 test("subscribers: export CSV and import from file", async ({ page, request }) => {
   test.setTimeout(180_000);
   await signInViaUi(page);
-  const domainId = await createDomain(page, "transfer.m3.test");
+  const domainId = await createDomain(page, `transfer-${Date.now()}.m3.test`);
 
   await subscribeViaApi(request, mock, domainId, "export-me", "desktop");
   await page.goto(`/dashboard/domains/${domainId}/subscribers`);
@@ -183,7 +183,7 @@ test("profile: update name and password, re-login works", async ({ page }) => {
 test("subscribers: clean requires confirmation (cancel keeps rows)", async ({ page, request }) => {
   test.setTimeout(120_000);
   await signInViaUi(page);
-  const domainId = await createDomain(page, "nuke.m3.test");
+  const domainId = await createDomain(page, `nuke-${Date.now()}.m3.test`);
   await subscribeViaApi(request, mock, domainId, "keep-me", "desktop");
   await request.post("/api/v1/unsubscribe", {
     data: { domainId, endpoint: `https://127.0.0.1:${mock.port}/push/keep-me` },

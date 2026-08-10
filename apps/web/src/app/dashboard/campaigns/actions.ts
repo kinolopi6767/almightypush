@@ -14,6 +14,8 @@ const createCampaignSchema = z.object({
   message: z.string().trim().max(500).optional().or(z.literal("")),
   url: z.string().trim().url().optional().or(z.literal("")),
   schedule: z.string().trim().optional().or(z.literal("")),
+  audienceKind: z.enum(["all", "segment"]).default("all"),
+  segmentId: z.coerce.number().int().positive().optional(),
 });
 
 export async function createCampaignAction(
@@ -31,6 +33,8 @@ export async function createCampaignAction(
     message: formData.get("message"),
     url: formData.get("url"),
     schedule: formData.get("schedule"),
+    audienceKind: formData.get("audienceKind") ?? "all",
+    segmentId: formData.get("segmentId") ?? undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
@@ -41,6 +45,14 @@ export async function createCampaignAction(
     .limit(1)
     .all();
   if (!domain) return { error: "Domain not found" };
+
+  if (parsed.data.audienceKind === "segment" && !parsed.data.segmentId) {
+    return { error: "Pick a segment for the audience" };
+  }
+
+  const audience = parsed.data.audienceKind === "segment"
+    ? { kind: "segment", segment_id: parsed.data.segmentId }
+    : { kind: "all" };
 
   let scheduleAt: string;
   if (parsed.data.schedule) {
@@ -59,7 +71,7 @@ export async function createCampaignAction(
       title: parsed.data.title,
       message: parsed.data.message || null,
       launch_url: parsed.data.url || null,
-      audience_json: JSON.stringify({ kind: "all" }),
+      audience_json: JSON.stringify(audience),
       schedule_at: scheduleAt,
       scheduled: 1,
       status: "scheduled",

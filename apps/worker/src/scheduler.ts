@@ -1,5 +1,5 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { campaigns, deliveries, domains, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
+import { campaigns, deliveries, domains, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
@@ -12,6 +12,7 @@ export interface SchedulerStats {
 
 interface CampaignRow {
   id: number;
+  workspace_id: number;
   domain_id: number | null;
   schedule_at: string | null;
   audience_json: string | null;
@@ -31,6 +32,7 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
   const rows = db
     .select({
       id: campaigns.id,
+      workspace_id: campaigns.workspace_id,
       domain_id: campaigns.domain_id,
       schedule_at: campaigns.schedule_at,
       audience_json: campaigns.audience_json,
@@ -88,14 +90,25 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
   return { queued: audience.length, skipped: 0 };
 }
 
-/** M2: `{ kind: 'all' }` only. Later: segments/manual lists. */
+/** M2: `{ kind: 'all' }`. M5+: segments/manual lists via kind: 'segment'. */
 function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): number[] {
   let kind = "all";
+  let segmentId: number | undefined;
   try {
     const parsed = campaign.audience_json ? JSON.parse(campaign.audience_json) : {};
     kind = parsed.kind ?? "all";
+    segmentId = parsed.segment_id;
   } catch {
     kind = "all";
+  }
+
+  if (kind === "segment" && segmentId) {
+    const match = resolveSegment(db, {
+      workspaceId: campaign.workspace_id,
+      segmentId,
+      domainId,
+    });
+    return match.subscriberIds;
   }
   if (kind !== "all") return [];
 

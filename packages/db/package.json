@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/schema/index.ts src/migrations-generated.ts --format esm --out-dir dist --target node22 --dts --clean --external better-sqlite3 --external drizzle-orm --external zod --external dotenv",
+    "build": "tsup src/index.ts src/schema/index.ts src/migrations-generated.ts --format esm --out-dir dist --target node22 --dts --clean --external better-sqlite3 --external drizzle-orm --external zod --external dotenv --external @pushpanel/core",
     "generate": "drizzle-kit generate && node scripts/sync-migrations.mjs",
     "sync-migrations": "node scripts/sync-migrations.mjs",
     "migrate": "tsx src/scripts/migrate.ts",
@@ -27,6 +27,7 @@
     "test:unit": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@pushpanel/core": "workspace:*",
     "better-sqlite3": "^12.2.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.44.0",

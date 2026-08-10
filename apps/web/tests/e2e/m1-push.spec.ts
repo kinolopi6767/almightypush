@@ -34,7 +34,7 @@ test("sandbox push loop: subscribe → test push → worker delivery → click b
   await signInViaUi(page);
 
   // --- create a domain through the panel UI (generates the VAPID keypair) ---
-  domainId = await createDomain(page, "sandbox.example.test");
+  domainId = await createDomain(page, `sandbox-${Date.now()}.example.test`);
 
   // --- /api/v1/info exposes the public key for the SDK ---
   const info = await request.get(`/api/v1/info?domain=${domainId}`);

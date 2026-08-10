@@ -38,14 +38,14 @@ test.afterAll(async () => {
 test("send-now campaign: UI → scheduler → delivery → stats", async ({ page, request }) => {
   test.setTimeout(120_000);
   await signInViaUi(page);
-  const domainId = await createDomain(page, "campaigns.example.test");
+  const domainId = await createDomain(page, `campaigns-${Date.now()}.example.test`);
   await subscribeViaApi(request, mock, domainId, "campaign-1");
 
   // --- create the campaign through the UI ---
   await page.goto("/dashboard/campaigns");
   await page.getByRole("link", { name: /new campaign/i }).click();
   await page.waitForURL(/\/dashboard\/campaigns\/new/);
-  await page.getByLabel("Domain").selectOption(String(domainId));
+  await page.getByLabel("Domain", { exact: true }).selectOption(String(domainId));
   await page.getByLabel("Title").fill("Big sale this weekend");
   await page.getByLabel("Message").fill("Everything is 50% off.");
   await page.getByLabel("Click URL").fill("https://campaigns.example.test/sale");
@@ -101,13 +101,13 @@ test("send-now campaign: UI → scheduler → delivery → stats", async ({ page
 test("future campaign stays scheduled until its time, then cancels", async ({ page, request }) => {
   test.setTimeout(120_000);
   await signInViaUi(page);
-  const domainId = await createDomain(page, "scheduled.example.test");
+  const domainId = await createDomain(page, `scheduled-${Date.now()}.example.test`);
   await subscribeViaApi(request, mock, domainId, "scheduled-1");
   const pushesBefore = mock.received.length;
 
   // --- schedule an hour out ---
   await page.goto("/dashboard/campaigns/new");
-  await page.getByLabel("Domain").selectOption(String(domainId));
+  await page.getByLabel("Domain", { exact: true }).selectOption(String(domainId));
   await page.getByLabel("Title").fill("Flash sale tomorrow");
   await page.getByLabel("Schedule (optional)").fill(localDateTime(3_600_000));
   await page.getByRole("button", { name: /create campaign/i }).click();
