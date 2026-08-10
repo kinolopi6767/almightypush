@@ -116,6 +116,8 @@ export const lpLinks = sqliteTable("lp_links", {
   subscribers_count: integer("subscribers_count").notNull().default(0),
   /** fallback target after the link is deleted (default 404) */
   deleted_target_url: text("deleted_target_url"),
+  /** set when the link is tombstoned (falls back to deleted_target_url) */
+  deleted_at: text("deleted_at"),
   ...timestamps(),
 });
 

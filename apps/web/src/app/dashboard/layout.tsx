@@ -8,6 +8,7 @@ const NAV: { href: string; label: string; disabled?: boolean }[] = [
   { href: "/dashboard/campaigns", label: "Campaigns" },
   { href: "/dashboard/segments", label: "Segments" },
   { href: "/dashboard/templates", label: "Templates" },
+  { href: "/dashboard/links", label: "LP links" },
   { href: "/dashboard/automations", label: "Automations" },
   { href: "/dashboard/settings", label: "Settings" },
   { href: "/dashboard/profile", label: "Profile" },

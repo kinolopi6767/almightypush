@@ -17,5 +17,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0001_silly_rachel_grey",
     "idx": 1,
     "sql": "CREATE TABLE `automation_runs` (\n\t`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n\t`automation_id` integer NOT NULL,\n\t`status` text NOT NULL,\n\t`detail` text,\n\t`created_at` text NOT NULL,\n\tFOREIGN KEY (`automation_id`) REFERENCES `automations`(`id`) ON UPDATE no action ON DELETE cascade\n);\n--> statement-breakpoint\nCREATE INDEX `idx_automation_runs_auto` ON `automation_runs` (`automation_id`,`created_at`);"
+  },
+  {
+    "tag": "0002_green_natasha_romanoff",
+    "idx": 2,
+    "sql": "ALTER TABLE `lp_links` ADD `deleted_at` text;"
   }
 ];

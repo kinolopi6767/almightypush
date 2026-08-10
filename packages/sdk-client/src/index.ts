@@ -86,6 +86,14 @@ export function init(options: PushPanelOptions): PushPanelApi {
           return current;
         }
         const registration = await navigator.serviceWorker.register(swPath);
+        // wait for the worker to be active — pushManager.subscribe requires one
+        if (!registration.active) {
+          await navigator.serviceWorker.ready;
+          await new Promise<void>((resolve) => {
+            const poll = () => (registration.active ? resolve() : setTimeout(poll, 50));
+            poll();
+          });
+        }
         const applicationServerKey = urlBase64ToUint8Array(options.publicKey);
         let subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,

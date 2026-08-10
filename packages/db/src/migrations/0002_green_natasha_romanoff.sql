@@ -1,0 +1,1 @@
+ALTER TABLE `lp_links` ADD `deleted_at` text;
