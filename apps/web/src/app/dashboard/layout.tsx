@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
+import { IosInstallHint } from "@/components/ios-install-hint";
 
 const NAV: { href: string; label: string; disabled?: boolean }[] = [
   { href: "/dashboard", label: "Dashboard" },
@@ -61,6 +62,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </aside>
       <main className="flex-1 p-8">{children}</main>
+      <IosInstallHint />
     </div>
   );
 }

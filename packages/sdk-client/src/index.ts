@@ -22,11 +22,13 @@ export interface PushPanelOptions {
   endpointOverride?: string;
 }
 
-export type PushPanelState = "unsupported" | "idle" | "denied" | "subscribed" | "error";
+export type PushPanelState = "unsupported" | "idle" | "denied" | "subscribed" | "error" | "ios-not-installed";
 
 export interface PushPanelApi {
   subscribe(): Promise<PushPanelState>;
   state(): PushPanelState;
+  /** iOS PWA support: true when the site runs as an installed web app. */
+  isInstalledPwa(): boolean;
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -66,6 +68,28 @@ function guessDevice(): { device: string; browser: string; os: string } {
   return { device: isMobile ? "mobile" : "desktop", browser, os };
 }
 
+export function isInstalledPwa(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches || (window.navigator as { standalone?: boolean }).standalone === true)
+  );
+}
+
+function isIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iP(hone|ad|od)/.test(navigator.userAgent);
+}
+
+/**
+ * iOS 18+ exposes Web App Push on installed PWAs. Apple grants permission
+ * through the OS (no requestPermission prompt) — the SDK just checks the
+ * Apple-specific signal before falling back to the standard flow.
+ */
+function appleNotificationAllowed(): boolean {
+  const apple = (window as unknown as { AppleNotificationPermission?: unknown }).AppleNotificationPermission;
+  return apple === "granted";
+}
+
 export function init(options: PushPanelOptions): PushPanelApi {
   const baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
   const swPath = options.serviceWorkerPath ?? "/sw.js";
@@ -77,10 +101,21 @@ export function init(options: PushPanelOptions): PushPanelApi {
 
   return {
     state: () => current,
+    isInstalledPwa,
     async subscribe() {
       if (current === "unsupported") return "unsupported";
       try {
-        const permission = await Notification.requestPermission();
+        // iOS push only exists on installed PWAs (iOS 16.4+ macOS, 18+ iOS).
+        if (isIos() && !isInstalledPwa()) {
+          current = "ios-not-installed";
+          return current;
+        }
+        let permission: NotificationPermission;
+        if (isIos() && appleNotificationAllowed()) {
+          permission = "granted";
+        } else {
+          permission = await Notification.requestPermission();
+        }
         if (permission !== "granted") {
           current = "denied";
           return current;

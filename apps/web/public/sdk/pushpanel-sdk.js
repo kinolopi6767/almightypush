@@ -21,7 +21,8 @@ var PushPanel = (() => {
   // src/index.ts
   var index_exports = {};
   __export(index_exports, {
-    init: () => init
+    init: () => init,
+    isInstalledPwa: () => isInstalledPwa
   });
   function urlBase64ToUint8Array(base64String) {
     const padding = "=".repeat((4 - base64String.length % 4) % 4);
@@ -38,6 +39,18 @@ var PushPanel = (() => {
     const browser = /Edg\//i.test(ua) ? "edge" : /OPR\//i.test(ua) ? "opera" : /Firefox\//i.test(ua) ? "firefox" : /Chrome\//i.test(ua) ? "chrome" : /Safari\//i.test(ua) ? "safari" : "unknown";
     return { device: isMobile ? "mobile" : "desktop", browser, os };
   }
+  function isInstalledPwa() {
+    var _a;
+    return typeof window !== "undefined" && (((_a = window.matchMedia) == null ? void 0 : _a.call(window, "(display-mode: standalone)").matches) || window.navigator.standalone === true);
+  }
+  function isIos() {
+    if (typeof navigator === "undefined") return false;
+    return /iP(hone|ad|od)/.test(navigator.userAgent);
+  }
+  function appleNotificationAllowed() {
+    const apple = window.AppleNotificationPermission;
+    return apple === "granted";
+  }
   function init(options) {
     var _a, _b;
     const baseUrl = ((_a = options.baseUrl) != null ? _a : "").replace(/\/$/, "");
@@ -48,10 +61,20 @@ var PushPanel = (() => {
     }
     return {
       state: () => current,
+      isInstalledPwa,
       async subscribe() {
         if (current === "unsupported") return "unsupported";
         try {
-          const permission = await Notification.requestPermission();
+          if (isIos() && !isInstalledPwa()) {
+            current = "ios-not-installed";
+            return current;
+          }
+          let permission;
+          if (isIos() && appleNotificationAllowed()) {
+            permission = "granted";
+          } else {
+            permission = await Notification.requestPermission();
+          }
           if (permission !== "granted") {
             current = "denied";
             return current;

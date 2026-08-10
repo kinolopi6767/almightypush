@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import { authConfig } from "@/auth.config";
 
-const PUBLIC_PATHS = ["/login", "/setup", "/demo", "/api/auth", "/api/health", "/api/metrics", "/api/v1", "/s/"];
+const PUBLIC_PATHS = ["/login", "/setup", "/demo", "/api/auth", "/api/health", "/api/metrics", "/api/v1", "/s/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/sdk/", "/sw.js"];
 
 const { auth } = NextAuth(authConfig);
 
