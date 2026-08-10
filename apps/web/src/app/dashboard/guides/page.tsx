@@ -27,11 +27,20 @@ export default function GuidesPage() {
       <div className="mt-8 max-w-3xl space-y-10">
         <Section title="WordPress (push-on-publish webhook)">
           <P>
-            Use the <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">push_on_publish</code>{" "}
-            automation&apos;s webhook URL as a WordPress plugin trigger. Paste this snippet into a site plugin or{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">functions.php</code> to fire on every
-            published post:
+            Install the plugin to fire the{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">push_on_publish</code> webhook on every
+            published post — no API keys, just the automation&apos;s secret:
           </P>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href="/api/v1/plugin/wordpress"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+            >
+              Download WordPress plugin
+            </a>
+            <span className="text-sm text-muted-foreground">(upload to /wp-content/plugins/, activate, paste webhook URL + secret)</span>
+          </div>
+          <P>Or trigger the webhook yourself with a snippet in a site plugin or functions.php:</P>
           <CodeBlock
             label="functions.php"
             code={`<?php

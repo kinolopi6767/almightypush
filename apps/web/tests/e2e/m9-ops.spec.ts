@@ -64,4 +64,15 @@ test("guides page shows WordPress, Blogger and AMP sections with code", async ({
   await expect(page.getByRole("heading", { name: "AMP pages (client SDK)" })).toBeVisible();
   await expect(page.getByText("functions.php").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy", exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download WordPress plugin" })).toHaveAttribute("href", "/api/v1/plugin/wordpress");
+});
+
+test("wordpress plugin downloads as a valid zip", async ({ request }) => {
+  const res = await request.get("/api/v1/plugin/wordpress");
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toBe("application/zip");
+  const body = Buffer.from(await res.body());
+  expect(body.subarray(0, 2).toString()).toBe("PK");
+  // EOCD signature present at the tail (little-endian on disk)
+  expect(body.subarray(body.length - 22, body.length - 18).toString("hex")).toBe("504b0506");
 });
