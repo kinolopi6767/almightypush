@@ -119,3 +119,38 @@ test("click beacon 404s for unknown deliveries", async ({ request }) => {
   const res = await request.get("/api/v1/click/999999", { maxRedirects: 0 });
   expect(res.status()).toBe(404);
 });
+
+test("subscribe with a foreign subscribe_url is rejected", async ({ page, request }) => {
+  await signInViaUi(page);
+  const hostname = `origin-${Date.now()}.example.test`;
+  const domainId = await createDomain(page, hostname);
+
+  // matching domain or subdomain → accepted
+  for (const subscribeUrl of [`https://${hostname}/sub`, `https://www.${hostname}/sub`]) {
+    const ok = await request.post("/api/v1/subscribe", {
+      data: {
+        domainId,
+        subscription: {
+          endpoint: `https://127.0.0.1:${mock.port}/push/ok-origin-${Date.now()}`,
+          keys: browserKeys(),
+        },
+        subscribeUrl,
+      },
+    });
+    expect(ok.status(), subscribeUrl).toBe(200);
+  }
+
+  // foreign origin → 403
+  const res = await request.post("/api/v1/subscribe", {
+    data: {
+      domainId,
+      subscription: {
+        endpoint: `https://127.0.0.1:${mock.port}/push/evil-origin-${Date.now()}`,
+        keys: browserKeys(),
+      },
+      subscribeUrl: "https://evil.example.net/steal",
+    },
+  });
+  expect(res.status()).toBe(403);
+  expect((await res.json()).ok).toBe(false);
+});

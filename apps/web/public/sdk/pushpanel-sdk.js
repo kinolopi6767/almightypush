@@ -56,12 +56,37 @@ var PushPanel = (() => {
     const baseUrl = ((_a = options.baseUrl) != null ? _a : "").replace(/\/$/, "");
     const swPath = (_b = options.serviceWorkerPath) != null ? _b : "/sw.js";
     let current = "idle";
+    let activeSubscription = null;
     if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       current = "unsupported";
     }
     return {
       state: () => current,
       isInstalledPwa,
+      async unsubscribe() {
+        if (current === "unsupported") return "unsupported";
+        try {
+          if (!navigator.serviceWorker.controller && !activeSubscription) return "idle";
+          const registration = activeSubscription ? null : await navigator.serviceWorker.ready;
+          const sub = activeSubscription || (registration && await registration.pushManager.getSubscription());
+          if (!sub) {
+            current = "idle";
+            return current;
+          }
+          await fetch(`${baseUrl}/api/v1/unsubscribe`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ domainId: options.domain, endpoint: sub.endpoint })
+          }).catch(() => undefined);
+          await sub.unsubscribe().catch(() => undefined);
+          activeSubscription = null;
+          current = "idle";
+        } catch (error) {
+          current = "error";
+          throw error;
+        }
+        return current;
+      },
       async subscribe() {
         if (current === "unsupported") return "unsupported";
         try {
@@ -95,6 +120,7 @@ var PushPanel = (() => {
           if (options.endpointOverride) {
             subscription = { ...subscription, endpoint: options.endpointOverride };
           }
+          activeSubscription = subscription;
           const payload = {
             domainId: options.domain,
             subscription: { endpoint: subscription.endpoint, keys: subscription.toJSON().keys },

@@ -6,6 +6,8 @@
 >
 > Research baseline: `research/01..13`, especially `03-features.md` (full parity list), `09-panel-feature-spec.md` (module spec), `10-gaps-and-opportunities.md` (what we fix), `11-api-endpoints.md` (their API contract), `12-our-architecture.md` (delivery model), `13-product-roadmap.md` (phases).
 
+> **Status (verified 2026-08-11):** milestones **M0–M7 shipped** on `main` (plus a working M7 exit item — TOTP 2FA, e2e `m11-tfa` passes). The full e2e suite is **43/43 green** on a production build, all packages typecheck + lint clean (0 errors), and a hardening pass added: anonymous-visitor `dev=1` deny, browser-support gate on subscribe, cross-domain LP channel guard with key-signature verification, origin boots allow-list, and adaptive worker cadence (fast poll on work / 60s idle — see `docs/architecture.md` §8). The live feature inventory lives in `docs/parity-matrix.md` (89 rows: 🟢 36 · 🟡 17 · ⚪ 36). Deferred backlog after §20.
+
 ---
 
 ## 1. Decisions & Non-Goals
@@ -537,22 +539,34 @@ CACHE_BUSTER=…
 
 ## 19. Feature-parity checklist
 
-Every bullet of research/03 §2-§9 gets implemented per spec — the full parity matrix is tracked as `docs/parity-matrix.md` (a PR-review checkbox per feature; 48 features listed there). The matrix doubles as the engineering backlog order.
+Every bullet of research/03 §2-§9 gets implemented per spec — the full parity matrix is tracked as `docs/parity-matrix.md` (a PR-review checkbox per feature; 89 features listed there, as-built status 2026-08-11: 🟢 36 · 🟡 17 · ⚪ 36). The matrix doubles as the engineering backlog order.
 
 ---
 
 ## 20. Delivery timeline (milestone → Git history)
 
-| Milestone | Scope | Exit |
-|---|---|---|
-| **M0 Bootstrap (wk1)** | monorepo, db core, auth, layout, CI | login works, schema migrated |
-| **M1 (wk2-3)** | Domains + SDK v0 VAPID loop (subscribe→campaign→delivery→click beacons) | sandbox single domain push works, e2e pass |
-| **M2 (wk4)** | Campaigns full editor (fetch-content, schedule, CTA, templates, live preview), quick push, clone | campaign CRUD+send live |
-| **M3 (wk5)** | Subscribers mgmt (list, clean, export/import), settings (general, advanced, language & region, backup), profile/security | panel v0.1 usable |
-| **M4 (wk6-7)** | Automations: welcome, push-on-publish (plugin+webhook), AutoMagic (dynamic/static), YouTube | automation suite live |
-| **M5 (wk8-9)** | Segments engine + estimates; templates; LP links + full-page script; iOS PWA | growth features |
-| **M6 (wk10-11)** | WordPress plugin, Blogger, AMP guides; backup UI+offload; live stats, server status; API v1 public + docs; OpenAPI | v1.0 candidate |
-| **M7 (wk12+)** | i18n, accessibility pass, perf bench, audit log, 2FA, restore testing, readme | **v1.0** → docs, release |
+| Milestone | Scope | Exit | Status |
+|---|---|---|---|
+| **M0 Bootstrap (wk1)** | monorepo, db core, auth, layout, CI | login works, schema migrated | ✅ shipped (`dce7972`) |
+| **M1 (wk2-3)** | Domains + SDK v0 VAPID loop (subscribe→campaign→delivery→click beacons) | sandbox single domain push works, e2e pass | ✅ shipped (`25eb79c`) |
+| **M2 (wk4)** | Campaigns full editor (fetch-content, schedule, CTA, templates, live preview), quick push, clone | campaign CRUD+send live | ✅ shipped (`35eeeaf`); fetch-content/buttons/quick-push/clone deferred |
+| **M3 (wk5)** | Subscribers mgmt (list, clean, export/import), settings (general, advanced, language & region, backup), profile/security | panel v0.1 usable | ✅ shipped (`7c6be48`); most settings knobs deferred |
+| **M4 (wk6-7)** | Automations: welcome, push-on-publish (plugin+webhook), AutoMagic (dynamic/static), YouTube | automation suite live | ✅ shipped (`72ab3cc`); cron-text UI, drip deferred |
+| **M5 (wk8-9)** | Segments engine + estimates; templates; LP links + full-page script; iOS PWA | growth features | ✅ shipped (`26ff38a`, `6eae228`, `e34ba94`) |
+| **M6 (wk10-11)** | WordPress plugin, Blogger, AMP guides; backup UI+offload; live stats, server status; API v1 public + docs; OpenAPI | v1.0 candidate | ✅ shipped (`ab7a95f`, `eed4ada`); backup auto-schedule/offload, per-domain iOS generator deferred |
+| **M7 (wk12+)** | i18n, accessibility pass, perf bench, audit log, 2FA, restore testing, readme | **v1.0** → docs, release | ✅ shipped (`cec3118`) + 2FA (TOTP) landed & e2e-green (uncommitted at review time) |
+
+**Post-M7 deferred backlog** (turns 🟡/⚪ rows in `docs/parity-matrix.md`), roughly in value order:
+
+1. Campaign editor depth: CTA buttons editor (B5), fetch-content (B2), quick push (B8), clone campaign/domain (B9/B10), icon/image fields (B1), split-button save-as-template (B7).
+2. Settings completeness (G1–G9, G14, G16): sending speed, worker count, UTM/CDN, API/duplicates toggles, profile password change (G15), update module.
+3. Backups: auto-schedule (daily/weekly/monthly) + S3/Drive offload and tested restore (G17).
+4. Real-time deliverability: socket.io/SSE live feed (B11/E6) + per-button breakdown (E4).
+5. SDK prompt engine (F8–F11): 4 prompt types, bell widget, positioning; per-domain iOS generator zip (F7).
+6. Automation depth: AutoMagic cron-text UI + crontab preset (C3), auto-pause on source-down (C4), RSS publish poll (C5), YouTube channel page (C7), drip builder (C8).
+7. Integrations: Blogger/AMP guided flows + frames (F12/F13), auto code-injection toggle (F15/H2), Web Stories (F14).
+8. Data tooling: analytics filters + CSV export (E2/E9), A/B + heatmap (E7/E8), API send + stats (H6/H7), migration importer + panel round-trip (D13/D14), host redirect (G11).
+9. Scale/geo: mmdb geo lookup (D2), FCM provider adapter, i18n (G12), perf bench + documented scale limits.
 
 (All phases reflect research/13 roadmap → fine-tuned for solo build.)
 

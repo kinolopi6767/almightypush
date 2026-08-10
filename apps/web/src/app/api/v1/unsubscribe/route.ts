@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { sha256Hex } from "@pushpanel/core";
-import { events, subscribers } from "@pushpanel/db/schema";
+import { domains, events, subscribers } from "@pushpanel/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +41,14 @@ export async function POST(req: Request) {
     .where(eq(subscribers.id, row.id))
     .run();
   db.insert(events).values({ domain_id: domainId, subscriber_id: row.id, type: "unsubscribed" }).run();
+
+  // Keep the domain's counter in sync — the SDK path bypasses the panel.
+  const [active] = db
+    .select({ value: count() })
+    .from(subscribers)
+    .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+    .all();
+  db.update(domains).set({ subscribers_count: active?.value ?? 0 }).where(eq(domains.id, domainId)).run();
 
   return NextResponse.json({ ok: true });
 }

@@ -69,7 +69,8 @@ test("subscribers: export CSV and import from file", async ({ page, request }) =
   await subscribeViaApi(request, mock, domainId, "export-me", "desktop");
   await page.goto(`/dashboard/domains/${domainId}/subscribers`);
 
-  // export → CSV includes the decrypted endpoint
+  // export → CSV includes the decrypted endpoint and the push keys (the
+  // import path requires p256dh + auth, so exports must be re-importable)
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
   const download = await downloadPromise;
@@ -77,8 +78,18 @@ test("subscribers: export CSV and import from file", async ({ page, request }) =
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(chunk as Buffer);
   const csv = Buffer.concat(chunks).toString("utf8");
-  expect(csv.split("\n")[0]).toBe("id,endpoint,browser,os,device,country,state,subscribe_url,subscribe_at,last_active_at,unsubscribed_at");
+  expect(csv.split("\n")[0]).toBe("id,endpoint,p256dh,auth,browser,os,device,country,state,subscribe_url,subscribe_at,last_active_at,unsubscribed_at,provider");
   expect(csv).toContain(`https://127.0.0.1:${mock.port}/push/export-me`);
+
+  // round-trip: re-importing the exported file succeeds (dedupe → 0 new)
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "roundtrip.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv),
+  });
+  await page.getByRole("button", { name: "Import" }).click();
+  await expect(page.getByText("Imported 0, skipped 1, invalid 0.")).toBeVisible();
+  await expect(page.getByText("1 active · 0 unsubscribed · 1 total")).toBeVisible();
 
   // import: 1 new + 1 duplicate of an existing endpoint
   const existingEndpoint = `https://127.0.0.1:${mock.port}/push/export-me`;

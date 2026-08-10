@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
 import { ProfileForm } from "./profile-form";
+import { TfaPanel } from "./tfa-panel";
 
 export const metadata = { title: "Profile" };
 
@@ -11,7 +12,7 @@ export default async function ProfilePage() {
   if (!session?.user) return <p className="text-sm text-muted-foreground">Not signed in.</p>;
 
   const [user] = db
-    .select({ name: users.name, email: users.email })
+    .select({ name: users.name, email: users.email, totp_enabled: users.totp_enabled })
     .from(users)
     .where(eq(users.email, session.user.email ?? ""))
     .limit(1)
@@ -24,6 +25,7 @@ export default async function ProfilePage() {
         <p className="text-sm text-muted-foreground">{user?.email}</p>
       </div>
       <ProfileForm name={user?.name ?? ""} />
+      <TfaPanel initiallyEnabled={Boolean(user?.totp_enabled)} />
     </div>
   );
 }

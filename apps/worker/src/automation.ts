@@ -1,6 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
 import { automations } from "@pushpanel/db";
-import type { allTables } from "@pushpanel/db/schema";
 import { assertPublicHttpUrl, parseAutomationConfig, type AutomationConfig } from "@pushpanel/core";
 import { enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
 import Parser from "rss-parser";

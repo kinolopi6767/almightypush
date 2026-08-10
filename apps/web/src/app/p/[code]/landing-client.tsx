@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 interface LandingClientProps {
   code: string;
@@ -11,22 +10,18 @@ interface LandingClientProps {
   forceSubscribe: boolean;
   domainId: number | null;
   publicKey: string;
+  /** e2e hook — only the authenticated p/[code] server page may enable it */
+  devMode: boolean;
 }
 
 type SdkGlobal = { PushPanel?: { init: (opts: { domain: number; publicKey: string; baseUrl?: string }) => { subscribe(): Promise<string>; state(): string } } };
 declare global {
-  // eslint-disable-next-line no-var
   var PushPanel: SdkGlobal["PushPanel"];
 }
 
-export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe, domainId, publicKey }: LandingClientProps) {
-  const router = useRouter();
+export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe, domainId, publicKey, devMode }: LandingClientProps) {
   const [busy, setBusy] = useState(false);
   const [state, setState] = useState<"ready" | "unsupported" | "denied" | "subscribed" | "error">("ready");
-  // e2e/dev hook: headless Chromium cannot pushManager.subscribe, so a
-  // `dev=1` query param simulates a successful subscription. Production
-  // traffic never carries it.
-  const isDev = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("dev") === "1";
 
   const go = useCallback(
     (subscribed: boolean) => {
@@ -54,7 +49,7 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
   const subscribe = useCallback(async () => {
     setBusy(true);
     try {
-      if (isDev) {
+      if (devMode) {
         await finish(true);
         return;
       }
@@ -114,7 +109,6 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

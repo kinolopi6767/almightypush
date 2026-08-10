@@ -47,7 +47,7 @@ async function createLinkViaUi(
   return (db.prepare("SELECT code FROM lp_links WHERE target_url = ? ORDER BY id DESC LIMIT 1").get(fields.target) as { code: string }).code;
 }
 
-test("landing page counts a click and redirects on skip", async ({ page, context }) => {
+test("landing page counts a click and redirects on skip", async ({ page }) => {
   test.setTimeout(120_000);
   await signInViaUi(page);
   const code = await createLinkViaUi(page, {
@@ -119,6 +119,43 @@ test("force-subscribe page has no skip and subscribes automatically", async ({ p
   await page.waitForURL(new RegExp(`127\\.0\\.0\\.1:${http.port}/land`), { timeout: 30_000 });
   expect(new URL(page.url()).searchParams.get("sub")).toBe("1");
   await expect.poll(() => linkByCode(code)!.s, { timeout: 10_000 }).toBe(1);
+});
+
+test("dev=1 is inert for anonymous visitors (no simulated subscribe)", async ({ context }) => {
+  test.setTimeout(120_000);
+  // Not signed in — the /p/[code]?dev=1 backdoor must be dead.
+  const domainName = `lp-anon-${Date.now()}.example.test`;
+  // create the domain + link via the API layer is not available anonymously;
+  // use a signed-in context to set it up, then continue anonymous on `page`.
+  const setupCtx = await context.browser()!.newContext();
+  const setupPage = await setupCtx.newPage();
+  await signInViaUi(setupPage);
+  const domainId = await createDomain(setupPage, domainName);
+  await setupPage.goto("/dashboard/links");
+  await setupPage.getByLabel("Target URL").fill(`http://127.0.0.1:${http.port}/anon`);
+  await setupPage.getByLabel("Domain (for push)").selectOption(String(domainId));
+  await setupPage.getByRole("button", { name: "Create link" }).click();
+  await expect(setupPage.getByText(`http://127.0.0.1:${http.port}/anon`)).toBeVisible();
+  const code = (db.prepare("SELECT code FROM lp_links WHERE target_url = ? ORDER BY id DESC LIMIT 1").get(`http://127.0.0.1:${http.port}/anon`) as { code: string }).code;
+  await setupCtx.close();
+
+  const before = linkByCode(code);
+  const clicks0 = before!.c;
+  const subs0 = before!.s;
+
+  // Anonymous visitor with dev=1: no permission grant → the real (non-dev)
+  // flow runs and must not count a subscriber; the click still counts.
+  const anonCtx = await context.browser()!.newContext();
+  const anonPage = await anonCtx.newPage();
+  await anonPage.goto(`/p/${code}?dev=1`);
+  await expect(anonPage.getByRole("heading", { name: "Get notified when we publish something new" })).toBeVisible();
+  await anonPage.getByRole("button", { name: "No thanks, take me there" }).click();
+  await anonPage.waitForURL(new RegExp(`127\\.0\\.0\\.1:${http.port}/anon`));
+  const url = new URL(anonPage.url());
+  expect(url.searchParams.get("sub")).toBeNull();
+  expect(linkByCode(code)!.s).toBe(subs0);
+  expect(linkByCode(code)!.c).toBe(clicks0 + 1);
+  await anonCtx.close();
 });
 
 test("deleting a link with a fallback keeps the code redirecting", async ({ page }) => {

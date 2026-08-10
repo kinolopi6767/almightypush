@@ -8,14 +8,18 @@ import { runSendCycle } from "./sender";
 import { runScheduler } from "./scheduler";
 import { runAutomations } from "./automation";
 import { readSetting, runCleanup } from "./cleanup";
+import { nextPollMs } from "./poll";
 
-const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
+const WORK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
+const IDLE_MS = Number(process.env.WORKER_IDLE_TICK_MS ?? 60_000);
 let running = false;
+let traceActive = false;
 
 /**
  * Background worker process: sender engine (M1) + scheduler (M2) + more later.
  * Every tick: start due scheduled campaigns, then run one send cycle against
- * the shared SQLite file.
+ * the shared SQLite file. Cadence is adaptive — fast while there is work,
+ * a 60s idle poll when the system is quiet (m9).
  */
 function main() {
   const env = parseEnv(baseEnvSchema);
@@ -47,12 +51,15 @@ function main() {
         logger.info({ ...stats }, "send cycle complete");
       }
       const retention = Number(readSetting(db, "cleanup_unsubs_retention_days") ?? 0);
+      let cleaned = 0;
       if (retention > 0) {
         const cleanup = runCleanup(db, { retentionDays: retention });
+        cleaned = cleanup.deleted;
         if (cleanup.ran && cleanup.deleted > 0) {
           logger.info({ deleted: cleanup.deleted }, "cleanup purged unsubscribed subscribers");
         }
       }
+      traceActive = sched.campaignsStarted > 0 || auto.ran > 0 || stats.claimed > 0 || cleaned > 0;
     } catch (error) {
       logger.error({ err: error }, "tick failed");
     } finally {
@@ -60,12 +67,11 @@ function main() {
     }
   };
 
-  const timer = setInterval(() => void tick(), TICK_MS);
-  void tick();
+  const loop = () => setTimeout(() => void tick().then(loop), nextPollMs(traceActive, WORK_MS, IDLE_MS));
+  void tick().then(loop);
 
   const shutdown = () => {
     logger.info("worker shutting down");
-    clearInterval(timer);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

@@ -22,6 +22,13 @@ export interface PushMessage {
   /** URL the notification opens on click */
   url?: string;
   buttons?: PushButton[];
+  /**
+   * Delivery tracking: the service worker echoes these back in the click
+   * beacon so the panel can attribute the click to the exact delivery row.
+   */
+  deliveryId?: number;
+  campaignId?: number;
+  subscriberId?: number;
 }
 
 export interface VapidDetails {

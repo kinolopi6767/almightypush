@@ -78,6 +78,7 @@ export function startWorker(): Promise<{ stop: () => Promise<void> }> {
     DATABASE_PATH: process.env.E2E_DB_PATH,
     APP_ENC_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     WORKER_TICK_MS: "1000",
+    WORKER_IDLE_TICK_MS: "1000",
     NODE_TLS_REJECT_UNAUTHORIZED: "0",
   };
   const child: ChildProcess = spawn(process.execPath, [WORKER_ENTRY], {

@@ -7,7 +7,7 @@ import { resolveDbPath } from "@pushpanel/db";
 // cached in process.env because Playwright re-evaluates this config module
 // once per worker process — Date.now() here would otherwise diverge.
 process.env.E2E_DB_PATH ??= resolveDbPath(`./data/e2e-${Date.now()}.db`);
-const dbPath = process.env.E2E_DB_PATH;
+const dbPath = process.env.E2E_DB_PATH as string;
 
 const appEnv = {
   DATABASE_PATH: dbPath,
@@ -17,6 +17,9 @@ const appEnv = {
   APP_ENC_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   // Tests use a self-signed TLS mock push service (web-push always uses https).
   NODE_TLS_REJECT_UNAUTHORIZED: "0",
+  // E2E signs in repeatedly and rapidly; disable the login brute-force guard.
+  LOGIN_RATE_LIMIT: "1000",
+  SUBSCRIBE_RATE_LIMIT: "1000",
 };
 
 export default defineConfig({

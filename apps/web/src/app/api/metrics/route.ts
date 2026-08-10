@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { resolveDbPath } from "@pushpanel/db";
-import { deliveries, automations } from "@pushpanel/db/schema";
+import { automations } from "@pushpanel/db/schema";
 
 export const dynamic = "force-dynamic";
 

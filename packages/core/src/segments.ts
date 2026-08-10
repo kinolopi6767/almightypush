@@ -90,7 +90,7 @@ export function normalizeCondition(input: unknown): SegmentCondition | null {
   if (!isSegmentField(c.field) || !isSegmentOp(c.op)) return null;
   if (!FIELD_OPS[c.field].includes(c.op)) return null;
 
-  let value = c.value;
+  const value = c.value;
   if (c.op === "in") {
     if (!Array.isArray(value) || value.length === 0) return null;
     if (!value.every((v) => typeof v === "string" || typeof v === "number")) return null;

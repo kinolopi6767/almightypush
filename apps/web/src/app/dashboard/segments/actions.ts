@@ -122,7 +122,6 @@ export interface SegmentEstimateResult {
 export async function estimateSegmentDraft(formData: FormData): Promise<SegmentEstimateResult> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { count: 0, error: "Not signed in" };
-  const workspaceId = Number(session.user.workspaceId);
 
   let domainIds: number[] = [];
   let groups: unknown = [];

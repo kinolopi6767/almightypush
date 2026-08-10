@@ -2,9 +2,10 @@
 
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { campaigns, deliveries, domains, subscribers } from "@pushpanel/db/schema";
+import { campaigns, deliveries, domains, settings, subscribers } from "@pushpanel/db/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { naiveLocalToUtcMs } from "@pushpanel/core";
 import { z } from "zod";
 
 export type CampaignFormState = { error?: string; ok?: boolean; id?: number } | undefined;
@@ -57,11 +58,19 @@ export async function createCampaignAction(
     ? { kind: "segment", segment_id: parsed.data.segmentId }
     : { kind: "all" };
 
+  // The datetime-local value is a naive wall clock reading: interpret it in
+  // the panel's configured timezone (falls back to the server's local time).
   let scheduleAt: string;
   if (parsed.data.schedule) {
-    const t = new Date(parsed.data.schedule);
-    if (Number.isNaN(t.getTime())) return { error: "Invalid schedule time" };
-    scheduleAt = t.toISOString();
+    const [tzRow] = db
+      .select({ value: settings.value })
+      .from(settings)
+      .where(eq(settings.key, "timezone"))
+      .limit(1)
+      .all();
+    const t = naiveLocalToUtcMs(parsed.data.schedule, tzRow?.value || undefined);
+    if (Number.isNaN(t)) return { error: "Invalid schedule time" };
+    scheduleAt = new Date(t).toISOString();
   } else {
     scheduleAt = new Date().toISOString();
   }

@@ -64,7 +64,9 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
     icon_url: payload.icon_url || null,
     image_url: payload.image_url || null,
     launch_url: payload.launch_url || null,
-    audience_json: JSON.stringify({ kind: "all", ids: opts.subscriberIds ?? [] }),
+    audience_json: JSON.stringify(
+      opts.subscriberIds ? { kind: "manual", ids: opts.subscriberIds } : { kind: "all" },
+    ),
     source: "automation",
     status: delayed ? "scheduled" : "sending",
     scheduled: delayed ? 1 : 0,
@@ -72,7 +74,7 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
   if (delayed) values.schedule_at = new Date(now.getTime() + delaySeconds * 1000).toISOString();
 
   let subscriberIds = opts.subscriberIds;
-  if (!subscriberIds) subscriberIds = activeSubscriberIds(db, opts.domainId);
+  if (subscriberIds === undefined) subscriberIds = activeSubscriberIds(db, opts.domainId);
 
   return db.transaction((tx) => {
     const inserted = tx.insert(campaigns).values(values).run();
@@ -80,7 +82,7 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
     if (delayed) return { campaignId, queued: 0, delayed: subscriberIds.length };
     for (const subscriberId of subscriberIds) {
       tx.insert(deliveries)
-        .values({ campaign_id: campaignId, subscriber_id: subscriberId, domain_id: opts.domainId })
+        .values({ campaign_id: campaignId, subscriber_id: subscriberId, domain_id: opts.domainId, requested_at: now.getTime() })
         .run();
     }
     return { campaignId, queued: subscriberIds.length, delayed: 0 };

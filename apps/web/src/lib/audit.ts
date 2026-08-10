@@ -20,7 +20,10 @@ export type AuditAction =
   | "link.delete"
   | "settings.update"
   | "backup.create"
-  | "backup.delete";
+  | "backup.delete"
+  | "profile.update"
+  | "profile.totp.enabled"
+  | "profile.totp.disabled";
 
 /** Append a row to the audit log. Best-effort: never throws into callers. */
 export function logAudit(

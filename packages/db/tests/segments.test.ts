@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { createMemoryDb } from "../src/index";
 import { domains, segments, subscribers } from "../src/schema";
 import { workspaces } from "../src/schema/core";
@@ -142,8 +143,8 @@ describe("refreshSegmentEstimate", () => {
         .run().lastInsertRowid,
     );
     refreshSegmentEstimate(db, segId, wsId);
-    const [row] = db.select({ count: segments.estimate_count, at: segments.estimate_at }).from(segments).where(segments.id === segId).all();
-    expect(row.count).toBe(2);
-    expect(row.at).toBeTruthy();
+    const [row] = db.select({ count: segments.estimate_count, at: segments.estimate_at }).from(segments).where(eq(segments.id, segId)).all();
+    expect(row?.count).toBe(2);
+    expect(row?.at).toBeTruthy();
   });
 });

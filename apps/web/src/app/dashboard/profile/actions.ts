@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@pushpanel/core";
 import { users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
+import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 
 export type ProfileFormState = { ok?: boolean; error?: string } | undefined;
@@ -38,14 +39,26 @@ export async function updateProfileAction(
   }
 
   const changes: { name?: string; password_hash?: string } = { name: parsed.data.name };
-  if (parsed.data.newPassword && parsed.data.newPassword.length >= 10) {
-    changes.password_hash = await hashPassword(parsed.data.newPassword);
+  const newPassword = parsed.data.newPassword;
+  const passwordChanged = Boolean(newPassword && newPassword.length >= 10);
+  if (newPassword && newPassword.length >= 10) {
+    changes.password_hash = await hashPassword(newPassword);
   }
 
   db.update(users)
     .set(changes)
     .where(eq(users.id, user.id))
     .run();
+
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (workspaceId) {
+    logAudit(db, {
+      workspaceId,
+      userId: user.id,
+      action: "profile.update",
+      meta: { password: passwordChanged ? "changed" : "unchanged" },
+    });
+  }
 
   revalidatePath("/dashboard/profile");
   return { ok: true };

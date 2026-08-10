@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import Database from "better-sqlite3";
-import { signWebhook } from "@pushpanel/core";
+import { sha256Hex, signWebhook } from "@pushpanel/core";
 import {
   createDomain,
   signInViaUi,
@@ -93,6 +93,67 @@ test("welcome push fires on the first subscribe", async ({ page, request }) => {
   await expect
     .poll(() => db.prepare("SELECT status FROM deliveries WHERE domain_id = ?").get(domainId), { timeout: 10_000 })
     .toMatchObject({ status: "sent" });
+});
+
+test("delayed welcome push targets only the new subscriber", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await signInViaUi(page);
+  const domainId = await createDomain(page, `welcome-late-${Date.now()}.example.test`);
+
+  await createAutomationViaUi(page, {
+    name: `Late welcome ${Date.now()}`,
+    type: "welcome_push",
+    domainId: String(domainId),
+    title: "Welcome later",
+    message: "You are the one",
+    delay_seconds: "5",
+  });
+
+  const lateA = `welcome-late-a-${Date.now()}`;
+  const lateB = `welcome-late-b-${Date.now()}`;
+  const endpointOf = (label: string) => `https://127.0.0.1:${mock.port}/push/${label}`;
+
+  await subscribeViaApi(request, mock, domainId, lateA);
+
+  // the delayed campaign is created for exactly this subscriber
+  await expect.poll(() => countCampaigns(domainId, "Welcome later"), { timeout: 10_000 }).toBe(1);
+  const campaignId = (db.prepare("SELECT id FROM campaigns WHERE domain_id = ? AND title = 'Welcome later'").get(domainId) as { id: number }).id;
+  // it is scheduled (delay 5s) — wait for the scheduler to start it and
+  // enqueue a delivery aimed only at the new subscriber
+  await expect
+    .poll(
+      () => {
+        const rows = db
+          .prepare("SELECT d.campaign_id AS c, s.token_hash AS h FROM deliveries d JOIN subscribers s ON s.id = d.subscriber_id WHERE d.campaign_id = ?")
+          .all(campaignId) as { c: number; h: string }[];
+        return rows.length === 1 && rows[0]!.h === sha256Hex(endpointOf(lateA)) ? 1 : 0;
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(1);
+
+  // it delivers only to the new subscriber
+  await expect.poll(() => mock.received.some((r) => r.path === `/push/${lateA}`), { timeout: 30_000, intervals: [500, 1000] }).toBe(true);
+  expect(mock.received.some((r) => r.path === `/push/${lateB}`)).toBe(false);
+
+  // a second subscriber gets its own campaign aimed only at it
+  await subscribeViaApi(request, mock, domainId, lateB);
+  await expect.poll(() => countCampaigns(domainId, "Welcome later"), { timeout: 10_000 }).toBe(2);
+  // again the scheduler starts it after the delay — wait for both deliveries
+  await expect
+    .poll(
+      () => {
+        const rows = db
+          .prepare(
+            "SELECT d.campaign_id AS c, s.token_hash AS h FROM deliveries d JOIN subscribers s ON s.id = d.subscriber_id WHERE d.campaign_id IN (SELECT id FROM campaigns WHERE domain_id = ? AND title = 'Welcome later') ORDER BY d.campaign_id",
+          )
+          .all(domainId) as { c: number; h: string }[];
+        return rows.length === 2 && rows.map((r) => r.h).sort().join() === [sha256Hex(endpointOf(lateA)), sha256Hex(endpointOf(lateB))].sort().join() ? 1 : 0;
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(1);
+  await expect.poll(() => mock.received.some((r) => r.path === `/push/${lateB}`), { timeout: 30_000, intervals: [500, 1000] }).toBe(true);
 });
 
 test("webhook trigger runs push_on_publish automation", async ({ page, request }) => {

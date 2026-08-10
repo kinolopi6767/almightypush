@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { campaigns, deliveries, domains, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
 
@@ -78,7 +78,12 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
   db.transaction((tx) => {
     for (const subscriberId of audience) {
       tx.insert(deliveries)
-        .values({ campaign_id: campaign.id, subscriber_id: subscriberId, domain_id: campaign.domain_id! })
+        .values({
+          campaign_id: campaign.id,
+          subscriber_id: subscriberId,
+          domain_id: campaign.domain_id!,
+          requested_at: Date.now(),
+        })
         .run();
     }
     tx.update(campaigns)
@@ -90,14 +95,25 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
   return { queued: audience.length, skipped: 0 };
 }
 
-/** M2: `{ kind: 'all' }`. M5+: segments/manual lists via kind: 'segment'. */
+/**
+ * Audience kinds (stored in campaigns.audience_json):
+ * - `{ kind: "all" }` — every active subscriber of the domain (M2)
+ * - `{ kind: "manual", ids: number[] }` — explicit subscriber list; ids are
+ *   re-validated against the domain at run time (M4 delayed welcome pushes,
+ *   so a delayed welcome never leaks to subscribers it wasn't meant for).
+ * - `{ kind: "segment", segment_id }` — segment membership (M5)
+ */
 function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): number[] {
   let kind = "all";
   let segmentId: number | undefined;
+  let ids: number[] | undefined;
   try {
     const parsed = campaign.audience_json ? JSON.parse(campaign.audience_json) : {};
     kind = parsed.kind ?? "all";
     segmentId = parsed.segment_id;
+    if (Array.isArray(parsed.ids)) {
+      ids = parsed.ids.filter((id: unknown): id is number => Number.isFinite(id as number) && (id as number) > 0);
+    }
   } catch {
     kind = "all";
   }
@@ -109,6 +125,15 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
       domainId,
     });
     return match.subscriberIds;
+  }
+  if (kind === "manual") {
+    if (!ids || ids.length === 0) return [];
+    const rows = db
+      .select({ id: subscribers.id })
+      .from(subscribers)
+      .where(and(inArray(subscribers.id, ids), eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+      .all();
+    return rows.map((r) => r.id);
   }
   if (kind !== "all") return [];
 

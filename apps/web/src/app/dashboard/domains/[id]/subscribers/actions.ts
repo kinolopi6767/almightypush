@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { createCipher, sha256Hex } from "@pushpanel/core";
+import { createCipher, csvCell, parseCsv, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
 
@@ -83,23 +83,28 @@ export async function exportSubscribersAction(
   await requireOwnedDomain(domainId);
   const rows = db.select().from(subscribers).where(eq(subscribers.domain_id, domainId)).all();
   const cipher = createCipher(process.env.APP_ENC_KEY);
-  const header = "id,endpoint,browser,os,device,country,state,subscribe_url,subscribe_at,last_active_at,unsubscribed_at";
+  // Round-trip guarantee: the import path requires p256dh + auth, so the
+  // export must include them or exported files could never be re-imported.
+  const header = "id,endpoint,p256dh,auth,browser,os,device,country,state,subscribe_url,subscribe_at,last_active_at,unsubscribed_at,provider";
   const lines = rows.map((s) => {
     let endpoint = "";
+    let p256dh = "";
+    let auth = "";
     if (s.token) {
       try {
-        endpoint = (JSON.parse(cipher.decrypt(s.token)) as { endpoint?: string }).endpoint ?? "";
+        const parsed = JSON.parse(cipher.decrypt(s.token)) as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+        endpoint = parsed.endpoint ?? "";
+        p256dh = parsed.keys?.p256dh ?? "";
+        auth = parsed.keys?.auth ?? "";
       } catch {
         endpoint = "";
       }
     }
-    const csvCell = (v: string | null | undefined) => {
-      const str = v ?? "";
-      return `"${str.replace(/"/g, '""')}"`;
-    };
     return [
       s.id,
       csvCell(endpoint),
+      csvCell(p256dh),
+      csvCell(auth),
       csvCell(s.browser),
       csvCell(s.os),
       csvCell(s.device),
@@ -109,6 +114,7 @@ export async function exportSubscribersAction(
       csvCell(s.subscribe_at),
       csvCell(s.last_active_at),
       csvCell(s.unsubscribed_at),
+      csvCell(s.provider),
     ].join(",");
   });
   const csv = [header, ...lines].join("\n");
@@ -128,7 +134,7 @@ export async function importSubscribersAction(
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a file to import" };
   const text = (await file.text()).slice(0, 2_000_000);
 
-  const parsed: { endpoint?: string; p256dh?: string; auth?: string; browser?: string; os?: string; device?: string; subscribe_url?: string }[] = [];
+  const parsed: { endpoint?: string; p256dh?: string; auth?: string; browser?: string; os?: string; device?: string; subscribe_url?: string; provider?: string }[] = [];
   try {
     const firstLine = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? "";
     if (firstLine.trim().startsWith("{")) {
@@ -143,26 +149,27 @@ export async function importSubscribersAction(
         }
       }
     } else {
-      const [header, ...rows] = text.split(/\r?\n/);
-      if (!header) return { error: "File is empty" };
-      const cols = header.split(",").map((c) => c.trim().toLowerCase());
+      const rows = parseCsv(text);
+      const [headerRow, ...body] = rows;
+      if (!headerRow) return { error: "File is empty" };
+      const cols = headerRow.map((c) => c.trim().toLowerCase());
       const idx = (name: string) => cols.indexOf(name);
-      const get = (row: string[], name: string) => {
+      const cell = (row: string[], name: string) => {
         const i = idx(name);
-        if (i < 0) return undefined;
-        const cell = row[i] ?? "";
-        return cell.startsWith('"') && cell.endsWith('"') ? cell.slice(1, -1).replace(/""/g, '"') : cell;
+        return i < 0 ? undefined : (row[i] ?? "").trim();
       };
-      for (const line of rows) {
-        if (!line.trim() || parsed.length >= IMPORT_LINE_LIMIT) continue;
+      for (const line of body) {
+        if (line.every((c) => c === "")) continue;
+        if (parsed.length >= IMPORT_LINE_LIMIT) break;
         parsed.push({
-          endpoint: get(line.split(","), "endpoint"),
-          p256dh: get(line.split(","), "p256dh"),
-          auth: get(line.split(","), "auth"),
-          browser: get(line.split(","), "browser"),
-          os: get(line.split(","), "os"),
-          device: get(line.split(","), "device"),
-          subscribe_url: get(line.split(","), "subscribe_url"),
+          endpoint: cell(line, "endpoint"),
+          p256dh: cell(line, "p256dh"),
+          auth: cell(line, "auth"),
+          browser: cell(line, "browser"),
+          os: cell(line, "os"),
+          device: cell(line, "device"),
+          subscribe_url: cell(line, "subscribe_url"),
+          provider: cell(line, "provider"),
         });
       }
     }
@@ -210,7 +217,7 @@ export async function importSubscribersAction(
         domain_id: domainId,
         token: cipher.encrypt(JSON.stringify({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } })),
         token_hash: tokenHash,
-        provider: "vapid",
+        provider: row.provider?.trim() || "vapid",
         browser: row.browser?.trim() || null,
         os: row.os?.trim() || null,
         device: row.device?.trim() || null,

@@ -28,7 +28,7 @@ test("creating a domain and a segment records audit entries", async ({ page }) =
   await expect(page.getByText(/domain #\d+/).first()).toBeVisible();
 });
 
-test("cancel a campaign records campaign.cancel", async ({ page, request }) => {
+test("cancel a campaign records campaign.cancel", async ({ page }) => {
   test.setTimeout(120_000);
   await signInViaUi(page);
   const suffix = String(Date.now());

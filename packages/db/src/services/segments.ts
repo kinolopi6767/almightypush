@@ -1,9 +1,7 @@
-import { and, eq, isNull } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { and, eq } from "drizzle-orm";
 import type Database from "better-sqlite3";
 import { compileSegmentWhere, normalizeRules, type SegmentRules } from "@pushpanel/core";
-import { segments, subscribers } from "../schema";
-import type { allTables } from "../schema";
+import { segments } from "../schema";
 import type { PushDb } from "./automation";
 
 export type { PushDb };
@@ -12,7 +10,6 @@ export type { PushDb };
 type WithClient = PushDb & { $client: Database.Database };
 
 export interface ResolveSegmentOptions {
-  db: PushDb;
   workspaceId: number;
   segmentId: number;
   /** Scope to a specific campaign domain */

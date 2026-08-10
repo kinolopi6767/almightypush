@@ -1,4 +1,4 @@
-import { verifyPassword } from "@pushpanel/core";
+import { verifyPassword, verifyTotp } from "@pushpanel/core";
 import { db } from "@/lib/db";
 import { users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
@@ -9,6 +9,7 @@ import { z } from "zod";
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  totp: z.string().optional(),
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -31,6 +32,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user?.password_hash) return null;
         const ok = await verifyPassword(user.password_hash, parsed.data.password);
         if (!ok) return null;
+
+        // Two-factor: the code must be present and valid when enabled.
+        if (user.totp_enabled) {
+          if (!verifyTotp(user.totp_secret ?? "", parsed.data.totp ?? "")) return null;
+        }
 
         return {
           id: String(user.id),

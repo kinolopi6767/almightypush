@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { clientIp, envRateLimit, rateLimit } from "@/lib/rate-limit";
 import { createCipher, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
@@ -38,13 +39,22 @@ export async function POST(req: Request) {
   }
 
   const data = parsed.data;
+  const ip = clientIp(req.headers);
+  if (!rateLimit(`subscribe:${data.domainId}:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000)) {
+    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429 });
+  }
+
   const [domain] = db
-    .select({ id: domains.id, workspace_id: domains.workspace_id })
+    .select({ id: domains.id, workspace_id: domains.workspace_id, name: domains.name })
     .from(domains)
     .where(and(eq(domains.id, data.domainId), eq(domains.status, "active")))
     .limit(1)
     .all();
   if (!domain) return NextResponse.json({ ok: false, error: "Unknown domain" }, { status: 404 });
+
+  if (data.subscribeUrl && !originAllowed(data.subscribeUrl, domain.name, req.headers.get("host"))) {
+    return NextResponse.json({ ok: false, error: "subscribe_url does not match the domain" }, { status: 403 });
+  }
 
   const token = JSON.stringify(data.subscription);
   const tokenHash = sha256Hex(data.subscription.endpoint);
@@ -92,6 +102,24 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ ok: true, id: subscriberId });
+}
+
+/**
+ * The subscribing page's origin must belong to the domain it subscribes to
+ * (or a subdomain), or be the panel's own host (self-hosted sites and the
+ * built-in sandbox demo). This stops forged `subscribe_url` values.
+ */
+function originAllowed(subscribeUrl: string, domainName: string, requestHost: string | null): boolean {
+  let hostname = "";
+  try {
+    hostname = new URL(subscribeUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const name = domainName.toLowerCase().replace(/^\./, "");
+  if (hostname === name || hostname.endsWith(`.${name}`)) return true;
+  const panelHost = requestHost?.split(":")[0]?.toLowerCase();
+  return hostname === panelHost;
 }
 
 /** M4: event-driven welcome pushes — one campaign per active welcome automation. */

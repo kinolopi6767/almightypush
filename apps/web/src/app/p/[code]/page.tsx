@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { auth } from "@/auth";
 import { lpLinks } from "@pushpanel/db/schema";
 import { LandingClient } from "./landing-client";
 
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Notifications" };
 
-export default async function LandingPage({ params }: { params: Promise<{ code: string }> }) {
+export default async function LandingPage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ dev?: string }> }) {
   const { code } = await params;
   const [link] = await db
     .select({
@@ -46,6 +47,12 @@ export default async function LandingPage({ params }: { params: Promise<{ code: 
     }
   }
 
+  // `dev=1` simulates a subscription for headless e2e runs — it must never
+  // work for anonymous visitors, or anyone could inflate subscriber counts.
+  const wantsDev = (await searchParams).dev === "1";
+  const session = await auth();
+  const devMode = wantsDev && Boolean(session?.user);
+
   return (
     <html lang="en">
       <body style={{ margin: 0 }}>
@@ -58,6 +65,7 @@ export default async function LandingPage({ params }: { params: Promise<{ code: 
           forceSubscribe={Boolean(link.force_subscribe)}
           domainId={publicKey ? link.domain_id : null}
           publicKey={publicKey}
+          devMode={devMode}
         />
       </body>
     </html>

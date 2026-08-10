@@ -93,6 +93,8 @@ export const deliveries = sqliteTable(
     status: text("status").notNull().default("queued"),
     attempts: integer("attempts").notNull().default(0),
     next_attempt_at: integer("next_attempt_at"),
+    /** when this row was claimed as `sending` — crash recovery requeues stale claims */
+    claimed_at: integer("claimed_at"),
     error: text("error"),
     provider_msg: text("provider_msg"),
     requested_at: integer("requested_at"),

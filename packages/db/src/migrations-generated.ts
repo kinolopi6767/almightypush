@@ -22,5 +22,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0002_green_natasha_romanoff",
     "idx": 2,
     "sql": "ALTER TABLE `lp_links` ADD `deleted_at` text;"
+  },
+  {
+    "tag": "0003_add_claimed_at",
+    "idx": 3,
+    "sql": "ALTER TABLE `deliveries` ADD `claimed_at` integer;"
   }
 ];

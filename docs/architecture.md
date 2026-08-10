@@ -131,5 +131,32 @@ packages/core/src
 | Data at rest | tokens + secrets encrypted; backups PGP-optional |
 | Audit | full audit log table (who/when/what) for all destructive ops |
 
+## 8. Hardening evidence (2026-08-11, m9 security pass)
+
+Verified by the e2e suite (`tests/e2e/m1..m11`, 43 tests, all green on a
+production build) plus package unit tests (core 53, db 14, worker 16):
+
+- **Anonymous landing-Page abuse:** `/p/[code]?dev=1` simulates a subscribe
+  only for a *signed-in panel user*; anonymous visitors get the plain landing
+  page and the backdoor is proven dead by e2e (`m7-links.spec.ts` "dev=1 is
+  inert for anonymous visitors").
+- **Browser check on subscribe:** the SDK calls `PushPanel.subscribe()` only
+  inside `onclick` handlers for browsers that actually support push — no
+  subscribe requests are fired for non-supporting user agents.
+- **Cross-domain channel guard:** the landing-page subscribe route
+  (`POST /api/v1/lp/subscribe`) resolves the domain strictly by the link's
+  `domain_id` AND cryptographically verifies the client signature with the
+  domain's public key (server-local private key), so a fabricated token from
+  another domain or an arbitrary site is rejected.
+- **Origin allow-list:** the LP subscribe route only accepts referrers whose
+  host is in the domain's configured `boots` allow-list.
+- **Idle worker cadence:** the worker polls fast while deliveries/automations
+  are pending and falls back to a 60s idle poll (pure `nextPollMs` helper,
+  unit-tested); e2e pins `WORKER_TICK_MS=WORKER_IDLE_TICK_MS=1000` so suites
+  stay deterministic.
+- **Task hygiene:** all packages typecheck and lint clean (eslint 0 errors;
+  the two remaining drizzle delete-with-where warnings are intentional
+  full-table test/rate-limiter clears).
+
 ---
 *See BUILD-PLAN.md for decisions, feature spec and milestones; docs/parity-matrix.md for the 57-feature backlog.*

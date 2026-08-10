@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { createCipher, VapidPushProvider, type PushMessage, type PushProvider, type VapidConfig } from "@pushpanel/core";
 import {
   campaigns,
@@ -15,6 +15,14 @@ const BATCH_SIZE = 100;
 /** retry backoff: 30s * 2^(attempts-1), capped at 1h */
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 3_600_000;
+/** sends in flight per cycle — one bounded pool instead of a serial loop */
+const CONCURRENCY = 25;
+/**
+ * A delivery left `sending` longer than this is assumed to belong to a dead
+ * worker (crash) and is requeued so it still delivers and the campaign can
+ * finalize. Must be far above any realistic single-send time.
+ */
+const STALE_CLAIM_MS = 10 * 60_000;
 
 export interface SendCycleStats {
   claimed: number;
@@ -37,19 +45,24 @@ interface DeliveryRow {
 /**
  * One send cycle: claim queued deliveries, push them via the domain's VAPID
  * provider, persist terminal state + events. Returns per-bucket counts.
+ *
+ * The claim is conditional (`UPDATE ... WHERE status='queued'`), so two
+ * workers racing for the same rows claim disjoint sets — a delivery is never
+ * sent twice. Rows revived from a crashed worker (`claimed_at` too old) are
+ * requeued before claiming, so they are picked up again.
  */
-export async function runSendCycle(db: PushDb, encKey: string | undefined, provider: PushProvider = new VapidPushProvider()): Promise<SendCycleStats> {
+export async function runSendCycle(
+  db: PushDb,
+  encKey: string | undefined,
+  provider: PushProvider = new VapidPushProvider(),
+  now: number = Date.now(),
+): Promise<SendCycleStats> {
   const stats: SendCycleStats = { claimed: 0, sent: 0, failed: 0, gone: 0, requeued: 0 };
-  const now = Date.now();
 
-  const rows = db
-    .select({
-      id: deliveries.id,
-      campaign_id: deliveries.campaign_id,
-      subscriber_id: deliveries.subscriber_id,
-      domain_id: deliveries.domain_id,
-      attempts: deliveries.attempts,
-    })
+  requeueStaleClaims(db, now);
+
+  const candidateIds = db
+    .select({ id: deliveries.id })
     .from(deliveries)
     .where(
       and(
@@ -61,26 +74,72 @@ export async function runSendCycle(db: PushDb, encKey: string | undefined, provi
     .limit(BATCH_SIZE)
     .all();
 
+  if (candidateIds.length === 0) return stats;
+
+  const claimedChanges = db
+    .update(deliveries)
+    .set({ status: "sending", claimed_at: now, attempts: sql`attempts + 1` })
+    .where(and(inArray(deliveries.id, candidateIds.map((r) => r.id)), eq(deliveries.status, "queued")))
+    .run();
+  if (claimedChanges.changes === 0) return stats;
+
+  const rows = db
+    .select({
+      id: deliveries.id,
+      campaign_id: deliveries.campaign_id,
+      subscriber_id: deliveries.subscriber_id,
+      domain_id: deliveries.domain_id,
+      attempts: deliveries.attempts,
+    })
+    .from(deliveries)
+    .where(and(inArray(deliveries.id, candidateIds.map((r) => r.id)), eq(deliveries.status, "sending"), eq(deliveries.claimed_at, now)))
+    .orderBy(desc(deliveries.id))
+    .all();
+
   stats.claimed = rows.length;
   if (rows.length === 0) return stats;
 
-  db.update(deliveries)
-    .set({ status: "sending", attempts: sql`attempts + 1` })
-    .where(inArray(deliveries.id, rows.map((r) => r.id)))
-    .run();
-
-  const campaignIds = new Set<number>();
-  for (const row of rows) {
-    const outcome = await deliverOne(db, provider, encKey, row, now);
-    campaignIds.add(row.campaign_id);
-    if (outcome === "sent") stats.sent++;
-    else if (outcome === "gone") stats.gone++;
-    else if (outcome === "requeued") stats.requeued++;
+  const campaignIds = new Set(rows.map((r) => r.campaign_id));
+  const outcomes = await runPool(rows, CONCURRENCY, (row) => deliverOne(db, provider, encKey, row, now));
+  for (const outcome of outcomes) {
+    if (outcome.result === "sent") stats.sent++;
+    else if (outcome.result === "gone") stats.gone++;
+    else if (outcome.result === "requeued") stats.requeued++;
     else stats.failed++;
   }
 
   finalizeCampaigns(db, [...campaignIds]);
   return stats;
+}
+
+/** Revive deliveries stuck in `sending` past the stale threshold (crashed worker). */
+function requeueStaleClaims(db: PushDb, now: number): void {
+  db.update(deliveries)
+    .set({ status: "queued", claimed_at: null, next_attempt_at: null })
+    .where(and(eq(deliveries.status, "sending"), isNotNull(deliveries.claimed_at), sql`${deliveries.claimed_at} <= ${now - STALE_CLAIM_MS}`))
+    .run();
+}
+
+/**
+ * Bounded-concurrency runner: up to `size` awaits in flight at once.
+ * Results stay in input order, so callers keep deterministic accounting.
+ */
+async function runPool<T>(items: T[], size: number, fn: (item: T) => Promise<Outcome>): Promise<{ item: T; result: Outcome }[]> {
+  const results = new Array<{ item: T; result: Outcome }>(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      const item = items[idx]!;
+      try {
+        results[idx] = { item, result: await fn(item) };
+      } catch {
+        results[idx] = { item, result: "failed" };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, () => worker()));
+  return results;
 }
 
 type Outcome = "sent" | "gone" | "requeued" | "failed";
@@ -94,7 +153,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     .all();
   if (!sub?.token || sub.unsubscribed_at) {
     db.update(deliveries)
-      .set({ status: "failed", error: "subscriber missing or unsubscribed" })
+      .set({ status: "failed", error: "subscriber missing or unsubscribed", sent_at: now })
       .where(eq(deliveries.id, row.id))
       .run();
     return "failed";
@@ -113,9 +172,10 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     if (!config.publicKey || !config.privateKeyEnc) throw new Error("no vapid config");
   } catch (error) {
     db.update(deliveries)
-      .set({ status: "failed", error: `vapid config: ${(error as Error).message}` })
+      .set({ status: "failed", error: `vapid config: ${(error as Error).message}`, sent_at: now })
       .where(eq(deliveries.id, row.id))
       .run();
+    bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
 
@@ -126,7 +186,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     .limit(1)
     .all();
   if (!campaign) {
-    db.update(deliveries).set({ status: "failed", error: "campaign missing" }).where(eq(deliveries.id, row.id)).run();
+    db.update(deliveries).set({ status: "failed", error: "campaign missing", sent_at: now }).where(eq(deliveries.id, row.id)).run();
     return "failed";
   }
 
@@ -136,7 +196,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     subscription = JSON.parse(cipher.decrypt(sub.token));
   } catch (error) {
     db.update(deliveries)
-      .set({ status: "failed", error: `token decrypt: ${(error as Error).message}` })
+      .set({ status: "failed", error: `token decrypt: ${(error as Error).message}`, sent_at: now })
       .where(eq(deliveries.id, row.id))
       .run();
     return "failed";
@@ -147,6 +207,10 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     body: campaign.message ?? undefined,
     icon: campaign.icon_url ?? undefined,
     url: campaign.launch_url ?? undefined,
+    // M8: the service worker echoes these in its click beacon.
+    deliveryId: row.id,
+    campaignId: row.campaign_id,
+    subscriberId: row.subscriber_id ?? undefined,
   };
 
   const vapid = {
@@ -191,6 +255,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     return "gone";
   }
 
+  // `attempts` was incremented at claim time, so it includes this attempt.
   if (row.attempts >= MAX_ATTEMPTS) {
     db.update(deliveries)
       .set({ status: "failed", error: result.error ?? "unknown", sent_at: now })
@@ -202,7 +267,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
 
   const backoff = Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS);
   db.update(deliveries)
-    .set({ status: "queued", next_attempt_at: now + backoff, error: result.error ?? null })
+    .set({ status: "queued", claimed_at: null, next_attempt_at: now + backoff, error: result.error ?? null })
     .where(eq(deliveries.id, row.id))
     .run();
   return "requeued";

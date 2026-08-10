@@ -1,0 +1,1 @@
+ALTER TABLE `deliveries` ADD `claimed_at` integer;

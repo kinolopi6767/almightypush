@@ -45,7 +45,8 @@ export async function assertPublicHttpUrl(raw: string): Promise<UrlCheckResult> 
   return { ok: true, url };
 }
 
-function isPrivateIp(ip: string): boolean {
+/** True when the IP is in a non-public range (loopback, private, link-local, reserved). */
+export function isPrivateIp(ip: string): boolean {
   const v = isIP(ip);
   if (v === 4) {
     const parts = ip.split(".").map(Number);
@@ -55,15 +56,25 @@ function isPrivateIp(ip: string): boolean {
     if (a === 169 && b === 254) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (100.64.0.0/10)
+    if (a === 192 && b === 0) return true; // IETF protocol assignments incl. 192.0.0.9/10
+    if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
     if (a >= 224) return true;
     return false;
   }
   if (v === 6) {
+    // Normalize IPv4-mapped IPv6 (::ffff:192.168.1.1) and handle IPv6 ranges.
+    const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+    if (mapped) return isPrivateIp(mapped[1]!);
     const lower = ip.toLowerCase();
     if (lower === "::" || lower === "::1") return true;
-    if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
-    if (lower.startsWith("fe8")) return true;
-    if (lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb")) return true;
+    if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA fc00::/7
+    if (lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb")) return true; // link-local fe80::/10
+    if (lower.startsWith("2001:db8")) return true; // documentation ::/32
+    if (lower.startsWith("2001:10")) return true; // deprecated ORCHID 2001:10::/28
+    if (lower.startsWith("2001:20")) return true; // ORCHIDv2 2001:20::/28
+    if (lower.startsWith("64:ff9b")) return true; // NAT64 well-known prefix
+    if (lower.startsWith("100:")) return true; // discard-only 100::/64
     return false;
   }
   return false;
