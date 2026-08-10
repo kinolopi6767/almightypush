@@ -6,6 +6,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { templates } from "@pushpanel/db/schema";
+import { logAudit } from "@/lib/audit";
 
 export type TemplateFormState = { ok?: boolean; error?: string };
 
@@ -44,7 +45,7 @@ export async function createTemplateAction(_prev: TemplateFormState | undefined,
       launch_url: parsed.data.launch_url || null,
     })
     .run();
-
+  logAudit(db, { workspaceId, action: "template.create", entityType: "template", meta: { name: parsed.data.name } });
   revalidatePath("/dashboard/templates");
   return { ok: true };
 }
@@ -75,7 +76,7 @@ export async function updateTemplateAction(id: number, formData: FormData): Prom
     })
     .where(and(eq(templates.id, id), eq(templates.workspace_id, workspaceId)))
     .run();
-
+  logAudit(db, { workspaceId, action: "template.update", entityType: "template", entityId: id, meta: { name: parsed.data.name } });
   revalidatePath("/dashboard/templates");
   return { ok: true };
 }
@@ -87,6 +88,7 @@ export async function deleteTemplateAction(id: number): Promise<void> {
   db.delete(templates)
     .where(and(eq(templates.id, id), eq(templates.workspace_id, Number(session.user.workspaceId))))
     .run();
+  logAudit(db, { workspaceId: Number(session.user.workspaceId), action: "template.delete", entityType: "template", entityId: id });
   revalidatePath("/dashboard/templates");
 }
 

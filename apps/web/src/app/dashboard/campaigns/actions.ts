@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { campaigns, deliveries, domains, subscribers } from "@pushpanel/db/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 
 export type CampaignFormState = { error?: string; ok?: boolean; id?: number } | undefined;
@@ -82,6 +83,7 @@ export async function createCampaignAction(
     })
     .run();
   if (!campaign.lastInsertRowid) return { error: "Failed to create campaign" };
+  logAudit(db, { workspaceId, action: "campaign.create", entityType: "campaign", entityId: Number(campaign.lastInsertRowid), meta: { title: parsed.data.title } });
 
   return { ok: true, id: Number(campaign.lastInsertRowid) };
 }
@@ -114,6 +116,7 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
       .run();
   });
 
+  logAudit(db, { workspaceId, action: "campaign.cancel", entityType: "campaign", entityId: campaignId });
   return { ok: true };
 }
 

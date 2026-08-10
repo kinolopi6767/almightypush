@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { segments } from "@pushpanel/db/schema";
 import { estimateSegmentRules, refreshSegmentEstimate } from "@pushpanel/db";
+import { logAudit } from "@/lib/audit";
 import { normalizeRules, type SegmentRules } from "@pushpanel/core";
 
 export type SegmentFormState = { ok?: boolean; error?: string };
@@ -68,6 +69,7 @@ export async function createSegmentAction(_prev: SegmentFormState | undefined, f
     .run();
 
   refreshSegmentEstimate(db, Number(lastInsertRowid), workspaceId);
+  logAudit(db, { workspaceId, action: "segment.create", entityType: "segment", entityId: Number(lastInsertRowid), meta: { name: data.name } });
   revalidatePath("/dashboard/segments");
   return { ok: true };
 }
@@ -94,6 +96,7 @@ export async function updateSegmentAction(id: number, formData: FormData): Promi
     .run();
 
   refreshSegmentEstimate(db, id, workspaceId);
+  logAudit(db, { workspaceId, action: "segment.update", entityType: "segment", entityId: id, meta: { name: data.name } });
   revalidatePath("/dashboard/segments");
   return { ok: true };
 }
@@ -105,6 +108,7 @@ export async function deleteSegmentAction(id: number): Promise<{ ok: boolean; er
   db.delete(segments)
     .where(and(eq(segments.id, id), eq(segments.workspace_id, Number(session.user.workspaceId))))
     .run();
+  logAudit(db, { workspaceId: Number(session.user.workspaceId), action: "segment.delete", entityType: "segment", entityId: id });
   revalidatePath("/dashboard/segments");
   return { ok: true };
 }

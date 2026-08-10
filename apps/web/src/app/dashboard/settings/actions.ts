@@ -9,6 +9,7 @@ import { resolveDbPath } from "@pushpanel/db";
 import { backups, settings } from "@pushpanel/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { logAudit } from "@/lib/audit";
 
 export type SettingsFormState =
   | {
@@ -52,6 +53,9 @@ export async function updateSettingsAction(
     values.push({ key: "cleanup_unsubs_retention_days", value: String(parsed.data.cleanupRetentionDays) });
   }
 
+  const owner = await requireOwner().catch(() => null);
+  const workspaceId = owner ? Number(owner.user.workspaceId) : 0;
+
   for (const v of values) {
     db.insert(settings)
       .values(v)
@@ -59,6 +63,7 @@ export async function updateSettingsAction(
       .run();
   }
 
+  if (workspaceId) logAudit(db, { workspaceId, action: "settings.update" });
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }
@@ -101,6 +106,11 @@ export async function createBackupAction(): Promise<NonNullable<SettingsFormStat
     })
     .run();
 
+  const owner = await requireOwner().catch(() => null);
+  const wsId = owner ? Number(owner.user.workspaceId) : 0;
+  if (wsId) {
+    logAudit(db, { workspaceId: wsId, action: "backup.create", entityType: "backup", entityId: Number(inserted.lastInsertRowid), meta: { kind: "manual" } });
+  }
   revalidatePath("/dashboard/settings");
   return { ok: true, backupId: Number(inserted.lastInsertRowid) };
 }
@@ -116,6 +126,11 @@ export async function deleteBackupAction(backupId: number): Promise<NonNullable<
   if (!row) return { error: "Backup not found" };
 
   db.delete(backups).where(eq(backups.id, row.id)).run();
+  const owner2 = await requireOwner().catch(() => null);
+  const wsId2 = owner2 ? Number(owner2.user.workspaceId) : 0;
+  if (wsId2) {
+    logAudit(db, { workspaceId: wsId2, action: "backup.delete", entityType: "backup", entityId: backupId });
+  }
   if (row.location) {
     try {
       await unlink(row.location);

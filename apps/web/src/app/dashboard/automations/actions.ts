@@ -1,5 +1,6 @@
 "use server";
 
+import { logAudit } from "@/lib/audit";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -88,6 +89,7 @@ export async function createAutomationAction(_prev: AutomationFormState | undefi
     })
     .run();
 
+  logAudit(db, { workspaceId, action: "automation.create", entityType: "automation", meta: { name: data.name } });
   revalidatePath("/dashboard/automations");
   return { ok: true };
 }
@@ -127,6 +129,7 @@ export async function toggleAutomationAction(id: number): Promise<{ ok: boolean;
     .set({ status: row.status === "active" ? "paused" : "active", next_run_at: row.status === "active" ? null : new Date().toISOString() })
     .where(eq(automations.id, row.id))
     .run();
+  logAudit(db, { workspaceId, action: "automation.toggle", entityType: "automation", entityId: id, meta: { status: row.status === "active" ? "paused" : "active" } });
   revalidatePath("/dashboard/automations");
   return { ok: true };
 }
@@ -146,6 +149,7 @@ export async function runAutomationNowAction(id: number): Promise<{ ok: boolean;
   if (row.status !== "active") return { ok: false, error: "Automation is paused" };
 
   db.update(automations).set({ next_run_at: new Date().toISOString() }).where(eq(automations.id, row.id)).run();
+  logAudit(db, { workspaceId, action: "automation.run", entityType: "automation", entityId: id });
   revalidatePath("/dashboard/automations");
   return { ok: true };
 }
@@ -157,6 +161,7 @@ export async function deleteAutomationAction(id: number): Promise<{ ok: boolean;
   db.delete(automations)
     .where(and(eq(automations.id, id), eq(automations.workspace_id, Number(session.user.workspaceId))))
     .run();
+  logAudit(db, { workspaceId: Number(session.user.workspaceId), action: "automation.delete", entityType: "automation", entityId: id });
   revalidatePath("/dashboard/automations");
   return { ok: true };
 }

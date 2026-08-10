@@ -7,6 +7,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { lpLinks } from "@pushpanel/db/schema";
+import { logAudit } from "@/lib/audit";
 
 export type LinkFormState = { ok?: boolean; error?: string };
 
@@ -41,10 +42,11 @@ export async function createLinkAction(_prev: LinkFormState | undefined, formDat
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid link" };
 
+  const code = makeCode();
   db.insert(lpLinks)
     .values({
       workspace_id: workspaceId,
-      code: makeCode(),
+      code,
       target_url: parsed.data.target_url,
       prompt_text: parsed.data.prompt_text || null,
       force_subscribe: parsed.data.force_subscribe,
@@ -52,7 +54,7 @@ export async function createLinkAction(_prev: LinkFormState | undefined, formDat
       deleted_target_url: parsed.data.deleted_target_url || null,
     })
     .run();
-
+  logAudit(db, { workspaceId, action: "link.create", entityType: "link", meta: { code } });
   revalidatePath("/dashboard/links");
   return { ok: true };
 }
@@ -77,6 +79,7 @@ export async function deleteLinkAction(id: number): Promise<void> {
   } else {
     db.delete(lpLinks).where(eq(lpLinks.id, id)).run();
   }
+  logAudit(db, { workspaceId: Number(session.user.workspaceId), action: "link.delete", entityType: "link", entityId: id });
   revalidatePath("/dashboard/links");
 }
 

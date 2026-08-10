@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { backups, settings } from "@pushpanel/db/schema";
+import { auditLog, backups, settings } from "@pushpanel/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { SettingsForm } from "./settings-form";
 import { BackupsPanel } from "./settings-form";
@@ -33,6 +33,21 @@ export default async function SettingsPage() {
     .limit(50)
     .all();
 
+  const auditRows = await db
+    .select({
+      id: auditLog.id,
+      action: auditLog.action,
+      entity_type: auditLog.entity_type,
+      entity_id: auditLog.entity_id,
+      meta_json: auditLog.meta_json,
+      ts: auditLog.ts,
+    })
+    .from(auditLog)
+    .where(eq(auditLog.workspace_id, Number(session.user.workspaceId)))
+    .orderBy(desc(auditLog.ts), desc(auditLog.id))
+    .limit(20)
+    .all();
+
   return (
     <div className="space-y-8">
       <div>
@@ -43,6 +58,33 @@ export default async function SettingsPage() {
       <SettingsForm timezone={timezoneRow?.value ?? ""} retentionDays={retentionRow?.value ?? "30"} />
 
       <BackupsPanel rows={backupList} />
+
+      <section>
+        <h2 className="text-lg font-semibold">Audit log</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Recent workspace activity.</p>
+        <ul className="mt-3 space-y-1.5">
+          {auditRows.length === 0 && (
+            <li className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+              No activity yet.
+            </li>
+          )}
+          {auditRows.map((row) => (
+            <li key={row.id} className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
+              <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{row.action}</code>
+              {row.entity_type && (
+                <span className="text-muted-foreground">
+                  {row.entity_type}
+                  {row.entity_id ? ` #${row.entity_id}` : ""}
+                </span>
+              )}
+              {row.meta_json && <span className="truncate text-muted-foreground">{row.meta_json}</span>}
+              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                {new Date(row.ts).toLocaleString()}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <p className="text-xs text-muted-foreground">
         <Link href="/dashboard/profile" className="hover:underline">

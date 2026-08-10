@@ -6,6 +6,7 @@ import { createVapidConfig } from "@pushpanel/core";
 import { campaigns, deliveries, domains, subscribers } from "@pushpanel/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { logAudit } from "@/lib/audit";
 
 export type DomainFormState = { error?: string; ok?: boolean; id?: number; count?: number } | undefined;
 
@@ -53,6 +54,7 @@ export async function createDomainAction(
     })
     .run();
   if (!inserted.lastInsertRowid) return { error: "Failed to create domain" };
+  logAudit(db, { workspaceId, action: "domain.create", entityType: "domain", entityId: Number(inserted.lastInsertRowid), meta: { name: parsed.data.name } });
 
   return { ok: true, id: Number(inserted.lastInsertRowid) };
 }
