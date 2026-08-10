@@ -16,6 +16,7 @@ const createCampaignSchema = z.object({
   schedule: z.string().trim().optional().or(z.literal("")),
   audienceKind: z.enum(["all", "segment"]).default("all"),
   segmentId: z.coerce.number().int().positive().optional(),
+  templateId: z.coerce.number().int().positive().optional(),
 });
 
 export async function createCampaignAction(
@@ -35,6 +36,7 @@ export async function createCampaignAction(
     schedule: formData.get("schedule"),
     audienceKind: formData.get("audienceKind") ?? "all",
     segmentId: formData.get("segmentId") ?? undefined,
+    templateId: formData.get("templateId") ?? undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
@@ -72,6 +74,7 @@ export async function createCampaignAction(
       message: parsed.data.message || null,
       launch_url: parsed.data.url || null,
       audience_json: JSON.stringify(audience),
+      template_id: parsed.data.templateId ?? null,
       schedule_at: scheduleAt,
       scheduled: 1,
       status: "scheduled",

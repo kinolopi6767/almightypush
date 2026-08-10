@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { domains, segments } from "@pushpanel/db/schema";
+import { domains, segments, templates } from "@pushpanel/db/schema";
 import { auth } from "@/auth";
 import { eq } from "drizzle-orm";
 import { CampaignForm } from "../campaign-form";
@@ -15,6 +15,11 @@ export default async function NewCampaignPage() {
     .from(segments)
     .where(eq(segments.workspace_id, workspaceId))
     .all();
+  const templateRows = db
+    .select({ id: templates.id, name: templates.name, title: templates.title, message: templates.message, launch_url: templates.launch_url })
+    .from(templates)
+    .where(eq(templates.workspace_id, workspaceId))
+    .all();
 
   return (
     <>
@@ -23,7 +28,7 @@ export default async function NewCampaignPage() {
         Send a push to every active subscriber of a domain — or to a saved segment — immediately or on a schedule.
       </p>
       <div className="mt-8 max-w-xl">
-        <CampaignForm domains={domainRows} segments={segmentRows} />
+        <CampaignForm domains={domainRows} segments={segmentRows} templates={templateRows} />
       </div>
     </>
   );

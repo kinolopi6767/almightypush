@@ -7,18 +7,34 @@ import { createCampaignAction, type CampaignFormState } from "./actions";
 export function CampaignForm({
   domains,
   segments,
+  templates,
 }: {
   domains: { id: number; name: string }[];
   segments: { id: number; name: string; estimate_count: number | null }[];
+  templates: { id: number; name: string; title: string | null; message: string | null; launch_url: string | null }[];
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState<CampaignFormState, FormData>(createCampaignAction, undefined);
   const [audienceKind, setAudienceKind] = useState<"all" | "segment">("all");
   const [segmentId, setSegmentId] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [launchUrl, setLaunchUrl] = useState("");
 
   useEffect(() => {
     if (state?.ok && state.id) router.push(`/dashboard/campaigns/${state.id}`);
   }, [state, router]);
+
+  const applyTemplate = (id: string) => {
+    setTemplateId(id);
+    const t = templates.find((x) => String(x.id) === id);
+    if (t) {
+      if (t.title) setTitle(t.title);
+      if (t.message !== null) setMessage(t.message);
+      if (t.launch_url) setLaunchUrl(t.launch_url);
+    }
+  };
 
   return (
     <form action={formAction} className="rounded-xl border bg-card p-5">
@@ -27,6 +43,27 @@ export function CampaignForm({
         The worker starts the campaign the moment it is due and queues a delivery for every active subscriber.
       </p>
       <div className="mt-4 space-y-3">
+        {templates.length > 0 && (
+          <div>
+            <label htmlFor="templateId" className="text-sm font-medium">
+              Start from template
+            </label>
+            <select
+              id="templateId"
+              value={templateId}
+              onChange={(e) => applyTemplate(e.target.value)}
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">— blank —</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {templateId !== "" && <input type="hidden" name="templateId" value={templateId} />}
+          </div>
+        )}
         <div>
           <label htmlFor="domainId" className="text-sm font-medium">
             Domain
@@ -54,6 +91,8 @@ export function CampaignForm({
             name="title"
             required
             maxLength={120}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             placeholder="Big sale this weekend"
             className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
@@ -67,6 +106,8 @@ export function CampaignForm({
             name="message"
             maxLength={500}
             rows={2}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
             placeholder="Everything is 50% off until Sunday."
             className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
@@ -79,6 +120,8 @@ export function CampaignForm({
             id="url"
             name="url"
             type="url"
+            value={launchUrl}
+            onChange={(e) => setLaunchUrl(e.target.value)}
             placeholder="https://app.example.com/sale"
             className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
