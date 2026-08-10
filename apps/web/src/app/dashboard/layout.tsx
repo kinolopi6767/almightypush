@@ -11,6 +11,9 @@ const NAV: { href: string; label: string; disabled?: boolean }[] = [
   { href: "/dashboard/templates", label: "Templates" },
   { href: "/dashboard/links", label: "LP links" },
   { href: "/dashboard/automations", label: "Automations" },
+  { href: "/dashboard/status", label: "Status" },
+  { href: "/dashboard/api", label: "API" },
+  { href: "/dashboard/guides", label: "Guides" },
   { href: "/dashboard/settings", label: "Settings" },
   { href: "/dashboard/profile", label: "Profile" },
 ];
