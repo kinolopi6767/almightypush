@@ -91,6 +91,8 @@ export const deliveries = sqliteTable(
     domain_id: integer("domain_id").notNull(),
     /** queued | sending | sent | failed | unsubscribed(410) | cancelled */
     status: text("status").notNull().default("queued"),
+    /** E7: 'a' | 'b' — deterministic per-subscriber A/B split (NULL = single title) */
+    variant: text("variant"),
     attempts: integer("attempts").notNull().default(0),
     next_attempt_at: integer("next_attempt_at"),
     /** when this row was claimed as `sending` — crash recovery requeues stale claims */
@@ -116,6 +118,8 @@ export const events = sqliteTable(
     subscriber_id: integer("subscriber_id"),
     /** subscribed | delivered | clicked | unsubscribed | link_click | impression */
     type: text("type").notNull(),
+    /** click attribution: the delivery that produced this event (partial-unique per clicked) */
+    delivery_id: integer("delivery_id"),
     /** { button_index?, target_url?, ... } */
     meta_json: text("meta_json"),
     ts: text("ts")
@@ -125,5 +129,9 @@ export const events = sqliteTable(
   (t) => [
     index("idx_events_domain_ts").on(t.domain_id, t.ts),
     index("idx_events_camp").on(t.campaign_id, t.type),
+    // One clicked event per delivery — replay beacons can't double-count.
+    uniqueIndex("idx_events_clicked_delivery")
+      .on(t.delivery_id)
+      .where(sql`type = 'clicked' AND delivery_id IS NOT NULL`),
   ],
 );

@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { campaigns, domains, events } from "@pushpanel/db/schema";
@@ -15,6 +15,7 @@ export async function GET() {
   const session = await auth();
   if (!session?.user) return new Response("Unauthorized", { status: 401 });
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!wsId) return new Response("No workspace", { status: 400 });
 
   const rows = db
     .select({
@@ -28,20 +29,25 @@ export async function GET() {
     })
     .from(campaigns)
     .leftJoin(domains, eq(domains.id, campaigns.domain_id))
-    .where(wsId ? eq(campaigns.workspace_id, wsId) : sql`1=1`)
+    .where(eq(campaigns.workspace_id, wsId))
     .orderBy(sql`${campaigns.id} DESC`)
     .all();
 
   const clicks = db
     .select({ campaign_id: events.campaign_id, value: sql<number>`count(*)` })
     .from(events)
-    .where(eq(events.type, "clicked"))
+    .where(and(eq(events.type, "clicked"), rows.length > 0 ? inArray(events.campaign_id, rows.map((r) => r.id)) : sql`1=0`))
     .groupBy(events.campaign_id)
     .all();
   const clickMap = new Map(clicks.map((c) => [c.campaign_id, c.value]));
 
   const analytics: CampaignAnalyticsRow[] = rows.map((r) => {
-    const stats = r.stats_json ? (JSON.parse(r.stats_json) as Record<string, unknown>) : {};
+    let stats: Record<string, unknown> = {};
+    try {
+      stats = r.stats_json ? (JSON.parse(r.stats_json) as Record<string, unknown>) : {};
+    } catch {
+      stats = {};
+    }
     const perButton = (stats.perButton ?? {}) as Record<string, number>;
     let buttons: string[] = [];
     try {

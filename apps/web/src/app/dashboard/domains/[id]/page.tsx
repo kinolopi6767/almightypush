@@ -4,6 +4,8 @@ import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deliveries, domains, events, subscribers } from "@pushpanel/db/schema";
 import { TestPushForm } from "../test-push-form";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 
 export const metadata = { title: "Domain" };
 
@@ -12,11 +14,18 @@ interface Props {
 }
 
 export default async function DomainDetailPage({ params }: Props) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+
   const { id } = await params;
   const domainId = Number(id);
   if (!Number.isInteger(domainId)) notFound();
 
-  const [domain] = db.select().from(domains).where(eq(domains.id, domainId)).limit(1).all();
+  // Ownership: the domain must belong to the caller's workspace.
+  const [domain] = workspaceId
+    ? db.select().from(domains).where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId))).limit(1).all()
+    : [];
   if (!domain) notFound();
 
   const [subsRow] = db

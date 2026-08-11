@@ -50,6 +50,11 @@ export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "aut
   try {
     db.run(sql.raw(`VACUUM INTO '${target.replace(/'/g, "''")}'`));
   } catch {
+    // Failed attempt still counts: record it and mark last_backup_at so the
+    // scheduler backs off for the whole interval instead of hammering the
+    // (probably full/permission-broken) disk on every tick.
+    db.insert(backups).values({ kind, status: "failed", size_bytes: 0, location: target }).run();
+    writeSetting(db, "last_backup_at", new Date().toISOString());
     return false;
   }
 

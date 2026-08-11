@@ -2,14 +2,17 @@ import { db } from "@/lib/db";
 import { domains, segments, templates } from "@pushpanel/db/schema";
 import { auth } from "@/auth";
 import { eq } from "drizzle-orm";
+import { redirect } from "next/navigation";
 import { CampaignForm } from "../campaign-form";
 
 export const metadata = { title: "New campaign" };
 
 export default async function NewCampaignPage() {
   const session = await auth();
+  if (!session?.user) redirect("/login");
   const workspaceId = Number(session?.user?.workspaceId ?? 0);
-  const domainRows = db.select({ id: domains.id, name: domains.name }).from(domains).all();
+  if (!workspaceId) redirect("/setup");
+  const domainRows = db.select({ id: domains.id, name: domains.name }).from(domains).where(eq(domains.workspace_id, workspaceId)).all();
   const segmentRows = db
     .select({ id: segments.id, name: segments.name, estimate_count: segments.estimate_count })
     .from(segments)

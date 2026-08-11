@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createMemoryDb } from "../src/index";
 import { domains, segments, subscribers } from "../src/schema";
 import { workspaces } from "../src/schema/core";
+import type { SegmentRules } from "@pushpanel/core";
 import { estimateSegmentRules, refreshSegmentEstimate, resolveSegment } from "../src/services/segments";
 
 function seed(db: ReturnType<typeof createMemoryDb>["db"], client: ReturnType<typeof createMemoryDb>["client"]) {
@@ -120,11 +121,49 @@ describe("estimateSegmentRules", () => {
     const { wsId } = seed(db, client);
     const count = estimateSegmentRules(
       db,
+      wsId,
       { groups: [{ logic: "AND", conditions: [{ field: "device", op: "equals", value: "android" }] }] },
       undefined,
     );
     expect(count).toBe(2);
-    void wsId;
+  });
+
+  it("never counts subscribers from other workspaces when no domains are given", () => {
+    const { db, client } = createMemoryDb();
+    const { wsId } = seed(db, client);
+    const otherWsId = Number(
+      db
+        .insert(workspaces)
+        .values({ name: "other", created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .run().lastInsertRowid,
+    );
+    const otherDomain = Number(
+      db
+        .insert(domains)
+        .values({ workspace_id: otherWsId, name: "foreign.test", created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .run().lastInsertRowid,
+    );
+    db.insert(subscribers)
+      .values({
+        domain_id: otherDomain,
+        token_hash: "foreign-android",
+        device: "android",
+        os: "android",
+        subscribe_url: "https://foreign.test/",
+        subscribe_at: "2026-05-01T00:00:00.000Z",
+      })
+      .run();
+
+    const rules: SegmentRules = { groups: [{ logic: "AND", conditions: [{ field: "device", op: "equals", value: "android" }] }] };
+    expect(estimateSegmentRules(db, wsId, rules, undefined)).toBe(2);
+
+    const segId = Number(
+      db
+        .insert(segments)
+        .values({ workspace_id: wsId, name: "all-devices", conditions_json: JSON.stringify({ groups: [{ logic: "AND", conditions: [] }] }) })
+        .run().lastInsertRowid,
+    );
+    expect(resolveSegment(db, { workspaceId: wsId, segmentId: segId }).count).toBe(4);
   });
 });
 

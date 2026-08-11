@@ -14,7 +14,12 @@ export async function POST(req: Request) {
   // Origin, and are bounded by the per-link rate window below.
   const origin = req.headers.get("origin") ?? req.headers.get("referer");
   if (!origin) return NextResponse.json({ ok: false, error: "origin required" }, { status: 403 });
-  const host = new URL(origin).hostname.toLowerCase();
+  let host: string;
+  try {
+    host = new URL(origin).hostname.toLowerCase();
+  } catch {
+    return NextResponse.json({ ok: false, error: "origin not allowed" }, { status: 403 });
+  }
   const allowed = [hostFromUrl(process.env.APP_URL), req.headers.get("host")?.split(":")[0]?.toLowerCase()].filter(Boolean) as string[];
   if (allowed.length === 0 || !allowed.some((h) => host === h || host.endsWith(`.${h}`))) {
     return NextResponse.json({ ok: false, error: "origin not allowed" }, { status: 403 });

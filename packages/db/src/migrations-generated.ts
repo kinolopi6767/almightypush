@@ -32,5 +32,15 @@ export const migrations: MigrationEntry[] = [
     "tag": "0004_auto_pause_failures",
     "idx": 4,
     "sql": "ALTER TABLE `automations` ADD `consecutive_failures` integer DEFAULT 0;--> statement-breakpoint"
+  },
+  {
+    "tag": "0005_stale_power_man",
+    "idx": 5,
+    "sql": "ALTER TABLE `campaigns` ADD `title_b` text;--> statement-breakpoint\nALTER TABLE `deliveries` ADD `variant` text;"
+  },
+  {
+    "tag": "0006_click_dedup_delivery",
+    "idx": 6,
+    "sql": "ALTER TABLE `events` ADD `delivery_id` integer;--> statement-breakpoint\nCREATE UNIQUE INDEX `idx_events_clicked_delivery` ON `events` (`delivery_id`) WHERE `type` = 'clicked' AND `delivery_id` IS NOT NULL;\n"
   }
 ];

@@ -1,5 +1,5 @@
-import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { createCipher, VapidPushProvider, type PushMessage, type PushProvider, type VapidConfig } from "@pushpanel/core";
+import { and, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { createCipher, VapidPushProvider, type PushMessage, type PushProvider, type SendResult, type VapidConfig } from "@pushpanel/core";
 import {
   campaigns,
   deliveries,
@@ -44,6 +44,8 @@ interface DeliveryRow {
   subscriber_id: number | null;
   domain_id: number;
   attempts: number;
+  variant: string | null;
+  claimed_at: number | null;
 }
 
 /**
@@ -94,6 +96,8 @@ export async function runSendCycle(
       subscriber_id: deliveries.subscriber_id,
       domain_id: deliveries.domain_id,
       attempts: deliveries.attempts,
+      variant: deliveries.variant,
+      claimed_at: deliveries.claimed_at,
     })
     .from(deliveries)
     .where(and(inArray(deliveries.id, candidateIds.map((r) => r.id)), eq(deliveries.status, "sending"), eq(deliveries.claimed_at, now)))
@@ -176,6 +180,11 @@ export function withUtm(url: string | null | undefined, title: string, content: 
 }
 
 async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | undefined, row: DeliveryRow, now: number, utmEnabled = false): Promise<Outcome> {
+  // Stale-claim guard: a crashed worker's rows are requeued after
+  // STALE_CLAIM_MS; if a slow cycle finds its claim superseded, it must not
+  // push — the reviving worker will (double-sends are worse than none).
+  if (row.claimed_at !== now) return "requeued";
+
   const [sub] = db
     .select({ id: subscribers.id, token: subscribers.token, unsubscribed_at: subscribers.unsubscribed_at })
     .from(subscribers)
@@ -211,7 +220,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
   }
 
   const [campaign] = db
-    .select({ title: campaigns.title, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
+    .select({ title: campaigns.title, title_b: campaigns.title_b, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
     .from(campaigns)
     .where(eq(campaigns.id, row.campaign_id))
     .limit(1)
@@ -233,30 +242,48 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     return "failed";
   }
 
-  const message: PushMessage = {
-    title: campaign.title,
-    body: campaign.message ?? undefined,
-    icon: campaign.icon_url ?? undefined,
-    image: campaign.image_url ?? undefined,
-    url: utmEnabled ? withUtm(campaign.launch_url, campaign.title, "push") : (campaign.launch_url ?? undefined),
-    buttons: campaign.buttons_json
-      ? (JSON.parse(campaign.buttons_json) as NonNullable<PushMessage["buttons"]>).map((b) =>
-          utmEnabled ? { ...b, url: withUtm(b.url, campaign.title, "button") ?? b.url } : b,
-        )
-      : undefined,
-    // M8: the service worker echoes these in its click beacon.
-    deliveryId: row.id,
-    campaignId: row.campaign_id,
-    subscriberId: row.subscriber_id ?? undefined,
-  };
+  // E7: an A/B campaign (title_b set) sends the variant that the scheduler
+  // assigned to this delivery — B recipients see title_b, everyone else A.
+  const variantTitle = row.variant === "b" && campaign.title_b ? campaign.title_b : campaign.title;
 
-  const vapid = {
-    subject: config.subject,
-    publicKey: config.publicKey,
-    privateKey: cipher.decrypt(config.privateKeyEnc),
-  };
+  // Building the message (buttons_json parse), decrypting the VAPID key and
+  // sending can all throw. Without the catch, the delivery stays `sending`
+  // forever and the stale-claim revive loop retries it at MAX_ATTEMPTS-less
+  // infinite churn.
+  let result: SendResult;
+  try {
+    const message: PushMessage = {
+      title: variantTitle,
+      body: campaign.message ?? undefined,
+      icon: campaign.icon_url ?? undefined,
+      image: campaign.image_url ?? undefined,
+      url: utmEnabled ? withUtm(campaign.launch_url, variantTitle, "push") : (campaign.launch_url ?? undefined),
+      buttons: campaign.buttons_json
+        ? (JSON.parse(campaign.buttons_json) as NonNullable<PushMessage["buttons"]>).map((b) =>
+            utmEnabled ? { ...b, url: withUtm(b.url, variantTitle, "button") ?? b.url } : b,
+          )
+        : undefined,
+      // M8: the service worker echoes these in its click beacon.
+      deliveryId: row.id,
+      campaignId: row.campaign_id,
+      subscriberId: row.subscriber_id ?? undefined,
+    };
 
-  const result = await provider.send(subscription, message, { vapid, ttl: 86_400, urgency: "normal" });
+    const vapid = {
+      subject: config.subject,
+      publicKey: config.publicKey,
+      privateKey: cipher.decrypt(config.privateKeyEnc),
+    };
+
+    result = await provider.send(subscription, message, { vapid, ttl: 86_400, urgency: "normal" });
+  } catch (error) {
+    db.update(deliveries)
+      .set({ status: "failed", error: `send: ${(error as Error).message}`, sent_at: now })
+      .where(eq(deliveries.id, row.id))
+      .run();
+    bumpCampaignStat(db, row.campaign_id, "failed");
+    return "failed";
+  }
 
   if (result.ok) {
     db.update(deliveries)
@@ -264,7 +291,13 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
       .where(eq(deliveries.id, row.id))
       .run();
     db.insert(events)
-      .values({ domain_id: row.domain_id, campaign_id: row.campaign_id, subscriber_id: row.subscriber_id, type: "delivered" })
+      .values({
+        domain_id: row.domain_id,
+        campaign_id: row.campaign_id,
+        subscriber_id: row.subscriber_id,
+        type: "delivered",
+        meta_json: row.variant ? JSON.stringify({ variant: row.variant }) : undefined,
+      })
       .run();
     bumpCampaignStat(db, row.campaign_id, "delivered");
     return "sent";
@@ -276,10 +309,20 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
       .set({ status: "unsubscribed", error: `push service: ${result.statusCode}`, sent_at: now })
       .where(eq(deliveries.id, row.id))
       .run();
-    db.update(subscribers)
+    // Only count out subscribers this worker actually flipped (the row may
+    // already be unsubscribed via the unsubscribe route) — `changes === 1`
+    // guarantees the decrement matches the flip exactly once.
+    const flipped = db
+      .update(subscribers)
       .set({ unsubscribed_at: new Date().toISOString(), unsub_reason: reason })
-      .where(eq(subscribers.id, row.subscriber_id ?? -1))
+      .where(and(eq(subscribers.id, row.subscriber_id ?? -1), isNull(subscribers.unsubscribed_at)))
       .run();
+    if (flipped.changes === 1) {
+      db.update(domains)
+        .set({ subscribers_count: sql`MAX(${domains.subscribers_count} - 1, 0)` })
+        .where(eq(domains.id, row.domain_id))
+        .run();
+    }
     db.insert(events)
       .values({
         domain_id: row.domain_id,
@@ -311,16 +354,16 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
 }
 
 function bumpCampaignStat(db: PushDb, campaignId: number, key: "delivered" | "failed") {
-  const [campaign] = db
-    .select({ stats_json: campaigns.stats_json })
-    .from(campaigns)
+  // Single-statement JSON increment: safe under the pool's concurrency
+  // (read-modify-write in JS would drop increments on simultaneous sends).
+  db.update(campaigns)
+    .set({
+      stats_json: sql`CASE WHEN json_valid(${campaigns.stats_json})
+        THEN json_set(${campaigns.stats_json}, '$.${sql.raw(key)}', COALESCE(json_extract(${campaigns.stats_json}, '$.${sql.raw(key)}'), 0) + 1)
+        ELSE json_object('${sql.raw(key)}', 1) END`,
+    })
     .where(eq(campaigns.id, campaignId))
-    .limit(1)
-    .all();
-  if (!campaign) return;
-  const stats = (campaign.stats_json ? JSON.parse(campaign.stats_json) : {}) as Record<string, number>;
-  stats[key] = (stats[key] ?? 0) + 1;
-  db.update(campaigns).set({ stats_json: JSON.stringify(stats) }).where(eq(campaigns.id, campaignId)).run();
+    .run();
 }
 
 /** A campaign is done once it has no queued/sending deliveries left. */
@@ -331,8 +374,16 @@ function finalizeCampaigns(db: PushDb, campaignIds: number[]) {
       .from(deliveries)
       .where(and(eq(deliveries.campaign_id, id), inArray(deliveries.status, ["queued", "sending"])))
       .all();
-    if ((pending?.value ?? 0) === 0) {
-      db.update(campaigns).set({ status: "done", sent_at: new Date().toISOString() }).where(eq(campaigns.id, id)).run();
-    }
+    if ((pending?.value ?? 0) !== 0) continue;
+    const [sentRow] = db
+      .select({ value: count() })
+      .from(deliveries)
+      .where(and(eq(deliveries.campaign_id, id), eq(deliveries.status, "sent")))
+      .all();
+    const anySent = (sentRow?.value ?? 0) > 0;
+    db.update(campaigns)
+      .set({ status: anySent ? "done" : "failed", sent_at: new Date().toISOString() })
+      .where(eq(campaigns.id, id))
+      .run();
   }
 }

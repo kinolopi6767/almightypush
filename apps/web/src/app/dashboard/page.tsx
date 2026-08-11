@@ -11,24 +11,26 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!wsId) redirect("/setup");
 
   const [subsRow] = await db
     .select({ value: count() })
     .from(subscribers)
     .innerJoin(domains, eq(subscribers.domain_id, domains.id))
-    .where(and(isNull(subscribers.unsubscribed_at), wsId ? eq(domains.workspace_id, wsId) : sql`1=1`));
+    .where(and(isNull(subscribers.unsubscribed_at), eq(domains.workspace_id, wsId)));
 
-  const [domainsRow] = await db.select({ value: count() }).from(domains).where(sql`1=1`);
+  const [domainsRow] = await db.select({ value: count() }).from(domains).where(eq(domains.workspace_id, wsId));
 
   const [sentRow] = await db
     .select({ value: count() })
     .from(campaigns)
-    .where(and(eq(campaigns.status, "done"), wsId ? eq(campaigns.workspace_id, wsId) : sql`1=1`));
+    .where(and(eq(campaigns.status, "done"), eq(campaigns.workspace_id, wsId)));
 
   const [clicksRow] = await db
     .select({ value: count() })
     .from(events)
-    .where(eq(events.type, "clicked"));
+    .innerJoin(domains, eq(domains.id, events.domain_id))
+    .where(and(eq(events.type, "clicked"), eq(domains.workspace_id, wsId)));
 
   const cards = [
     ["Subscribers", subsRow?.value ?? 0],

@@ -2,8 +2,8 @@
 
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { campaigns, deliveries, domains, settings, subscribers } from "@pushpanel/db/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { campaigns, deliveries, domains, segments, settings, subscribers } from "@pushpanel/db/schema";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { InvalidTimezoneError, naiveLocalToUtcMs } from "@pushpanel/core";
 import { z } from "zod";
@@ -13,6 +13,7 @@ export type CampaignFormState = { error?: string; ok?: boolean; id?: number } | 
 const createCampaignSchema = z.object({
   domainId: z.coerce.number().int().positive("Choose a domain"),
   title: z.string().trim().min(1, "Title is required").max(120),
+  titleB: z.string().trim().max(120).optional().or(z.literal("")),
   message: z.string().trim().max(500).optional().or(z.literal("")),
   url: z.string().trim().url().optional().or(z.literal("")),
   iconUrl: z.string().trim().url().optional().or(z.literal("")),
@@ -43,6 +44,7 @@ export async function createCampaignAction(
   const parsed = createCampaignSchema.safeParse({
     domainId: formData.get("domainId"),
     title: formData.get("title"),
+    titleB: formData.get("titleB"),
     message: formData.get("message"),
     url: formData.get("url"),
     iconUrl: formData.get("iconUrl"),
@@ -65,6 +67,15 @@ export async function createCampaignAction(
 
   if (parsed.data.audienceKind === "segment" && !parsed.data.segmentId) {
     return { error: "Pick a segment for the audience" };
+  }
+  if (parsed.data.segmentId) {
+    const [segment] = db
+      .select({ id: segments.id })
+      .from(segments)
+      .where(and(eq(segments.id, parsed.data.segmentId), eq(segments.workspace_id, workspaceId)))
+      .limit(1)
+      .all();
+    if (!segment) return { error: "Segment not found" };
   }
 
   const audience = parsed.data.audienceKind === "segment"
@@ -105,6 +116,7 @@ export async function createCampaignAction(
       workspace_id: workspaceId,
       domain_id: domain.id,
       title: parsed.data.title,
+      title_b: parsed.data.titleB || null,
       message: parsed.data.message || null,
       launch_url: parsed.data.url || null,
       icon_url: parsed.data.iconUrl || null,
@@ -158,12 +170,12 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
 
 /** Active subscriber count for a domain — the audience a campaign will reach. */
 export async function audienceCountForDomain(domainId: number): Promise<number> {
-  const rows = db
-    .select({ id: subscribers.id })
+  const [row] = db
+    .select({ value: count() })
     .from(subscribers)
     .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
     .all();
-  return rows.length;
+  return row?.value ?? 0;
 }
 
 /**
@@ -180,6 +192,7 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
     .select({
       id: campaigns.id,
       title: campaigns.title,
+      title_b: campaigns.title_b,
       message: campaigns.message,
       icon_url: campaigns.icon_url,
       image_url: campaigns.image_url,
@@ -200,6 +213,7 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
       workspace_id: workspaceId,
       domain_id: source.domain_id,
       title: source.title,
+      title_b: source.title_b,
       message: source.message,
       icon_url: source.icon_url,
       image_url: source.image_url,

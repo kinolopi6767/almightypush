@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { lpLinks } from "@pushpanel/db/schema";
+import { lpLinks, domains } from "@pushpanel/db/schema";
 import { logAudit } from "@/lib/audit";
 
 export type LinkFormState = { ok?: boolean; error?: string };
@@ -42,6 +42,21 @@ export async function createLinkAction(_prev: LinkFormState | undefined, formDat
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid link" };
 
+  // The landing page renders that domain's VAPID public key and attributes
+  // subscribes to it — a link may only target one of the workspace's own
+  // domains.
+  let domainId: number | null = null;
+  if (parsed.data.domain_id) {
+    const [domain] = db
+      .select({ id: domains.id })
+      .from(domains)
+      .where(and(eq(domains.id, parsed.data.domain_id), eq(domains.workspace_id, workspaceId)))
+      .limit(1)
+      .all();
+    if (!domain) return { error: "Domain not found" };
+    domainId = domain.id;
+  }
+
   const code = makeCode();
   db.insert(lpLinks)
     .values({
@@ -50,7 +65,7 @@ export async function createLinkAction(_prev: LinkFormState | undefined, formDat
       target_url: parsed.data.target_url,
       prompt_text: parsed.data.prompt_text || null,
       force_subscribe: parsed.data.force_subscribe,
-      domain_id: parsed.data.domain_id ?? null,
+      domain_id: domainId,
       deleted_target_url: parsed.data.deleted_target_url || null,
     })
     .run();

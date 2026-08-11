@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { deliveries, events, campaigns } from "@pushpanel/db/schema";
@@ -35,6 +35,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ delivery
       domain_id: deliveries.domain_id,
       campaign_id: deliveries.campaign_id,
       subscriber_id: deliveries.subscriber_id,
+      variant: deliveries.variant,
     })
     .from(deliveries)
     .where(eq(deliveries.id, id))
@@ -55,26 +56,52 @@ export async function GET(req: Request, { params }: { params: Promise<{ delivery
     // CTA button clicks open the button's own URL and count toward that
     // button's per-button breakdown (E4).
     if (campaign?.buttons_json && btnIndex !== null && Number.isInteger(btnIndex)) {
-      const buttons = JSON.parse(campaign.buttons_json) as { label: string; url: string }[];
-      const pressed = buttons[btnIndex];
-      if (pressed) {
-        targetUrl = pressed.url;
-        buttonLabel = pressed.label;
+      try {
+        const buttons = JSON.parse(campaign.buttons_json) as { label: string; url: string }[];
+        const pressed = buttons[btnIndex];
+        if (pressed) {
+          targetUrl = pressed.url;
+          buttonLabel = pressed.label;
+        }
+      } catch {
+        // corrupt buttons_json — fall back to the launch URL
       }
     }
   }
 
-  db.insert(events)
-    .values({
-      domain_id: delivery.domain_id,
-      campaign_id: delivery.campaign_id,
-      subscriber_id: delivery.subscriber_id,
-      type: "clicked",
-      meta_json: JSON.stringify({ target_url: targetUrl, action: buttonLabel ?? (btnIndex !== null ? String(btnIndex) : null) }),
-    })
-    .run();
+  // Replay dedupe: the service worker may retry the beacon (network blips),
+  // and the mobile SDK sends `btn` as separate beacons. One delivery = one
+  // clicked event; duplicates would inflate analytics.
+  const [prior] = db
+    .select({ id: events.id })
+    .from(events)
+    .where(and(eq(events.delivery_id, id), eq(events.type, "clicked")))
+    .limit(1)
+    .all();
 
-  if (delivery.campaign_id && buttonLabel !== null) bumpButtonStat(delivery.campaign_id, buttonLabel);
+  if (!prior) {
+    try {
+      db.insert(events)
+        .values({
+          domain_id: delivery.domain_id,
+          campaign_id: delivery.campaign_id,
+          subscriber_id: delivery.subscriber_id,
+          delivery_id: id,
+          type: "clicked",
+          meta_json: JSON.stringify({
+            target_url: targetUrl,
+            action: buttonLabel ?? (btnIndex !== null ? String(btnIndex) : null),
+            variant: delivery.variant ?? undefined,
+          }),
+        })
+        .run();
+
+      if (delivery.campaign_id && buttonLabel !== null) bumpButtonStat(delivery.campaign_id, buttonLabel);
+    } catch {
+      // Two beacons raced the partial unique index; the other one won and
+      // already counted the click. Still redirect — never fail a redirect.
+    }
+  }
 
   const location = targetUrl || "/";
   return NextResponse.redirect(location, 302);

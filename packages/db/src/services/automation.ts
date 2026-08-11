@@ -80,6 +80,16 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
     const inserted = tx.insert(campaigns).values(values).run();
     const campaignId = Number(inserted.lastInsertRowid);
     if (delayed) return { campaignId, queued: 0, delayed: subscriberIds.length };
+    if (subscriberIds.length === 0) {
+      // Empty audience: finish immediately. A `sending` campaign with zero
+      // deliveries would never be finalized (nothing transitions it), so it
+      // would sit "sending" forever.
+      tx.update(campaigns)
+        .set({ status: "done", sent_at: now.toISOString() })
+        .where(eq(campaigns.id, campaignId))
+        .run();
+      return { campaignId, queued: 0, delayed: 0 };
+    }
     for (const subscriberId of subscriberIds) {
       tx.insert(deliveries)
         .values({ campaign_id: campaignId, subscriber_id: subscriberId, domain_id: opts.domainId, requested_at: now.getTime() })

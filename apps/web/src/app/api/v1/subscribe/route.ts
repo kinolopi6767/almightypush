@@ -72,6 +72,11 @@ export async function POST(req: Request) {
     .limit(1)
     .all();
 
+  if (!existing && activeSubscribers(domain.id) >= maxSubscribersPerDomain()) {
+    // Bounded growth: a public endpoint can otherwise be fed forever.
+    return NextResponse.json({ ok: false, error: "This site has reached its subscriber limit" }, { status: 429 });
+  }
+
   let subscriberId: number;
   if (existing) {
     subscriberId = existing.id;
@@ -80,21 +85,40 @@ export async function POST(req: Request) {
       .where(eq(subscribers.id, existing.id))
       .run();
   } else {
-    const inserted = db
-      .insert(subscribers)
-      .values({
-        domain_id: domain.id,
-        token: enc.encrypt(token),
-        token_hash: tokenHash,
-        provider: "vapid",
-        device: data.device || null,
-        browser: data.browser || null,
-        os: data.os || null,
-        subscribe_url: data.subscribeUrl || null,
-        subscribe_at: now,
-        last_active_at: now,
-      })
-      .run();
+    let inserted;
+    try {
+      inserted = db
+        .insert(subscribers)
+        .values({
+          domain_id: domain.id,
+          token: enc.encrypt(token),
+          token_hash: tokenHash,
+          provider: "vapid",
+          device: data.device || null,
+          browser: data.browser || null,
+          os: data.os || null,
+          subscribe_url: data.subscribeUrl || null,
+          subscribe_at: now,
+          last_active_at: now,
+        })
+        .run();
+    } catch {
+      // Two concurrent POSTs with the same endpoint race the active-only
+      // unique index: one wins, the loser must answer 200 (the subscription
+      // exists) instead of 500. Refresh the winner like the existing path.
+      const [winner] = db
+        .select({ id: subscribers.id })
+        .from(subscribers)
+        .where(and(eq(subscribers.domain_id, domain.id), eq(subscribers.token_hash, tokenHash), isNull(subscribers.unsubscribed_at)))
+        .limit(1)
+        .all();
+      if (!winner) throw new Error("subscriber insert failed without a winner");
+      db.update(subscribers)
+        .set({ token: enc.encrypt(token), last_active_at: now, device: data.device || null, browser: data.browser || null, os: data.os || null })
+        .where(eq(subscribers.id, winner.id))
+        .run();
+      return NextResponse.json({ ok: true, id: winner.id });
+    }
     subscriberId = Number(inserted.lastInsertRowid);
   }
 
@@ -220,4 +244,11 @@ function activeSubscribers(domainId: number): number {
     .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
     .get();
   return row?.value ?? 0;
+}
+
+/** Hard per-domain cap on active subscribers (env-overridable). */
+function maxSubscribersPerDomain(): number {
+  const raw = Number(process.env.MAX_SUBSCRIBERS_PER_DOMAIN);
+  if (!Number.isFinite(raw) || raw <= 0) return 250_000;
+  return Math.min(Math.floor(raw), 10_000_000);
 }

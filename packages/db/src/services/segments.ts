@@ -40,12 +40,12 @@ export function resolveSegment(db: PushDb, opts: ResolveSegmentOptions): Segment
 
   const rules = parseRules(row.conditions_json);
   const domainFilter = parseDomainFilter(row.domain_ids_json, opts.domainId);
-  return resolveSubscribers(db, rules, domainFilter);
+  return resolveSubscribers(db, opts.workspaceId, rules, domainFilter);
 }
 
 /** Estimate the size of arbitrary rules without persisting a segment. */
-export function estimateSegmentRules(db: PushDb, rules: SegmentRules, domainIds?: number[]): number {
-  return resolveSubscribers(db, rules, domainIds ?? null).count;
+export function estimateSegmentRules(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds?: number[]): number {
+  return resolveSubscribers(db, workspaceId, rules, domainIds ?? null).count;
 }
 
 /**
@@ -64,16 +64,25 @@ export function refreshSegmentEstimate(db: PushDb, segmentId: number, workspaceI
     .all();
   if (!row) return;
   const rules = parseRules(row.conditions_json);
-  const count = resolveSubscribers(db, rules, parseDomainFilter(row.domain_ids_json)).count;
+  const count = resolveSubscribers(db, workspaceId, rules, parseDomainFilter(row.domain_ids_json)).count;
   db.update(segments)
     .set({ estimate_count: count, estimate_at: new Date().toISOString() })
     .where(eq(segments.id, segmentId))
     .run();
 }
 
-function resolveSubscribers(db: PushDb, rules: SegmentRules, domainIds: number[] | null): SegmentMatch {
-  const conds: string[] = ["s.unsubscribed_at IS NULL"];
-  const params: unknown[] = [];
+/**
+ * A segment can never match subscribers outside its own workspace, even when
+ * no domain ids are stored (NULL domain_ids_json means "all domains of the
+ * workspace", not "all domains everywhere"). The workspace subquery enforces
+ * that regardless of how the rule set was constructed or deserialized.
+ */
+function resolveSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds: number[] | null): SegmentMatch {
+  const conds: string[] = [
+    "s.unsubscribed_at IS NULL",
+    "s.domain_id IN (SELECT id FROM domains WHERE workspace_id = ?)",
+  ];
+  const params: unknown[] = [workspaceId];
   if (domainIds && domainIds.length > 0) {
     conds.push(`s.domain_id IN (${domainIds.map(() => "?").join(", ")})`);
     params.push(...domainIds);

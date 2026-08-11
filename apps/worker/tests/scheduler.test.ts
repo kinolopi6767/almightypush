@@ -115,6 +115,25 @@ describe("runScheduler", () => {
     expect(campaignStatus(db, id)).toBe("scheduled");
   });
 
+  it("E7: an A/B campaign (title_b) assigns a deterministic 50/50 variant per subscriber", () => {
+    const { db, s1, s2, insertCampaign } = setup();
+    const id = insertCampaign({ kind: "all" });
+    db.update(campaigns).set({ title_b: "cb" }).where(eq(campaigns.id, id)).run();
+
+    const stats = runScheduler(db);
+    expect(stats.deliveriesQueued).toBe(2);
+
+    const rows = db
+      .select({ subscriber_id: deliveries.subscriber_id, variant: deliveries.variant })
+      .from(deliveries)
+      .where(eq(deliveries.campaign_id, id))
+      .all();
+    const bySub = new Map(rows.map((r) => [r.subscriber_id, r.variant]));
+    expect(bySub.get(s1.id)).toBe(s1.id % 2 === 0 ? "a" : "b");
+    expect(bySub.get(s2.id)).toBe(s2.id % 2 === 0 ? "a" : "b");
+    expect(new Set(rows.map((r) => r.variant)).size).toBe(2);
+  });
+
   it("a campaign without a domain is failed, not sent", () => {
     const { db, ws } = setup();
     const id = db

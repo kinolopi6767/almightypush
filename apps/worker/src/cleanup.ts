@@ -1,5 +1,5 @@
-import { and, eq, isNotNull, lt } from "drizzle-orm";
-import { settings, subscribers } from "@pushpanel/db/schema";
+import { and, count, eq, isNotNull, isNull, lt } from "drizzle-orm";
+import { domains, settings, subscribers } from "@pushpanel/db/schema";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
 
@@ -31,8 +31,31 @@ export function runCleanup(
     .where(and(isNotNull(subscribers.unsubscribed_at), lt(subscribers.unsubscribed_at, cutoff)))
     .run();
 
+  if (result.changes > 0) {
+    // The purge bypassed the per-subscriber paths that maintain
+    // domains.subscribers_count — recompute it for every domain.
+    recomputeSubscriberCounts(db);
+  }
+
   writeSetting(db, "last_cleanup_at", now.toISOString());
   return { deleted: result.changes, ran: true };
+}
+
+/** Refresh domains.subscribers_count from the active-subscriber ground truth. */
+function recomputeSubscriberCounts(db: BetterSQLite3Database<typeof allTables>): void {
+  const counts = db
+    .select({ domain_id: subscribers.domain_id, value: count() })
+    .from(subscribers)
+    .where(isNull(subscribers.unsubscribed_at))
+    .groupBy(subscribers.domain_id)
+    .all();
+  const map = new Map(counts.map((c) => [c.domain_id, c.value]));
+  for (const domain of db.select({ id: domains.id }).from(domains).all()) {
+    db.update(domains)
+      .set({ subscribers_count: map.get(domain.id) ?? 0 })
+      .where(eq(domains.id, domain.id))
+      .run();
+  }
 }
 
 export function readSetting(db: BetterSQLite3Database<typeof allTables>, key: string): string | null {

@@ -203,4 +203,22 @@ describe("sender send cycle", () => {
     expect(resolveConcurrency(db)).toBe(25);
     client.close();
   });
+
+  it("E7: a B-variant delivery sends title_b and tags the delivered event with the variant", async () => {
+    const { db, client } = createMemoryDb();
+    const { workspaceId, domainId, subscriberId } = seed(db);
+    const provider = new CapturingProvider();
+    const campaignId = enqueueCampaign(db, workspaceId, domainId, subscriberId, "title-a");
+    db.update(campaigns).set({ title_b: "title-b" }).where(eq(campaigns.id, campaignId)).run();
+    db.update(deliveries).set({ variant: "b" }).where(eq(deliveries.campaign_id, campaignId)).run();
+
+    const stats = await runSendCycle(db, ENC_KEY, provider);
+
+    expect(stats.sent).toBe(1);
+    expect(provider.calls[0]?.message.title).toBe("title-b");
+
+    const [evt] = db.select().from(events).where(eq(events.type, "delivered")).all();
+    expect(evt?.meta_json ? JSON.parse(evt.meta_json) : null).toEqual({ variant: "b" });
+    client.close();
+  });
 });

@@ -15,6 +15,7 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return new Response("Unauthorized", { status: 401 });
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!wsId) return new Response("Forbidden", { status: 403 });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

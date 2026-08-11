@@ -135,17 +135,58 @@ export async function importSubscribersAction(
   const text = (await file.text()).slice(0, 2_000_000);
 
   const parsed: { endpoint?: string; p256dh?: string; auth?: string; browser?: string; os?: string; device?: string; subscribe_url?: string; provider?: string }[] = [];
+
+  // Accepts three shapes: JSON array (`[...]`), one pretty-printed JSON
+  // object, or JSONL (one object per line). Anything else falls back to CSV.
+  const pushRow = (item: unknown) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return;
+    const src = item as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === "string" ? v : v == null ? undefined : String(v));
+    parsed.push({
+      endpoint: str(src.endpoint),
+      p256dh: str(src.p256dh),
+      auth: str(src.auth),
+      browser: str(src.browser),
+      os: str(src.os),
+      device: str(src.device),
+      subscribe_url: str(src.subscribe_url),
+      provider: str(src.provider),
+    });
+  };
+
   try {
     const firstLine = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? "";
-    if (firstLine.trim().startsWith("{")) {
-      for (const line of text.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        if (parsed.length >= IMPORT_LINE_LIMIT) break;
-        try {
-          parsed.push(JSON.parse(trimmed) as (typeof parsed)[number]);
-        } catch {
-          // skip malformed line
+    const firstChar = firstLine.trim()[0];
+    if (firstChar === "[") {
+      const arr = JSON.parse(text) as unknown;
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          if (parsed.length >= IMPORT_LINE_LIMIT) break;
+          pushRow(item);
+        }
+      }
+    } else if (firstChar === "{") {
+      try {
+        const single = JSON.parse(text) as unknown;
+        if (Array.isArray(single)) {
+          for (const item of single) {
+            if (parsed.length >= IMPORT_LINE_LIMIT) break;
+            pushRow(item);
+          }
+        } else {
+          pushRow(single);
+        }
+      } catch {
+        // not a single JSON document — fall through to JSONL
+        for (const line of text.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (parsed.length >= IMPORT_LINE_LIMIT) break;
+          try {
+            pushRow(JSON.parse(trimmed) as unknown);
+          } catch {
+            // skip malformed line
+          }
         }
       }
     } else {

@@ -7,12 +7,15 @@ import { eq } from "drizzle-orm";
 export const dynamic = "force-dynamic";
 
 /**
- * Streams a backup file from disk. Auth-gated (session cookie); the file path
- * comes from the backups table (created by the panel via VACUUM INTO).
+ * Streams a backup file from disk. Auth-gated (session cookie) and restricted
+ * to the owner role — a backup is a full snapshot of the database, so no
+ * non-owner account may ever read one. The file path comes from the backups
+ * table (created by the panel via VACUUM INTO).
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return new Response("Unauthorized", { status: 401 });
+  if (session.user.role !== "owner") return new Response("Forbidden", { status: 403 });
 
   const { id } = await params;
   const backupId = Number(id);

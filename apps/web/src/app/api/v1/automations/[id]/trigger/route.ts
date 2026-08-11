@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { parseAutomationConfig, verifyWebhook } from "@pushpanel/core";
 import { automations } from "@pushpanel/db/schema";
@@ -47,13 +47,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: false, error: "Invalid signature" }, { status: 401 });
   }
 
+  if (automation.type !== "push_on_publish") {
+    return NextResponse.json({ ok: false, error: "This automation type is not webhook-triggered" }, { status: 409 });
+  }
+
   if (automation.status !== "active") {
     return NextResponse.json({ ok: false, error: "Automation is not active" }, { status: 409 });
   }
 
+  // Replay dedupe: a captured request is valid for 5 minutes (timestamp
+  // window), so an identical retry would otherwise fire a second push.
+  // Reject any timestamp we have already seen.
+  if ((config.last_seen_ts ?? 0) >= timestamp) {
+    return NextResponse.json({ ok: false, error: "Replayed webhook request" }, { status: 409 });
+  }
+
   db.update(automations)
-    .set({ next_run_at: new Date().toISOString() })
-    .where(and(eq(automations.id, id), eq(automations.type, "push_on_publish")))
+    .set({ next_run_at: new Date().toISOString(), config_json: JSON.stringify({ ...config, last_seen_ts: timestamp }) })
+    .where(eq(automations.id, id))
     .run();
 
   return NextResponse.json({ ok: true });

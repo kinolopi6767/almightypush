@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
@@ -8,10 +8,21 @@ import { STATUS_STYLES, statusLabel } from "./status";
 
 export const metadata = { title: "Campaigns" };
 
+function parseStats(json: string | null): Record<string, number> {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default async function CampaignsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!wsId) redirect("/setup");
 
   const rows = await db
     .select({
@@ -26,14 +37,14 @@ export default async function CampaignsPage() {
     })
     .from(campaigns)
     .leftJoin(domains, eq(domains.id, campaigns.domain_id))
-    .where(wsId ? eq(campaigns.workspace_id, wsId) : sql`1=1`)
+    .where(eq(campaigns.workspace_id, wsId))
     .orderBy(desc(campaigns.id))
     .all();
 
   const clicks = await db
     .select({ campaign_id: events.campaign_id, value: sql<number>`count(*)` })
     .from(events)
-    .where(eq(events.type, "clicked"))
+    .where(and(eq(events.type, "clicked"), rows.length > 0 ? inArray(events.campaign_id, rows.map((r) => r.id)) : sql`1=0`))
     .groupBy(events.campaign_id)
     .all();
 
@@ -70,7 +81,7 @@ export default async function CampaignsPage() {
           </div>
         )}
         {rows.map((row) => {
-          const stats = row.stats_json ? (JSON.parse(row.stats_json) as Record<string, number>) : {};
+          const stats = parseStats(row.stats_json);
           return (
             <Link
               key={row.id}

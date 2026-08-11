@@ -10,6 +10,8 @@ export const campaigns = sqliteTable(
     /** NULL = multi-domain */
     domain_id: integer("domain_id"),
     title: text("title").notNull(),
+    /** E7: B-variant title for 50/50 A/B testing (NULL = single title) */
+    title_b: text("title_b"),
     message: text("message"),
     icon_url: text("icon_url"),
     image_url: text("image_url"),

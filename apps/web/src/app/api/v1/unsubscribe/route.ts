@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -36,10 +36,16 @@ export async function POST(req: Request) {
   }
   const tokenHash = sha256Hex(endpoint);
 
+    // The active-only filter matters: after subscribe → unsubscribe →
+  // re-subscribe there are two rows with the same token_hash (the partial
+  // unique index only dedupes active rows). Without it this would update the
+  // stale, already-unsubscribed row and leave the user "unsubscribed" while
+  // still receiving pushes.
   const [row] = db
     .select({ id: subscribers.id })
     .from(subscribers)
-    .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, tokenHash)))
+    .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, tokenHash), isNull(subscribers.unsubscribed_at)))
+    .orderBy(sql`${subscribers.id} DESC`)
     .limit(1)
     .all();
   if (!row) return NextResponse.json({ ok: false, error: "Not subscribed" }, { status: 404 });

@@ -1,41 +1,55 @@
 {
- "version": "7",
- "dialect": "sqlite",
- "entries": [
-  {
-   "idx": 0,
-   "version": "6",
-   "when": 1786215133560,
-   "tag": "0000_bright_vector",
-   "breakpoints": true
-  },
-  {
-   "idx": 1,
-   "version": "6",
-   "when": 1786273594067,
-   "tag": "0001_silly_rachel_grey",
-   "breakpoints": true
-  },
-  {
-   "idx": 2,
-   "version": "6",
-   "when": 1786371263763,
-   "tag": "0002_green_natasha_romanoff",
-   "breakpoints": true
-  },
-  {
-   "idx": 3,
-   "version": "6",
-   "when": 1786900000000,
-   "tag": "0003_add_claimed_at",
-   "breakpoints": true
-  },
-  {
-   "idx": 4,
-   "version": "6",
-   "when": 1787000000000,
-   "tag": "0004_auto_pause_failures",
-   "breakpoints": true
-  }
- ]
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786215133560,
+      "tag": "0000_bright_vector",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786273594067,
+      "tag": "0001_silly_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786371263763,
+      "tag": "0002_green_natasha_romanoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786900000000,
+      "tag": "0003_add_claimed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787000000000,
+      "tag": "0004_auto_pause_failures",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786449987959,
+      "tag": "0005_stale_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787100000000,
+      "tag": "0006_click_dedup_delivery",
+      "breakpoints": true
+    }
+  ]
 }

@@ -24,6 +24,34 @@ export function CampaignForm({
   const [iconUrl, setIconUrl] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [buttons, setButtons] = useState<{ label: string; url: string }[]>([{ label: "", url: "" }]);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  /** B2: og-scrape the click URL and prefill title/message/icon. */
+  async function fetchContent() {
+    if (!launchUrl.trim()) {
+      setFetchError("Enter a URL first.");
+      return;
+    }
+    setFetching(true);
+    setFetchError(null);
+    try {
+      const res = await fetch(`/api/fetch-content?url=${encodeURIComponent(launchUrl)}`);
+      const body = (await res.json()) as { ok?: boolean; error?: string; title?: string; description?: string; image?: string };
+      if (!body.ok) {
+        setFetchError(body.error ?? "Could not read that page.");
+        return;
+      }
+      if (body.title && !title) setTitle(body.title);
+      if (body.description && !message) setMessage(body.description);
+      if (body.image && !iconUrl) setIconUrl(body.image);
+      if (!body.title && !body.description && !body.image) setFetchError("No title, description or image found on that page.");
+    } catch {
+      setFetchError("Request failed.");
+    } finally {
+      setFetching(false);
+    }
+  }
 
   useEffect(() => {
     if (state?.ok && state.id) router.push(`/dashboard/campaigns/${state.id}`);
@@ -111,6 +139,22 @@ export function CampaignForm({
           />
         </div>
         <div>
+          <label htmlFor="titleB" className="text-sm font-medium">
+            B title <span className="font-normal text-muted-foreground">(optional — 50/50 A/B test, E7)</span>
+          </label>
+          <input
+            id="titleB"
+            name="titleB"
+            maxLength={120}
+            defaultValue=""
+            placeholder="Big sale this weekend — now!"
+            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Half of your audience gets the original title, half gets this one. Clicks are attributed per variant and a winner is suggested on the campaign page.
+          </p>
+        </div>
+        <div>
           <label htmlFor="message" className="text-sm font-medium">
             Message
           </label>
@@ -129,15 +173,27 @@ export function CampaignForm({
           <label htmlFor="url" className="text-sm font-medium">
             Click URL
           </label>
-          <input
-            id="url"
-            name="url"
-            type="url"
-            value={launchUrl}
-            onChange={(e) => setLaunchUrl(e.target.value)}
-            placeholder="https://app.example.com/sale"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              id="url"
+              name="url"
+              type="url"
+              value={launchUrl}
+              onChange={(e) => setLaunchUrl(e.target.value)}
+              placeholder="https://app.example.com/sale"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              type="button"
+              onClick={() => void fetchContent()}
+              disabled={fetching}
+              className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+              title="Fetch title/message/icon from the page (og-scrape)"
+            >
+              {fetching ? "Fetching…" : "Fetch from URL"}
+            </button>
+          </div>
+          {fetchError && <p className="mt-1 text-xs text-destructive">{fetchError}</p>}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

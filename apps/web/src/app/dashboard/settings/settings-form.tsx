@@ -26,6 +26,7 @@ export function SettingsForm({
   retentionDays,
   sendingSpeed,
   utmEnabled,
+  apiAccess,
   backupInterval,
   backupRetention,
 }: {
@@ -33,6 +34,7 @@ export function SettingsForm({
   retentionDays: string;
   sendingSpeed: string;
   utmEnabled: boolean;
+  apiAccess: boolean;
   backupInterval: string;
   backupRetention: string;
 }) {
@@ -104,6 +106,15 @@ export function SettingsForm({
           click URLs
         </label>
         <p className="text-xs text-muted-foreground">Applied to the notification click URL and each action button at send time.</p>
+      </div>
+
+      <div className="space-y-1">
+        <span className="text-sm font-medium">REST API access</span>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="apiAccess" value="on" defaultChecked={apiAccess} className="h-4 w-4" />
+          Allow key-authenticated requests to <code className="rounded bg-muted px-1">/api/v1/*</code>
+        </label>
+        <p className="text-xs text-muted-foreground">Keys stay in the API page but stop working while this is off.</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

@@ -55,3 +55,7 @@ export function safeEqual(a: string, b: string): boolean {
   for (let i = 0; i < ba.length; i++) diff |= ba[i]! ^ bb[i]!;
   return diff === 0;
 }
+/** H5: one-time plaintext API key token (`ppk_live_` + 48 hex chars). */
+export function generateApiKeyToken(): string {
+  return `ppk_live_${randomBytes(24).toString("hex")}`;
+}

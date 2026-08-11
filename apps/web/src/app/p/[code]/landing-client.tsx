@@ -73,8 +73,11 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
         await finish(true);
       } else if (result === "denied") {
         if (forceSubscribe) {
+          // Blocked, but a force-subscribe link still has to deliver the
+          // visitor: show the explanation, then move them on.
           setState("denied");
           setBusy(false);
+          setTimeout(() => void finish(false), 4000);
           return;
         }
         await finish(false);
@@ -94,7 +97,14 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
   }, [forceSubscribe, finish]);
 
   useEffect(() => {
-    if (!domainId || !publicKey || !forceSubscribe) return;
+    if (!forceSubscribe) return;
+    // Force-subscribe links must always resolve to the target URL. A link
+    // whose domain has no VAPID keys has nothing to subscribe to — send the
+    // visitor on instead of trapping them on the landing page.
+    if (!domainId || !publicKey) {
+      const t = setTimeout(() => void finish(false), 300);
+      return () => clearTimeout(t);
+    }
     let cancelled = false;
     const attempt = async () => {
       for (let i = 0; i < 20 && !cancelled; i++) {
@@ -109,7 +119,7 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [domainId, publicKey, forceSubscribe, finish, subscribe]);
 
   return (
     <main

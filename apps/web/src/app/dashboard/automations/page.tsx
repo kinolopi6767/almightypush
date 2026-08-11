@@ -75,6 +75,11 @@ export default async function AutomationsPage() {
                   last run {row.last_run_at ?? "never"} · next run {row.next_run_at ?? "on demand"}
                   {row.error && <span className="ml-2 text-destructive">· {row.error}</span>}
                 </div>
+                {row.type === "push_on_publish" && !parseSecret(row.config_json) && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    No webhook secret — recreate it so external publishers can trigger this automation.
+                  </p>
+                )}
               </div>
               <span
                 className={`rounded-full px-2 py-0.5 text-xs ${

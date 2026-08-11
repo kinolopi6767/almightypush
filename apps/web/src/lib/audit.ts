@@ -27,7 +27,9 @@ export type AuditAction =
   | "backup.delete"
   | "profile.update"
   | "profile.totp.enabled"
-  | "profile.totp.disabled";
+  | "profile.totp.disabled"
+  | "api_key.create"
+  | "api_key.revoke";
 
 /** Append a row to the audit log. Best-effort: never throws into callers. */
 export function logAudit(

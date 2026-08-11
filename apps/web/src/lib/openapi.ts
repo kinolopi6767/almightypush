@@ -146,6 +146,90 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    "/api/v1/stats": {
+      get: {
+        summary: "Analytics via REST (H7)",
+        description:
+          "Workspace analytics: subscriber + delivery/click totals, a 30-day growth and activity series, and the per-campaign rollup. Optionally scoped to one domain. Key-authenticated.",
+        security: [{ apiKey: [] }],
+        parameters: [
+          { name: "domain", in: "query", required: false, schema: { type: "string" }, description: "domain id or name" },
+          { name: "from", in: "query", required: false, schema: { type: "string", format: "date" }, description: "YYYY-MM-DD, inclusive" },
+          { name: "to", in: "query", required: false, schema: { type: "string", format: "date" }, description: "YYYY-MM-DD, inclusive" },
+        ],
+        responses: {
+          "200": { description: "Analytics payload (totals, series, campaigns)" },
+          "401": { description: "Missing/invalid/expired API key" },
+          "403": { description: "Domain not covered by this key" },
+          "404": { description: "Unknown domain" },
+        },
+      },
+    },
+    "/api/v1/send": {
+      post: {
+        summary: "Send a campaign via REST (H6)",
+        description:
+          "Creates a campaign with an all / manual-id / segment audience and schedules it for now (default) or a given ISO time. The worker sends it on the next tick; per-campaign results appear under /api/v1/stats and in the panel.",
+        security: [{ apiKey: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["domain", "title"],
+                properties: {
+                  domain: { type: "string", description: "domain id (number) or name" },
+                  title: { type: "string", maxLength: 120 },
+                  title_b: { type: "string", maxLength: 120, description: "optional second title for a 50/50 A/B test" },
+                  message: { type: "string", maxLength: 500 },
+                  url: { type: "string", format: "uri" },
+                  icon_url: { type: "string", format: "uri" },
+                  image_url: { type: "string", format: "uri" },
+                  buttons: {
+                    type: "array",
+                    maxItems: 3,
+                    items: {
+                      type: "object",
+                      required: ["label", "url"],
+                      properties: { label: { type: "string", maxLength: 24 }, url: { type: "string", format: "uri" } },
+                    },
+                  },
+                  audience: {
+                    type: "object",
+                    description: "defaults to { kind: \"all\" }",
+                    properties: {
+                      kind: { enum: ["all", "manual", "segment"] },
+                      ids: { type: "array", items: { type: "integer" }, description: "required for kind=manual" },
+                      segment_id: { type: "integer", description: "required for kind=segment" },
+                    },
+                  },
+                  schedule: { type: "string", format: "date-time", description: "ISO timestamp; absent/past = send now" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Campaign created and scheduled" },
+          "400": { description: "Invalid payload" },
+          "401": { description: "Missing/invalid/expired API key" },
+          "403": { description: "Domain not covered by this key" },
+          "404": { description: "Unknown domain or segment" },
+          "409": { description: "Domain is not active" },
+        },
+      },
+    },
+  },
+  components: {
+    securitySchemes: {
+      apiKey: {
+        type: "apiKey",
+        in: "header",
+        name: "X-Api-Key",
+        description: "Key created in the panel (API page). Stored hashed; show once at creation.",
+      },
+    },
   },
 } as const;
 

@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { automations } from "@pushpanel/db";
-import { assertPublicHttpUrl, hasCronSchedule, nextCronRun, parseAutomationConfig, type AutomationConfig } from "@pushpanel/core";
+import { assertPublicHttpUrl, hasCronSchedule, nextCronRun, parseAutomationConfig, sha256Hex, type AutomationConfig } from "@pushpanel/core";
 import { enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
 import Parser from "rss-parser";
 
@@ -290,7 +290,12 @@ export async function awaitLatestFeedItem(db: PushDb, row: AutomationRow, config
 }
 
 export function itemGuid(item: RssFeedItem): string {
-  return item.guid?.trim() || item.id?.trim() || item.link?.trim() || item.isoDate || String(Math.random());
+  const stable = item.guid?.trim() || item.id?.trim() || item.link?.trim() || item.isoDate || "";
+  if (stable) return stable;
+  // Never fall back to a random value: a random key would never match the
+  // next poll, so the same guid-less item would be pushed again and again.
+  // Hash the content instead — stable per item.
+  return sha256Hex(`${item.title ?? ""}|${item.contentSnippet ?? item.summary ?? ""}`);
 }
 
 /**

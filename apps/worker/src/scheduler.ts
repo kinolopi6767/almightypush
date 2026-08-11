@@ -16,6 +16,7 @@ interface CampaignRow {
   domain_id: number | null;
   schedule_at: string | null;
   audience_json: string | null;
+  title_b: string | null;
 }
 
 /**
@@ -36,6 +37,7 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
       domain_id: campaigns.domain_id,
       schedule_at: campaigns.schedule_at,
       audience_json: campaigns.audience_json,
+      title_b: campaigns.title_b,
     })
     .from(campaigns)
     .where(
@@ -83,6 +85,11 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
           subscriber_id: subscriberId,
           domain_id: campaign.domain_id!,
           requested_at: Date.now(),
+          // E7: deterministic 50/50 A/B split by subscriber id (odd/even).
+          // Chosen here, once, so the variant is stable across retries and
+          // all downstream stages (send, click attribution) read it from
+          // the delivery row.
+          variant: campaign.title_b ? (subscriberId % 2 === 0 ? "a" : "b") : null,
         })
         .run();
     }

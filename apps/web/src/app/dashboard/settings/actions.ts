@@ -24,6 +24,7 @@ export type SettingsFormState =
 async function requireOwner() {
   const session = await auth();
   if (!session?.user) throw new Error("Not signed in");
+  if (session.user.role !== "owner") throw new Error("Owner access required");
   return session;
 }
 
@@ -38,6 +39,7 @@ const generalSchema = z.object({
   cleanupRetentionDays: z.coerce.number().int().min(0).max(3650).optional(),
   sendingSpeed: z.coerce.number().int().min(1).max(200).optional(),
   utmEnabled: z.enum(["on", "off"]).optional(),
+  apiAccess: z.enum(["on", "off"]).optional(),
   backupInterval: z.enum(["off", "daily", "weekly", "monthly"]).optional(),
   backupRetention: z.coerce.number().int().min(1).max(60).optional(),
 });
@@ -49,7 +51,7 @@ export async function updateSettingsAction(
   try {
     await requireOwner();
   } catch {
-    return { error: "Not signed in" };
+    return { error: "Not signed in or not an owner" };
   }
 
   const parsed = generalSchema.safeParse({
@@ -57,6 +59,8 @@ export async function updateSettingsAction(
     cleanupRetentionDays: formData.get("cleanupRetentionDays") ?? undefined,
     sendingSpeed: formData.get("sendingSpeed") ?? undefined,
     utmEnabled: formData.get("utmEnabled") ?? "off",
+    // Checkbox quirk: an unchecked box submits no field — that IS the "off" state.
+    apiAccess: formData.get("apiAccess") ?? "off",
     backupInterval: formData.get("backupInterval") ?? "off",
     backupRetention: formData.get("backupRetention") ?? undefined,
   });
@@ -71,6 +75,7 @@ export async function updateSettingsAction(
     values.push({ key: "sending_speed", value: String(parsed.data.sendingSpeed) });
   }
   values.push({ key: "utm_enabled", value: parsed.data.utmEnabled === "off" ? "0" : "1" });
+  values.push({ key: "api_access_enabled", value: parsed.data.apiAccess === "off" ? "0" : "1" });
   if (parsed.data.backupInterval !== undefined) {
     values.push({ key: "backup_auto_interval", value: parsed.data.backupInterval });
   }
@@ -97,7 +102,7 @@ export async function createBackupAction(): Promise<NonNullable<SettingsFormStat
   try {
     await requireOwner();
   } catch {
-    return { error: "Not signed in" };
+    return { error: "Not signed in or not an owner" };
   }
 
   const dbFile = resolveDbPath(process.env.DATABASE_PATH);
@@ -144,7 +149,7 @@ export async function deleteBackupAction(backupId: number): Promise<NonNullable<
   try {
     await requireOwner();
   } catch {
-    return { error: "Not signed in" };
+    return { error: "Not signed in or not an owner" };
   }
 
   const [row] = db.select({ id: backups.id, location: backups.location }).from(backups).where(eq(backups.id, backupId)).limit(1).all();

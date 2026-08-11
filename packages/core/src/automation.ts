@@ -60,6 +60,8 @@ export const automationConfigSchema = z.object({
   last_video_id: z.string().optional(),
   /** internal: last sent rss item key (dedupe). */
   last_item_guid: z.string().optional(),
+  /** internal: newest accepted webhook timestamp (replay dedupe). */
+  last_seen_ts: z.coerce.number().optional(),
   /** drip: ordered sequence of pushes, each delayed from the previous step. */
   steps: z.array(dripStepSchema).max(MAX_DRIP_STEPS).optional(),
 });

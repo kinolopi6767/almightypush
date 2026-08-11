@@ -1,11 +1,11 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { segments } from "@pushpanel/db/schema";
+import { domains, segments } from "@pushpanel/db/schema";
 import { estimateSegmentRules, refreshSegmentEstimate } from "@pushpanel/db";
 import { logAudit } from "@/lib/audit";
 import { normalizeRules, type SegmentRules } from "@pushpanel/core";
@@ -46,6 +46,21 @@ function parseSegmentForm(formData: FormData) {
   return createSchema.safeParse({ name: formData.get("name"), domainIds, groups });
 }
 
+/**
+ * A segment's domain list may only reference the workspace's own domains —
+ * foreign ids would leak other workspaces' subscriber counts into the
+ * estimate and (before the service-level scope) into resolutions.
+ */
+function ownedDomainIds(workspaceId: number, domainIds: number[]): { ok: true; ids: number[] } | { ok: false; error: string } {
+  if (domainIds.length === 0) return { ok: true, ids: [] };
+  const owned = new Set(
+    db.select({ id: domains.id }).from(domains).where(and(eq(domains.workspace_id, workspaceId), inArray(domains.id, domainIds))).all().map((d) => d.id),
+  );
+  const foreign = domainIds.filter((id) => !owned.has(id));
+  if (foreign.length > 0) return { ok: false, error: `Domain not found: ${foreign.join(", ")}` };
+  return { ok: true, ids: domainIds };
+}
+
 export async function createSegmentAction(_prev: SegmentFormState | undefined, formData: FormData): Promise<SegmentFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
@@ -55,6 +70,9 @@ export async function createSegmentAction(_prev: SegmentFormState | undefined, f
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid segment" };
   const data = parsed.data;
 
+  const owned = ownedDomainIds(workspaceId, data.domainIds);
+  if (!owned.ok) return { error: owned.error };
+
   const rules = normalizeRules({ groups: data.groups });
   if (!rules) return { error: "Invalid conditions" };
 
@@ -62,7 +80,7 @@ export async function createSegmentAction(_prev: SegmentFormState | undefined, f
     .insert(segments)
     .values({
       workspace_id: workspaceId,
-      domain_ids_json: data.domainIds.length > 0 ? JSON.stringify(data.domainIds) : null,
+      domain_ids_json: owned.ids.length > 0 ? JSON.stringify(owned.ids) : null,
       name: data.name,
       conditions_json: JSON.stringify({ groups: data.groups }),
     })
@@ -83,12 +101,15 @@ export async function updateSegmentAction(id: number, formData: FormData): Promi
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid segment" };
   const data = parsed.data;
 
+  const owned = ownedDomainIds(workspaceId, data.domainIds);
+  if (!owned.ok) return { error: owned.error };
+
   const rules = normalizeRules({ groups: data.groups });
   if (!rules) return { error: "Invalid conditions" };
 
   db.update(segments)
     .set({
-      domain_ids_json: data.domainIds.length > 0 ? JSON.stringify(data.domainIds) : null,
+      domain_ids_json: owned.ids.length > 0 ? JSON.stringify(owned.ids) : null,
       name: data.name,
       conditions_json: JSON.stringify({ groups: data.groups }),
     })
@@ -138,7 +159,10 @@ export async function estimateSegmentDraft(formData: FormData): Promise<SegmentE
   const rules = normalizeRules(groups);
   if (!rules) return { count: 0, error: "Invalid conditions" };
 
-  const count = estimateSegmentRules(db, rules, domainIds.length > 0 ? domainIds : undefined);
+  const owned = ownedDomainIds(Number(session.user.workspaceId), domainIds);
+  if (!owned.ok) return { count: 0, error: owned.error };
+
+  const count = estimateSegmentRules(db, Number(session.user.workspaceId), rules, owned.ids.length > 0 ? owned.ids : undefined);
   return { count };
 }
 
