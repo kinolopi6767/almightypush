@@ -38,6 +38,8 @@ const generalSchema = z.object({
   cleanupRetentionDays: z.coerce.number().int().min(0).max(3650).optional(),
   sendingSpeed: z.coerce.number().int().min(1).max(200).optional(),
   utmEnabled: z.enum(["on", "off"]).optional(),
+  backupInterval: z.enum(["off", "daily", "weekly", "monthly"]).optional(),
+  backupRetention: z.coerce.number().int().min(1).max(60).optional(),
 });
 
 export async function updateSettingsAction(
@@ -55,6 +57,8 @@ export async function updateSettingsAction(
     cleanupRetentionDays: formData.get("cleanupRetentionDays") ?? undefined,
     sendingSpeed: formData.get("sendingSpeed") ?? undefined,
     utmEnabled: formData.get("utmEnabled") ?? "off",
+    backupInterval: formData.get("backupInterval") ?? "off",
+    backupRetention: formData.get("backupRetention") ?? undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
@@ -67,6 +71,12 @@ export async function updateSettingsAction(
     values.push({ key: "sending_speed", value: String(parsed.data.sendingSpeed) });
   }
   values.push({ key: "utm_enabled", value: parsed.data.utmEnabled === "off" ? "0" : "1" });
+  if (parsed.data.backupInterval !== undefined) {
+    values.push({ key: "backup_auto_interval", value: parsed.data.backupInterval });
+  }
+  if (parsed.data.backupRetention !== undefined) {
+    values.push({ key: "backup_retention", value: String(parsed.data.backupRetention) });
+  }
 
   const owner = await requireOwner().catch(() => null);
   const workspaceId = owner ? Number(owner.user.workspaceId) : 0;

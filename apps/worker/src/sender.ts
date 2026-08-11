@@ -240,7 +240,9 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     image: campaign.image_url ?? undefined,
     url: utmEnabled ? withUtm(campaign.launch_url, campaign.title, "push") : (campaign.launch_url ?? undefined),
     buttons: campaign.buttons_json
-      ? (JSON.parse(campaign.buttons_json) as PushMessage["buttons"]).map((b) => (utmEnabled ? { ...b, url: withUtm(b.url, campaign.title, "button") } : b))
+      ? (JSON.parse(campaign.buttons_json) as NonNullable<PushMessage["buttons"]>).map((b) =>
+          utmEnabled ? { ...b, url: withUtm(b.url, campaign.title, "button") ?? b.url } : b,
+        )
       : undefined,
     // M8: the service worker echoes these in its click beacon.
     deliveryId: row.id,

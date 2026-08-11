@@ -26,11 +26,15 @@ export function SettingsForm({
   retentionDays,
   sendingSpeed,
   utmEnabled,
+  backupInterval,
+  backupRetention,
 }: {
   timezone: string;
   retentionDays: string;
   sendingSpeed: string;
   utmEnabled: boolean;
+  backupInterval: string;
+  backupRetention: string;
 }) {
   const [state, action, pending] = useActionState(
     (_prev: SettingsFormState, formData: FormData) => updateSettingsAction(_prev, formData),
@@ -100,6 +104,41 @@ export function SettingsForm({
           click URLs
         </label>
         <p className="text-xs text-muted-foreground">Applied to the notification click URL and each action button at send time.</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label htmlFor="backupInterval" className="text-sm font-medium">
+            Automatic backup
+          </label>
+          <select
+            id="backupInterval"
+            name="backupInterval"
+            defaultValue={backupInterval}
+            className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+          >
+            <option value="off">Off</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <p className="text-xs text-muted-foreground">The worker snapshots the database on this schedule.</p>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="backupRetention" className="text-sm font-medium">
+            Keep (snapshots)
+          </label>
+          <input
+            id="backupRetention"
+            name="backupRetention"
+            type="number"
+            min={1}
+            max={60}
+            defaultValue={backupRetention}
+            className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+          />
+          <p className="text-xs text-muted-foreground">Newest N automated snapshots kept; older ones are pruned.</p>
+        </div>
       </div>
 
       <button

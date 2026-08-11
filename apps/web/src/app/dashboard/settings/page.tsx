@@ -21,6 +21,8 @@ export default async function SettingsPage() {
     .all();
   const [speedRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "sending_speed")).limit(1).all();
   const [utmRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "utm_enabled")).limit(1).all();
+  const [backupIntervalRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "backup_auto_interval")).limit(1).all();
+  const [backupRetentionRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "backup_retention")).limit(1).all();
 
   const backupList = await db
     .select({
@@ -62,6 +64,8 @@ export default async function SettingsPage() {
         retentionDays={retentionRow?.value ?? "30"}
         sendingSpeed={speedRow?.value ?? "25"}
         utmEnabled={utmRow?.value === "1"}
+        backupInterval={backupIntervalRow?.value ?? "off"}
+        backupRetention={backupRetentionRow?.value ?? "10"}
       />
 
       <BackupsPanel rows={backupList} />
