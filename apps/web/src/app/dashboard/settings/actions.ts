@@ -36,6 +36,8 @@ const generalSchema = z.object({
     .refine((v) => isValidTimezone(v), { message: "Unknown timezone — pick one from the list" })
     .optional(),
   cleanupRetentionDays: z.coerce.number().int().min(0).max(3650).optional(),
+  sendingSpeed: z.coerce.number().int().min(1).max(200).optional(),
+  utmEnabled: z.enum(["on", "off"]).optional(),
 });
 
 export async function updateSettingsAction(
@@ -51,6 +53,8 @@ export async function updateSettingsAction(
   const parsed = generalSchema.safeParse({
     timezone: formData.get("timezone") ?? undefined,
     cleanupRetentionDays: formData.get("cleanupRetentionDays") ?? undefined,
+    sendingSpeed: formData.get("sendingSpeed") ?? undefined,
+    utmEnabled: formData.get("utmEnabled") ?? "off",
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
@@ -59,6 +63,10 @@ export async function updateSettingsAction(
   if (parsed.data.cleanupRetentionDays !== undefined) {
     values.push({ key: "cleanup_unsubs_retention_days", value: String(parsed.data.cleanupRetentionDays) });
   }
+  if (parsed.data.sendingSpeed !== undefined) {
+    values.push({ key: "sending_speed", value: String(parsed.data.sendingSpeed) });
+  }
+  values.push({ key: "utm_enabled", value: parsed.data.utmEnabled === "off" ? "0" : "1" });
 
   const owner = await requireOwner().catch(() => null);
   const workspaceId = owner ? Number(owner.user.workspaceId) : 0;

@@ -21,7 +21,17 @@ function Status({ state }: { state: SettingsFormState }) {
   return null;
 }
 
-export function SettingsForm({ timezone, retentionDays }: { timezone: string; retentionDays: string }) {
+export function SettingsForm({
+  timezone,
+  retentionDays,
+  sendingSpeed,
+  utmEnabled,
+}: {
+  timezone: string;
+  retentionDays: string;
+  sendingSpeed: string;
+  utmEnabled: boolean;
+}) {
   const [state, action, pending] = useActionState(
     (_prev: SettingsFormState, formData: FormData) => updateSettingsAction(_prev, formData),
     undefined,
@@ -61,6 +71,35 @@ export function SettingsForm({ timezone, retentionDays }: { timezone: string; re
         <p className="text-xs text-muted-foreground">
           Purge unsubscribed subscribers older than this. The worker cleanup job reads this value; 0 disables it.
         </p>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="sendingSpeed" className="text-sm font-medium">
+          Sending speed (concurrent deliveries)
+        </label>
+        <input
+          id="sendingSpeed"
+          name="sendingSpeed"
+          type="number"
+          min={1}
+          max={200}
+          defaultValue={sendingSpeed}
+          className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          How many pushes the worker has in flight per cycle. Lower it to be gentler to the push service; raise it to
+          drain queues faster.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <span className="text-sm font-medium">Campaign tracking (UTM)</span>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="utmEnabled" value="on" defaultChecked={utmEnabled} className="h-4 w-4" />
+          Append <code className="rounded bg-muted px-1">utm_source=pushpanel&amp;utm_medium=push&amp;utm_campaign=…</code> to
+          click URLs
+        </label>
+        <p className="text-xs text-muted-foreground">Applied to the notification click URL and each action button at send time.</p>
       </div>
 
       <button

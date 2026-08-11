@@ -9,14 +9,18 @@ import {
   type BetterSQLite3Database,
 } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
+import { readSetting } from "./cleanup";
 
 export const MAX_ATTEMPTS = 3;
 const BATCH_SIZE = 100;
 /** retry backoff: 30s * 2^(attempts-1), capped at 1h */
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 3_600_000;
-/** sends in flight per cycle — one bounded pool instead of a serial loop */
-const CONCURRENCY = 25;
+/**
+ * Default sends in flight per cycle — overridable per deployment via the
+ * `sending_speed` panel setting (settings table, read once per cycle).
+ */
+const DEFAULT_CONCURRENCY = 25;
 /**
  * A delivery left `sending` longer than this is assumed to belong to a dead
  * worker (crash) and is requeued so it still delivers and the campaign can
@@ -99,8 +103,10 @@ export async function runSendCycle(
   stats.claimed = rows.length;
   if (rows.length === 0) return stats;
 
+  const concurrency = resolveConcurrency(db);
+  const utmEnabled = readSetting(db, "utm_enabled") === "1";
   const campaignIds = new Set(rows.map((r) => r.campaign_id));
-  const outcomes = await runPool(rows, CONCURRENCY, (row) => deliverOne(db, provider, encKey, row, now));
+  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled));
   for (const outcome of outcomes) {
     if (outcome.result === "sent") stats.sent++;
     else if (outcome.result === "gone") stats.gone++;
@@ -144,7 +150,32 @@ async function runPool<T>(items: T[], size: number, fn: (item: T) => Promise<Out
 
 type Outcome = "sent" | "gone" | "requeued" | "failed";
 
-async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | undefined, row: DeliveryRow, now: number): Promise<Outcome> {
+/** Panel `sending_speed` setting clamped to sane bounds, cached per cycle. */
+export function resolveConcurrency(db: PushDb): number {
+  const raw = readSetting(db, "sending_speed");
+  const value = Number(raw ?? DEFAULT_CONCURRENCY);
+  if (!Number.isFinite(value) || value < 1) return DEFAULT_CONCURRENCY;
+  return Math.min(Math.floor(value), 200);
+}
+
+/** UTM campaign tracking (m10): decorate a click target once, never twice. */
+export function withUtm(url: string | null | undefined, title: string, content: "push" | "button"): string | undefined {
+  if (!url) return undefined;
+  try {
+    const target = new URL(url);
+    if (!target.searchParams.has("utm_source")) {
+      target.searchParams.set("utm_source", "pushpanel");
+      target.searchParams.set("utm_medium", "push");
+      target.searchParams.set("utm_campaign", title.trim().replace(/\s+/g, "-").slice(0, 64) || "campaign");
+      target.searchParams.set("utm_content", content);
+    }
+    return target.toString();
+  } catch {
+    return url;
+  }
+}
+
+async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | undefined, row: DeliveryRow, now: number, utmEnabled = false): Promise<Outcome> {
   const [sub] = db
     .select({ id: subscribers.id, token: subscribers.token, unsubscribed_at: subscribers.unsubscribed_at })
     .from(subscribers)
@@ -207,8 +238,10 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     body: campaign.message ?? undefined,
     icon: campaign.icon_url ?? undefined,
     image: campaign.image_url ?? undefined,
-    url: campaign.launch_url ?? undefined,
-    buttons: campaign.buttons_json ? (JSON.parse(campaign.buttons_json) as PushMessage["buttons"]) : undefined,
+    url: utmEnabled ? withUtm(campaign.launch_url, campaign.title, "push") : (campaign.launch_url ?? undefined),
+    buttons: campaign.buttons_json
+      ? (JSON.parse(campaign.buttons_json) as PushMessage["buttons"]).map((b) => (utmEnabled ? { ...b, url: withUtm(b.url, campaign.title, "button") } : b))
+      : undefined,
     // M8: the service worker echoes these in its click beacon.
     deliveryId: row.id,
     campaignId: row.campaign_id,

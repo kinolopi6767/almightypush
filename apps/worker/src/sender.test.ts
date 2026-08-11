@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { BetterSQLite3Database } from "@pushpanel/db";
 import { createMemoryDb } from "@pushpanel/db";
-import { campaigns, deliveries, domains, events, subscribers, workspaces } from "@pushpanel/db/schema";
+import { campaigns, deliveries, domains, events, settings, subscribers, workspaces } from "@pushpanel/db/schema";
+import { eq } from "drizzle-orm";
 import type { PushMessage, PushProvider, PushSubscriptionPayload, SendResult } from "@pushpanel/core";
 import { createCipher, createVapidConfig } from "@pushpanel/core";
 import { allTables } from "@pushpanel/db/schema";
 import { runSendCycle } from "./sender";
+import { withUtm, resolveConcurrency } from "./sender";
 
 const ENC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -142,6 +144,63 @@ describe("sender send cycle", () => {
     const [delivery] = db.select().from(deliveries).all();
     expect(delivery?.status).toBe("failed");
     expect(delivery?.error).toContain("busy");
+    client.close();
+  });
+
+  it("delivers buttons and image from the campaign payload", async () => {
+    const { db, client } = createMemoryDb();
+    const { workspaceId, domainId, subscriberId } = seed(db);
+    const provider = new CapturingProvider();
+    const campaignId = enqueueCampaign(db, workspaceId, domainId, subscriberId, "titled-campaign");
+    db.update(campaigns)
+      .set({
+        image_url: "https://demo.test/banner.png",
+        icon_url: "https://demo.test/icon.png",
+        buttons_json: JSON.stringify([{ label: "Open", url: "https://demo.test/go" }]),
+      })
+      .where(eq(campaigns.id, campaignId))
+      .run();
+
+    const stats = await runSendCycle(db, ENC_KEY, provider);
+    expect(stats).toMatchObject({ claimed: 1, sent: 1 });
+    const sent = provider.calls[0]!.message;
+    expect(sent.image).toBe("https://demo.test/banner.png");
+    expect(sent.icon).toBe("https://demo.test/icon.png");
+    expect(sent.buttons).toEqual([{ label: "Open", url: "https://demo.test/go" }]);
+    client.close();
+  });
+
+  it("appends UTM params when the setting is enabled (once per URL)", async () => {
+    const { db, client } = createMemoryDb();
+    const { workspaceId, domainId, subscriberId } = seed(db);
+    const provider = new CapturingProvider();
+    const campaignId = enqueueCampaign(db, workspaceId, domainId, subscriberId, "Flash Sale");
+    db.update(campaigns)
+      .set({ buttons_json: JSON.stringify([{ label: "Buy", url: "https://demo.test/go?x=1" }]) })
+      .where(eq(campaigns.id, campaignId))
+      .run();
+    db.insert(settings).values({ key: "utm_enabled", value: "1" }).run();
+
+    await runSendCycle(db, ENC_KEY, provider);
+    const sent = provider.calls[0]!.message;
+    expect(sent.url).toBe(
+      "https://demo.test/post?utm_source=pushpanel&utm_medium=push&utm_campaign=Flash-Sale&utm_content=push",
+    );
+    expect(sent.buttons?.[0]?.url).toBe(
+      "https://demo.test/go?x=1&utm_source=pushpanel&utm_medium=push&utm_campaign=Flash-Sale&utm_content=button",
+    );
+    client.close();
+  });
+
+  it("clamps the sending_speed setting into a sane concurrency", () => {
+    const { db, client } = createMemoryDb();
+    expect(resolveConcurrency(db)).toBe(25);
+    db.insert(settings).values({ key: "sending_speed", value: "4" }).run();
+    expect(resolveConcurrency(db)).toBe(4);
+    db.update(settings).set({ value: "99999" }).where(eq(settings.key, "sending_speed")).run();
+    expect(resolveConcurrency(db)).toBe(200);
+    db.update(settings).set({ value: "0" }).where(eq(settings.key, "sending_speed")).run();
+    expect(resolveConcurrency(db)).toBe(25);
     client.close();
   });
 });

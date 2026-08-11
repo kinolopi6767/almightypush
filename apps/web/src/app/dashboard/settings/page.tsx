@@ -19,6 +19,8 @@ export default async function SettingsPage() {
     .where(eq(settings.key, "cleanup_unsubs_retention_days"))
     .limit(1)
     .all();
+  const [speedRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "sending_speed")).limit(1).all();
+  const [utmRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "utm_enabled")).limit(1).all();
 
   const backupList = await db
     .select({
@@ -55,7 +57,12 @@ export default async function SettingsPage() {
         <p className="text-sm text-muted-foreground">Panel-wide configuration and database backups.</p>
       </div>
 
-      <SettingsForm timezone={timezoneRow?.value ?? ""} retentionDays={retentionRow?.value ?? "30"} />
+      <SettingsForm
+        timezone={timezoneRow?.value ?? ""}
+        retentionDays={retentionRow?.value ?? "30"}
+        sendingSpeed={speedRow?.value ?? "25"}
+        utmEnabled={utmRow?.value === "1"}
+      />
 
       <BackupsPanel rows={backupList} />
 
