@@ -8,6 +8,7 @@ import { campaigns, deliveries, domains, events, subscribers } from "@pushpanel/
 import { STATUS_STYLES } from "../status";
 import { CancelCampaignForm } from "./cancel-form";
 import { DuplicateCampaignForm } from "./duplicate-form";
+import { LiveFeed } from "@/components/live-feed";
 
 export const metadata = { title: "Campaign" };
 
@@ -73,6 +74,8 @@ export default async function CampaignDetailPage({ params }: Props) {
 
   const stats = campaign.stats_json ? (JSON.parse(campaign.stats_json) as Record<string, number>) : {};
   const delivered = stats.delivered ?? 0;
+  const perButton = (campaign.stats_json ? (JSON.parse(campaign.stats_json) as { perButton?: Record<string, number> }).perButton : undefined) ?? {};
+  const buttons = campaign.buttons_json ? (JSON.parse(campaign.buttons_json) as { label: string; url: string }[]) : [];
 
   return (
     <>
@@ -125,6 +128,17 @@ export default async function CampaignDetailPage({ params }: Props) {
                   <dd>{new Date(campaign.schedule_at).toLocaleString()}</dd>
                 </div>
               )}
+              {buttons.length > 0 && (
+                <div className="space-y-1">
+                  <dt className="text-muted-foreground">Buttons</dt>
+                  {buttons.map((b, i) => (
+                    <dd key={i} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{b.label}</span>
+                      <span className="text-muted-foreground">{perButton[b.label] ?? 0} clicks</span>
+                    </dd>
+                  ))}
+                </div>
+              )}
             </dl>
           </div>
 
@@ -157,6 +171,10 @@ export default async function CampaignDetailPage({ params }: Props) {
 
         <CancelCampaignForm campaignId={campaign.id} status={campaign.status} />
         {["done", "failed", "cancelled", "sent"].includes(campaign.status) && <DuplicateCampaignForm campaignId={campaign.id} />}
+      </div>
+
+      <div className="mt-8 max-w-2xl">
+        <LiveFeed />
       </div>
     </>
   );

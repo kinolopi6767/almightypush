@@ -35,19 +35,24 @@ self.addEventListener("notificationclick", (event) => {
   const { url = "/", deliveryId = null, buttons = [] } = notification.data || {};
   notification.close();
 
-  const beacon = (target) => {
+  const fire = (btn = "") => {
     if (deliveryId) {
       // Absolute against the SW scope: the beacon must hit the panel, not
-      // whatever page the notification was clicked from.
-      fetch(new URL(`api/v1/click/${deliveryId}`, self.registration.scope).toString(), { method: "GET", keepalive: true }).catch(() => undefined);
+      // whatever page the notification was clicked from. `btn` lets the
+      // panel attribute a click to a specific action button (E4).
+      const query = btn ? `?btn=${encodeURIComponent(btn)}` : "";
+      fetch(new URL(`api/v1/click/${deliveryId}${query}`, self.registration.scope).toString(), { method: "GET", keepalive: true }).catch(() => undefined);
     }
-    clients.openWindow(target).catch(() => undefined);
   };
 
   let actionUrl = url;
+  let buttonIndex = "";
   if (event.action) {
     const button = buttons[Number(event.action)] || null;
-    if (button && typeof button.url === "string" && button.url) actionUrl = button.url;
+    if (button && typeof button.url === "string" && button.url) {
+      actionUrl = button.url;
+      buttonIndex = event.action;
+    }
   }
 
   event.waitUntil(
@@ -59,7 +64,8 @@ self.addEventListener("notificationclick", (event) => {
           return;
         }
       }
-      beacon(actionUrl);
+      fire(buttonIndex);
+      clients.openWindow(actionUrl).catch(() => undefined);
     }),
   );
 });

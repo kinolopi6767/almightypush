@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { campaigns, domains, events, subscribers } from "@pushpanel/db/schema";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { LiveFeed } from "@/components/live-feed";
 
 export const metadata = { title: "Dashboard" };
 
@@ -49,6 +50,10 @@ export default async function DashboardPage() {
             <p className="mt-2 text-3xl font-semibold">{value}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mt-8 max-w-2xl">
+        <LiveFeed />
       </div>
     </>
   );
