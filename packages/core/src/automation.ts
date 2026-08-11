@@ -13,6 +13,7 @@ export const AUTOMATION_TYPES = [
   "automagic_static",
   "youtube_push",
   "rss_push",
+  "drip",
 ] as const;
 export type AutomationType = (typeof AUTOMATION_TYPES)[number];
 
@@ -24,6 +25,16 @@ export const automationPayloadSchema = z.object({
   launch_url: z.string().trim().url().max(500).optional().or(z.literal("")),
 });
 export type AutomationPayload = z.infer<typeof automationPayloadSchema>;
+
+/** C8: one step of a drip sequence — delay in days from the previous step. */
+export const dripStepSchema = z.object({
+  delay_days: z.coerce.number().int().min(0).max(365).default(0),
+  title: z.string().trim().min(1).max(200),
+  message: z.string().trim().max(1000).optional().or(z.literal("")),
+  launch_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+});
+export type DripStep = z.infer<typeof dripStepSchema>;
+export const MAX_DRIP_STEPS = 10;
 
 export const automationConfigSchema = z.object({
   payload: automationPayloadSchema,
@@ -49,6 +60,8 @@ export const automationConfigSchema = z.object({
   last_video_id: z.string().optional(),
   /** internal: last sent rss item key (dedupe). */
   last_item_guid: z.string().optional(),
+  /** drip: ordered sequence of pushes, each delayed from the previous step. */
+  steps: z.array(dripStepSchema).max(MAX_DRIP_STEPS).optional(),
 });
 export type AutomationConfig = z.infer<typeof automationConfigSchema>;
 
@@ -59,6 +72,7 @@ export const AUTOMATION_TYPE_LABEL: Record<AutomationType, string> = {
   automagic_static: "AutoMagic static",
   youtube_push: "YouTube push",
   rss_push: "RSS publish",
+  drip: "Drip sequence",
 };
 
 export function parseAutomationConfig(json: string | null | undefined): AutomationConfig {

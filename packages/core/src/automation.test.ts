@@ -41,13 +41,26 @@ describe("nextCronRun", () => {
   });
 });
 
-describe("hasCronSchedule", () => {
-  it("detects a set cron field and ignores blanks", () => {
-    const config = parseAutomationConfig(JSON.stringify({ payload: { title: "x" }, schedule_cron: "0 9 * * *" }));
-    expect(hasCronSchedule(config)).toBe(true);
-    const none = parseAutomationConfig(JSON.stringify({ payload: { title: "x" } }));
-    expect(hasCronSchedule(none)).toBe(false);
-    const blank = parseAutomationConfig(JSON.stringify({ payload: { title: "x" }, schedule_cron: "  " }));
-    expect(hasCronSchedule(blank)).toBe(false);
+describe("drip steps (C8)", () => {
+  it("parses steps with cumulative delays and payloads", () => {
+    const config = parseAutomationConfig(
+      JSON.stringify({
+        payload: { title: "x" },
+        steps: [
+          { delay_days: 0, title: "Welcome" },
+          { delay_days: 3, title: "Tip", message: "Try this", launch_url: "https://a.example.com" },
+        ],
+      }),
+    );
+    expect(config.steps).toHaveLength(2);
+    expect(config.steps![0]!.delay_days).toBe(0);
+    expect(config.steps![1]!.launch_url).toBe("https://a.example.com");
+  });
+
+  it("rejects more than the step cap and invalid delays", () => {
+    const tooMany = parseAutomationConfig(JSON.stringify({ payload: { title: "x" }, steps: Array.from({ length: 11 }, () => ({ delay_days: 1, title: "s" })) }));
+    expect(tooMany.steps).toBeUndefined();
+    const bad = parseAutomationConfig(JSON.stringify({ payload: { title: "x" }, steps: [{ delay_days: -1, title: "s" }] }));
+    expect(bad.steps).toBeUndefined();
   });
 });

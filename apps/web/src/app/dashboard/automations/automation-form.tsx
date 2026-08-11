@@ -12,7 +12,7 @@ interface DomainOption {
 
 // Mirrors @pushpanel/core AUTOMATION_TYPES — kept client-side so the client
 // bundle never imports packages that pull native bindings (argon2) into it.
-const TYPES = ["welcome_push", "push_on_publish", "automagic_dynamic", "automagic_static", "youtube_push", "rss_push"] as const;
+const TYPES = ["welcome_push", "push_on_publish", "automagic_dynamic", "automagic_static", "youtube_push", "rss_push", "drip"] as const;
 const TYPE_LABEL: Record<string, string> = {
   welcome_push: "Welcome push",
   push_on_publish: "Push on publish (webhook)",
@@ -20,6 +20,7 @@ const TYPE_LABEL: Record<string, string> = {
   automagic_static: "AutoMagic static",
   youtube_push: "YouTube push",
   rss_push: "RSS publish",
+  drip: "Drip sequence",
 };
 
 const TYPE_DETAILS: Record<string, string> = {
@@ -29,6 +30,7 @@ const TYPE_DETAILS: Record<string, string> = {
   automagic_static: "Rotates through a curated list of messages on an interval.",
   youtube_push: "Polls a channel RSS feed and pushes when a new video appears.",
   rss_push: "Polls any RSS/Atom feed and pushes when a new item appears.",
+  drip: "A scheduled sequence of pushes — each subscriber receives the steps in order.",
 };
 
 const CRON_PRESETS = [
@@ -39,11 +41,19 @@ const CRON_PRESETS = [
   { label: "Weekly, Monday 9:00", value: "0 9 * * 1" },
 ];
 
+interface DripRow {
+  delay_days: string;
+  title: string;
+  message: string;
+  launch_url: string;
+}
+
 export function AutomationForm({ domains }: { domains: DomainOption[] }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(createAutomationAction, undefined as AutomationFormState | undefined);
   const [type, setType] = useState<string>("welcome_push");
   const [cron, setCron] = useState<string>("");
+  const [steps, setSteps] = useState<DripRow[]>([{ delay_days: "0", title: "", message: "", launch_url: "" }]);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -191,6 +201,58 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
                 <p className="rounded-md bg-muted p-3 text-xs text-muted-foreground">
                   After saving, copy the webhook URL + secret from the automation row and call it (HMAC-signed) whenever you publish. A “Run now” button is also available.
                 </p>
+              )}
+
+              {type === "drip" && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className={label}>Sequence steps</label>
+                    <button
+                      type="button"
+                      disabled={steps.length >= 10}
+                      onClick={() => setSteps([...steps, { delay_days: "1", title: "", message: "", launch_url: "" }])}
+                      className="text-sm font-medium text-primary disabled:opacity-40"
+                    >
+                      + Add step
+                    </button>
+                  </div>
+                  <input type="hidden" name="step_count" value={steps.length} />
+                  <div className="mt-2 space-y-3">
+                    {steps.map((step, i) => (
+                      <div key={i} className="rounded-lg border p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">Step {i + 1}</span>
+                          {steps.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setSteps(steps.filter((_, j) => j !== i))}
+                              className="text-xs text-muted-foreground hover:text-destructive"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-[110px_1fr] gap-2">
+                          <input name={`steps.${i}.delay_days`} type="number" min={0} max={365} value={step.delay_days}
+                            onChange={(e) => setSteps(steps.map((s, j) => (j === i ? { ...s, delay_days: e.target.value } : s)))}
+                            className={inputCls} aria-label={`Step ${i + 1} delay days`} placeholder="days" />
+                          <input name={`steps.${i}.title`} required value={step.title}
+                            onChange={(e) => setSteps(steps.map((s, j) => (j === i ? { ...s, title: e.target.value } : s)))}
+                            className={inputCls} aria-label={`Step ${i + 1} title`} placeholder="Notification title" />
+                          <input name={`steps.${i}.message`} value={step.message}
+                            onChange={(e) => setSteps(steps.map((s, j) => (j === i ? { ...s, message: e.target.value } : s)))}
+                            className={`col-span-2 ${inputCls}`} aria-label={`Step ${i + 1} message`} placeholder="Message (optional)" />
+                          <input name={`steps.${i}.launch_url`} type="url" value={step.launch_url}
+                            onChange={(e) => setSteps(steps.map((s, j) => (j === i ? { ...s, launch_url: e.target.value } : s)))}
+                            className={`col-span-2 ${inputCls}`} aria-label={`Step ${i + 1} URL`} placeholder="https://… (optional)" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Steps fire in order for every new subscriber; each delay is measured from the previous step.
+                  </p>
+                </div>
               )}
 
               {state?.error && <p className="text-sm text-destructive">{state.error}</p>}

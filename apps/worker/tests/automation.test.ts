@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createMemoryDb } from "@pushpanel/db";
-import { automations, domains, workspaces } from "@pushpanel/db/schema";
+import { automations, campaigns, deliveries, domains, subscribers, workspaces } from "@pushpanel/db/schema";
 import { runAutomations, MAX_CONSECUTIVE_FAILURES, FAILURE_RETRY_MINUTES, itemGuid, pickNewestChangedItem } from "../src/automation.js";
 
 type Db = ReturnType<typeof createMemoryDb>["db"];
@@ -151,5 +151,59 @@ describe("runAutomations crontab scheduling (C3)", () => {
     expect(after.status).toBe("active");
     expect(after.consecutive_failures).toBe(0);
     expect(after.next_run_at).toBe(new Date(2026, 0, 2, 9, 0, 0).toISOString()); // next 09:00 local
+  });
+});
+
+describe("runAutomations drip sequences (C8)", () => {
+  it("enqueues one campaign per step with cumulative day delays", async () => {
+    const { db, domain } = setup();
+    db.insert(subscribers)
+      .values({ domain_id: domain!.id, token: "enc", token_hash: "drip-hash", provider: "vapid" })
+      .run();
+    const id = insertAutomation(db, {
+      type: "drip",
+      domainId: domain!.id,
+      nextRunAt: new Date(BASE.getTime() - MIN),
+      config: {
+        steps: [
+          { delay_days: 0, title: "Welcome" },
+          { delay_days: 3, title: "Tip", message: "Try this" },
+        ],
+      },
+    });
+
+    const stats = await runAutomations(db, BASE);
+    expect(stats.ran).toBe(1);
+    expect(stats.ok).toBe(1);
+    expect(stats.campaigns).toBe(2);
+
+    const camps = db
+      .select({
+        title: campaigns.title,
+        status: campaigns.status,
+        schedule_at: campaigns.schedule_at,
+        audience: campaigns.audience_json,
+      })
+      .from(campaigns)
+      .where(eq(campaigns.workspace_id, 1))
+      .all();
+    expect(camps.map((c) => c.title).sort()).toEqual(["Tip", "Welcome"]);
+    const byTitle = (t: string) => camps.find((c) => c.title === t)!;
+    expect(byTitle("Welcome").status).toBe("sending"); // zero delay => immediate
+    expect(byTitle("Tip").status).toBe("scheduled");
+    expect(byTitle("Tip").schedule_at).toBe(new Date(BASE.getTime() + 3 * 86_400_000).toISOString());
+
+    const deliveryRows = db.select({ campaign_id: deliveries.campaign_id }).from(deliveries).all();
+    expect(deliveryRows).toHaveLength(1); // only the immediate step queues now
+    expect(deliveryRows[0]!.campaign_id).toBe(camps.find((c) => c.title === "Welcome")!.id);
+  });
+
+  it("fails cleanly when the sequence has no steps", async () => {
+    const { db, domain } = setup();
+    const id = insertAutomation(db, { type: "drip", domainId: domain!.id, nextRunAt: new Date(BASE.getTime() - MIN) });
+
+    const stats = await runAutomations(db, BASE);
+    expect(stats.failed).toBe(1);
+    expect(row(db, id).error).toBe("Drip sequence has no steps");
   });
 });

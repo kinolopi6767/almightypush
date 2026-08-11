@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimit } from "@/lib/rate-limit";
@@ -165,16 +165,40 @@ function appUrlHostname(): string | null {
   }
 }
 
-/** M4: event-driven welcome pushes — one campaign per active welcome automation. */
+/** M4/C8: event-driven welcome pushes + drip sequences — one campaign per active automation. */
 function fireWelcomeAutomations(domainId: number, workspaceId: number, subscriberId: number): void {
   const rows = db
-    .select({ id: automations.id, config_json: automations.config_json })
+    .select({ id: automations.id, type: automations.type, config_json: automations.config_json })
     .from(automations)
-    .where(and(eq(automations.workspace_id, workspaceId), eq(automations.domain_id, domainId), eq(automations.type, "welcome_push"), eq(automations.status, "active")))
+    .where(
+      and(
+        eq(automations.workspace_id, workspaceId),
+        eq(automations.domain_id, domainId),
+        sql`${automations.type} IN ('welcome_push', 'drip')`,
+        eq(automations.status, "active"),
+      ),
+    )
     .all();
   for (const row of rows) {
     const config = parseAutomationConfig(row.config_json);
     try {
+      if (row.type === "drip") {
+        // Each step becomes its own campaign, delayed from the previous step.
+        let cumulativeSeconds = 0;
+        for (const step of config.steps ?? []) {
+          cumulativeSeconds += (step.delay_days ?? 0) * 86_400;
+          enqueueAutomationCampaign({
+            db,
+            workspaceId,
+            domainId,
+            automationId: row.id,
+            subscriberIds: [subscriberId],
+            delaySeconds: cumulativeSeconds,
+            payload: { title: step.title, message: step.message, launch_url: step.launch_url },
+          });
+        }
+        continue;
+      }
       enqueueAutomationCampaign({
         db,
         workspaceId,
@@ -184,7 +208,7 @@ function fireWelcomeAutomations(domainId: number, workspaceId: number, subscribe
         delaySeconds: config.delay_seconds ?? 0,
       });
     } catch {
-      // a broken welcome automation must never break the subscribe flow
+      // a broken automation must never break the subscribe flow
     }
   }
 }

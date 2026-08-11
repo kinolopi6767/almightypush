@@ -8,7 +8,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { domains } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
-import { AUTOMATION_TYPES, automationPayloadSchema, newWebhookSecret } from "@pushpanel/core";
+import { AUTOMATION_TYPES, MAX_DRIP_STEPS, automationPayloadSchema, dripStepSchema, newWebhookSecret } from "@pushpanel/core";
 
 export type AutomationFormState = { ok?: boolean; error?: string };
 
@@ -24,6 +24,7 @@ const createSchema = z.object({
   rotation_json: z.string().trim().optional().or(z.literal("")),
   feed_url: z.string().trim().url().max(500).optional().or(z.literal("")),
   schedule_cron: z.string().trim().min(1).max(100).optional().or(z.literal("")),
+  steps: z.array(dripStepSchema).min(1).max(MAX_DRIP_STEPS).optional(),
 });
 
 export async function createAutomationAction(_prev: AutomationFormState | undefined, formData: FormData): Promise<AutomationFormState> {
@@ -48,6 +49,7 @@ export async function createAutomationAction(_prev: AutomationFormState | undefi
     rotation_json: formData.get("rotation_json") ?? "",
     feed_url: formData.get("feed_url") ?? "",
     schedule_cron: formData.get("schedule_cron") ?? "",
+    steps: buildSteps(formData),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
@@ -75,6 +77,7 @@ export async function createAutomationAction(_prev: AutomationFormState | undefi
     config.rotation_json = JSON.stringify(list);
   }
   if (data.type === "youtube_push" || data.type === "rss_push") config.feed_url = data.feed_url;
+  if (data.type === "drip" && data.steps) config.steps = data.steps;
 
   const isPollType = data.type === "automagic_dynamic" || data.type === "automagic_static" || data.type === "youtube_push" || data.type === "rss_push";
   if (isPollType && data.schedule_cron) config.schedule_cron = data.schedule_cron;
@@ -101,6 +104,21 @@ interface RotationItem {
   title: string;
   message?: string;
   launch_url?: string;
+}
+
+function buildSteps(formData: FormData): unknown {
+  const count = Number(formData.get("step_count") ?? 0);
+  if (!Number.isInteger(count) || count < 1 || count > MAX_DRIP_STEPS) return undefined;
+  const steps: unknown[] = [];
+  for (let i = 0; i < count; i++) {
+    steps.push({
+      delay_days: formData.get(`steps.${i}.delay_days`) ?? 0,
+      title: formData.get(`steps.${i}.title`) ?? "",
+      message: formData.get(`steps.${i}.message`) ?? "",
+      launch_url: formData.get(`steps.${i}.launch_url`) ?? "",
+    });
+  }
+  return steps;
 }
 
 function safeParseRotation(json: string): RotationItem[] {

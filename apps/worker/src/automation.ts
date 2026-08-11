@@ -166,6 +166,28 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
         });
         return ok(1, result.queued);
       }
+      case "drip": {
+        // Normally fired by the subscribe hook per subscriber; this path
+        // covers manual "run now" triggers — enqueue to every active sub.
+        const steps = config.steps ?? [];
+        if (steps.length === 0) return { ok: false, campaigns: 0, queued: 0, error: "Drip sequence has no steps" };
+        let queued = 0;
+        let cumulativeSeconds = 0;
+        for (const step of steps) {
+          cumulativeSeconds += (step.delay_days ?? 0) * 86_400;
+          const result = enqueueAutomationCampaign({
+            db,
+            workspaceId: row.workspace_id,
+            domainId: row.domain_id,
+            automationId: row.id,
+            payload: { ...config.payload, title: step.title, message: step.message, launch_url: step.launch_url },
+            delaySeconds: cumulativeSeconds,
+            now,
+          });
+          queued += result.queued;
+        }
+        return ok(steps.length, queued);
+      }
       default:
         return { ok: false, campaigns: 0, queued: 0, error: `Unknown automation type: ${row.type}` };
     }
@@ -283,7 +305,7 @@ export function pickNewestChangedItem(items: RssFeedItem[], lastGuid?: string | 
 }
 
 function nextRunAt(row: AutomationRow, config: AutomationConfig, now: Date): Date | null {
-  if (row.type === "push_on_publish" || row.type === "welcome_push") return null;
+  if (row.type === "push_on_publish" || row.type === "welcome_push" || row.type === "drip") return null;
   if (hasCronSchedule(config)) {
     const cronNext = nextCronRun(config.schedule_cron ?? "", now);
     if (cronNext) return cronNext;
