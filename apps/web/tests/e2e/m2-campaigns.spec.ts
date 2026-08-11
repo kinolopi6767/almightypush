@@ -46,7 +46,7 @@ test("send-now campaign: UI → scheduler → delivery → stats", async ({ page
   await page.getByRole("link", { name: /new campaign/i }).click();
   await page.waitForURL(/\/dashboard\/campaigns\/new/);
   await page.getByLabel("Domain", { exact: true }).selectOption(String(domainId));
-  await page.getByLabel("Title").fill("Big sale this weekend");
+  await page.getByLabel("Title", { exact: true }).fill("Big sale this weekend");
   await page.getByLabel("Message").fill("Everything is 50% off.");
   await page.getByLabel("Click URL").fill("https://campaigns.example.test/sale");
   await page.getByRole("button", { name: /create campaign/i }).click();
@@ -108,7 +108,7 @@ test("future campaign stays scheduled until its time, then cancels", async ({ pa
   // --- schedule an hour out ---
   await page.goto("/dashboard/campaigns/new");
   await page.getByLabel("Domain", { exact: true }).selectOption(String(domainId));
-  await page.getByLabel("Title").fill("Flash sale tomorrow");
+  await page.getByLabel("Title", { exact: true }).fill("Flash sale tomorrow");
   await page.getByLabel("Schedule (optional)").fill(localDateTime(3_600_000));
   await page.getByRole("button", { name: /create campaign/i }).click();
   await page.waitForURL(/\/dashboard\/campaigns\/\d+/);

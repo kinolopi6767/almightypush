@@ -49,7 +49,7 @@ test("openapi.json is served and describes the public endpoints", async ({ reque
 test("API docs page lists the endpoints from the spec", async ({ page }) => {
   await signInViaUi(page);
   await page.goto("/dashboard/api");
-  await expect(page.getByRole("heading", { name: "API reference" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "API", exact: true })).toBeVisible();
   await expect(page.getByText("/api/v1/subscribe")).toBeVisible();
   await expect(page.getByText("/api/v1/info")).toBeVisible();
   await expect(page.getByText("/api/v1/automations/{id}/trigger")).toBeVisible();

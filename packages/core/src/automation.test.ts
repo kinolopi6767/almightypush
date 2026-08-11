@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextCronRun, hasCronSchedule, parseAutomationConfig } from "./automation";
+import { nextCronRun, parseAutomationConfig } from "./automation";
 
 function atLocal(y: number, mo: number, d: number, h: number, mi = 0, s = 0): Date {
   return new Date(y, mo - 1, d, h, mi, s);
@@ -34,10 +34,10 @@ describe("nextCronRun", () => {
   });
 
   it("returns null for invalid or never-firing expressions", () => {
-    expect(nextCronRun("", atLocal(2026, 1, 1))).toBeNull();
-    expect(nextCronRun("not a cron", atLocal(2026, 1, 1))).toBeNull();
-    expect(nextCronRun("0 0 30 2 *", atLocal(2026, 1, 1))).toBeNull(); // Feb 30 never exists
-    expect(nextCronRun("0 13 0 * *", atLocal(2026, 1, 1))).toBeNull(); // impossible hour
+    expect(nextCronRun("", atLocal(2026, 1, 1, 0))).toBeNull();
+    expect(nextCronRun("not a cron", atLocal(2026, 1, 1, 0))).toBeNull();
+    expect(nextCronRun("0 0 30 2 *", atLocal(2026, 1, 1, 0))).toBeNull(); // Feb 30 never exists
+    expect(nextCronRun("0 13 0 * *", atLocal(2026, 1, 1, 0))).toBeNull(); // impossible hour
   });
 });
 

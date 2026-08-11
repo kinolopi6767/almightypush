@@ -6,8 +6,7 @@ import { eq } from "drizzle-orm";
 import type { PushMessage, PushProvider, PushSubscriptionPayload, SendResult } from "@pushpanel/core";
 import { createCipher, createVapidConfig } from "@pushpanel/core";
 import { allTables } from "@pushpanel/db/schema";
-import { runSendCycle } from "./sender";
-import { withUtm, resolveConcurrency } from "./sender";
+import { runSendCycle, resolveConcurrency } from "./sender";
 
 const ENC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

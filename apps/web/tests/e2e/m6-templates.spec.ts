@@ -100,7 +100,7 @@ test("a campaign started from a template pre-fills and records template_id", asy
   const before = mock.received.length;
   await page.goto("/dashboard/campaigns/new");
   await page.getByLabel("Start from template").selectOption(String(templateId));
-  await expect(page.getByLabel("Title")).toHaveValue("Template headline");
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Template headline");
   await expect(page.getByLabel("Message")).toHaveValue("Template body");
   await expect(page.getByLabel("Click URL")).toHaveValue("https://tmpl.example.test/go");
 

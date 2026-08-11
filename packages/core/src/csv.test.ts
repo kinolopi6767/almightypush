@@ -61,18 +61,20 @@ describe("campaignAnalyticsCsv", () => {
   it("emits a header row and one line per campaign", () => {
     const parsed = parseCsv(campaignAnalyticsCsv([row]));
     expect(parsed[0]).toEqual(["id", "title", "domain", "status", "sent_at", "delivered", "failed", "clicked", "click_rate_pct", "buttons", "clicks_per_button"]);
-    expect(parsed[1][0]).toBe("7");
-    expect(parsed[1][1]).toBe('Sale "now", 50% off');
-    expect(parsed[1][8]).toBe("25.00"); // 25/100 clip rate
-    expect(parsed[1][9]).toBe("Buy | Later");
-    expect(parsed[1][10]).toBe('{"Buy":20,"Later":5}');
+    const line = parsed[1] ?? [];
+    expect(line[0]).toBe("7");
+    expect(line[1]).toBe('Sale "now", 50% off');
+    expect(line[8]).toBe("25.00"); // 25/100 clip rate
+    expect(line[9]).toBe("Buy | Later");
+    expect(line[10]).toBe('{"Buy":20,"Later":5}');
   });
 
   it("round-trips through parseCsv", () => {
     const parsed = parseCsv(campaignAnalyticsCsv([row]));
     expect(parsed[0]).toEqual(["id", "title", "domain", "status", "sent_at", "delivered", "failed", "clicked", "click_rate_pct", "buttons", "clicks_per_button"]);
-    expect(parsed[1][1]).toBe('Sale "now", 50% off');
-    expect(parsed[1][8]).toBe("25.00");
+    const line = parsed[1] ?? [];
+    expect(line[1]).toBe('Sale "now", 50% off');
+    expect(line[8]).toBe("25.00");
   });
 
   it("handles an empty export with headers only", () => {
@@ -81,6 +83,6 @@ describe("campaignAnalyticsCsv", () => {
 
   it("leaves rate blank when nothing was delivered", () => {
     const parsed = parseCsv(campaignAnalyticsCsv([{ ...row, delivered: 0, clicked: 0 }]));
-    expect(parsed[1][8]).toBe("");
+    expect(parsed[1]?.[8]).toBe("");
   });
 });

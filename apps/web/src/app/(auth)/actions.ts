@@ -21,7 +21,7 @@ const LOGIN_LIMIT = () => envRateLimit("LOGIN_RATE_LIMIT", 10);
 const LOGIN_WINDOW_MS = 60_000;
 /** Account-level window — defeats per-IP rotation against a single account. */
 const ACCOUNT_WINDOW_MS = 15 * 60_000;
-const ACCOUNT_LIMIT = 30;
+const ACCOUNT_LIMIT = () => envRateLimit("ACCOUNT_RATE_LIMIT", 30);
 
 export async function loginAction(_prev: AuthFormState, formData: FormData): Promise<NonNullable<AuthFormState>> {
   const ip = clientIp(await headers());
@@ -40,7 +40,7 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
   if (!parsed.success) return { error: "Invalid email, password or code" };
 
   const email = parsed.data.email.toLowerCase();
-  if (!rateLimit(`login:acct:${email}`, ACCOUNT_LIMIT, ACCOUNT_WINDOW_MS)) {
+  if (!rateLimit(`login:acct:${email}`, ACCOUNT_LIMIT(), ACCOUNT_WINDOW_MS)) {
     return { error: "Too many attempts — try again later" };
   }
 
@@ -92,7 +92,7 @@ export async function checkTotpAction(_prev: TotpCheckState, formData: FormData)
   if (!parsed.success) return { error: "Invalid email or password" };
 
   const email = parsed.data.email.toLowerCase();
-  if (!rateLimit(`login:acct:${email}`, ACCOUNT_LIMIT, ACCOUNT_WINDOW_MS)) {
+  if (!rateLimit(`login:acct:${email}`, ACCOUNT_LIMIT(), ACCOUNT_WINDOW_MS)) {
     return { error: "Too many attempts — try again later" };
   }
 

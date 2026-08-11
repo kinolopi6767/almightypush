@@ -55,6 +55,10 @@ self.addEventListener("notificationclick", (event) => {
     }
   }
 
+  // Always fire the beacon (click attribution) before navigating — whether
+  // the click lands in an existing window or opens a new one.
+  fire(buttonIndex);
+
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
@@ -64,7 +68,6 @@ self.addEventListener("notificationclick", (event) => {
           return;
         }
       }
-      fire(buttonIndex);
       clients.openWindow(actionUrl).catch(() => undefined);
     }),
   );

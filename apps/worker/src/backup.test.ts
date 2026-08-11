@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryDb } from "@pushpanel/db";
-import { backups, settings, type allTables } from "@pushpanel/db/schema";
-import type { BetterSQLite3Database } from "@pushpanel/db";
+import { backups, settings } from "@pushpanel/db/schema";
 import { createSnapshot, pruneBackups, resolveRetention, runBackupScheduler } from "./backup";
 import { writeSetting } from "./cleanup";
-
-type PushDb = BetterSQLite3Database<typeof allTables>;
 
 describe("backup scheduler", () => {
   it("does nothing when auto backups are off", () => {

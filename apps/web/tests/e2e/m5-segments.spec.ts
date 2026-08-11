@@ -122,7 +122,7 @@ test("a segment-targeted campaign delivers only to matching subscribers", async 
 
   await page.goto("/dashboard/campaigns/new");
   await page.getByLabel("Domain", { exact: true }).selectOption(String(domainId));
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Message").fill("Only android gets this");
   await page.getByText("A saved segment", { exact: true }).click();
   await page.getByLabel("Segment", { exact: true }).selectOption(String(segId));

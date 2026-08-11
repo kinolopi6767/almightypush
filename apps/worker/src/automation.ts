@@ -349,7 +349,7 @@ async function safeFetch(sourceUrl: string, path: (base: URL) => URL): Promise<{
 }
 
 async function fetchPosts(sourceUrl: string, range: number): Promise<unknown[]> {
-  const { text } = await safeFetch(sourceUrl, (base) => {
+  const { text } = await safeFetch(sourceUrl, (_base) => {
     const url = new URL(`${sourceUrl.replace(/\/+$/, "")}/wp-json/wp/v2/posts`);
     url.searchParams.set("per_page", String(Math.min(range, 100)));
     return url;

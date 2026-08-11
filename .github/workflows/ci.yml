@@ -67,8 +67,11 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm --filter @pushpanel/web exec playwright install --with-deps chromium
 
+      - name: Build (web + worker + packages)
+        run: pnpm build
+
       - name: Run E2E smoke
         env:
           AUTH_SECRET: smokestest-secret-smokestest-secret
-          APP_ENC_KEY: 0123456789abcdef0123456789abcdef
-        run: pnpm --filter @pushpanel/web e2e
+          APP_ENC_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        run: pnpm --filter @pushpanel/web test:e2e

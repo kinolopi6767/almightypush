@@ -29,6 +29,10 @@ COPY --from=build /app/apps/web/.next/standalone/apps/web ./apps/web
 COPY --from=build /app/apps/web/.next/standalone/node_modules ./node_modules
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 
+# Standalone output does not include public/ — the SDK bundle, service
+# worker, manifest and icons live there and must be served at /.
+COPY --from=build /app/apps/web/public ./apps/web/public
+
 # Worker: bundled ESM (native deps resolved from the traced node_modules).
 COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
 

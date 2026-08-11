@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { createApiKeyAction, revokeApiKeyAction, type ApiKeyFormState } from "./actions";
 
 function Status({ state }: { state: ApiKeyFormState }) {
@@ -96,7 +96,7 @@ export function CreateApiKeyForm({
 
 export function RevokeApiKeyButton({ keyId, label }: { keyId: number; label: string }) {
   const [state, action, pending] = useActionState<ApiKeyFormState, FormData>(
-    (_prev: ApiKeyFormState, formData: FormData) => revokeApiKeyAction(keyId),
+    (_prev: ApiKeyFormState, _formData: FormData) => revokeApiKeyAction(keyId),
     undefined,
   );
   return (

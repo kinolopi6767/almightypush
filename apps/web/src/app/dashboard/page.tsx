@@ -1,4 +1,4 @@
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, domains, events, subscribers } from "@pushpanel/db/schema";
 import { auth } from "@/auth";

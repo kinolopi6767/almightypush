@@ -36,7 +36,7 @@ test("cancel a campaign records campaign.cancel", async ({ page }) => {
 
   await page.goto("/dashboard/campaigns/new");
   await page.getByLabel("Domain", { exact: true }).selectOption(String(domainId));
-  await page.getByLabel("Title").fill(`Audit blast ${suffix}`);
+  await page.getByLabel("Title", { exact: true }).fill(`Audit blast ${suffix}`);
   await page.getByLabel("Schedule (optional)").fill("2030-01-01T00:00");
   await page.getByRole("button", { name: /create campaign/i }).click();
   await page.waitForURL(/\/dashboard\/campaigns\/\d+/);

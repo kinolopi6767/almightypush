@@ -19,6 +19,7 @@ const appEnv = {
   NODE_TLS_REJECT_UNAUTHORIZED: "0",
   // E2E signs in repeatedly and rapidly; disable the login brute-force guard.
   LOGIN_RATE_LIMIT: "1000",
+  ACCOUNT_RATE_LIMIT: "1000",
   SUBSCRIBE_RATE_LIMIT: "1000",
 };
 

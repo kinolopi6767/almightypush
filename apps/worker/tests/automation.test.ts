@@ -160,7 +160,7 @@ describe("runAutomations drip sequences (C8)", () => {
     db.insert(subscribers)
       .values({ domain_id: domain!.id, token: "enc", token_hash: "drip-hash", provider: "vapid" })
       .run();
-    const id = insertAutomation(db, {
+    insertAutomation(db, {
       type: "drip",
       domainId: domain!.id,
       nextRunAt: new Date(BASE.getTime() - MIN),
