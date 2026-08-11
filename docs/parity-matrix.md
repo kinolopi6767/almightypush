@@ -45,7 +45,7 @@
 | C5 | Push on Publish (WP plugin toggle + delay) | plugin + webhook + RSS triple ➕ | 🟢 plugin + HMAC webhook shipped; RSS poll pending |
 | C6 | Welcome Push (auto on subscribe) | welcome automation | 🟢 |
 | C7 | YouTube Push (channel → LP link → auto notify) | YT channel module | 🟢 channel mgmt page + LP link creation |
-| C8 | Drip notifications (sequence) | drip builder ➕ | ⚪ |
+| C8 | Drip notifications (sequence) | drip builder ➕ | 🟢 multi-step sequences with day delays |
 | C9 | Webhook → Push trigger | webhook automation ➕ | 🟢 push_on_publish trigger endpoint |
 
 ## D. Audience & segmentation
