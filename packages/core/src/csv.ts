@@ -76,3 +76,33 @@ export function csvCell(value: string | null | undefined): string {
   const str = value ?? "";
   return `"${str.replace(/"/g, '""')}"`;
 }
+
+/** One row of the campaign analytics export (E9), pre-aggregated. */
+export interface CampaignAnalyticsRow {
+  id: number;
+  title: string;
+  domain: string | null;
+  status: string;
+  sent_at: string | null;
+  delivered: number;
+  failed: number;
+  clicked: number;
+  buttons: string[]; // labels in order
+  per_button: Record<string, number>;
+}
+
+/** RFC-4180 export of campaign analytics with a header row. */
+export function campaignAnalyticsCsv(rows: CampaignAnalyticsRow[]): string {
+  const header = ["id", "title", "domain", "status", "sent_at", "delivered", "failed", "clicked", "click_rate_pct", "buttons", "clicks_per_button"];
+  const lines = [header.map(csvCell).join(",")];
+  for (const r of rows) {
+    const clicksPerButton = Object.keys(r.per_button).length > 0 ? JSON.stringify(r.per_button) : "";
+    const rate = r.delivered > 0 ? ((r.clicked / r.delivered) * 100).toFixed(2) : "";
+    lines.push(
+      [r.id, r.title, r.domain, r.status, r.sent_at, r.delivered, r.failed, r.clicked, rate, r.buttons.join(" | "), clicksPerButton]
+        .map((v) => csvCell(String(v)))
+        .join(","),
+    );
+  }
+  return lines.join("\r\n") + "\r\n";
+}

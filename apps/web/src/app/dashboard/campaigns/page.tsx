@@ -46,12 +46,21 @@ export default async function CampaignsPage() {
             Every send is one campaign — delivered by the worker with your domain&apos;s VAPID keypair.
           </p>
         </div>
-        <Link
-          href="/dashboard/campaigns/new"
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
-        >
-          New campaign
-        </Link>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/export/campaigns"
+            download
+            className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent"
+          >
+            Export analytics (CSV)
+          </a>
+          <Link
+            href="/dashboard/campaigns/new"
+            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+          >
+            New campaign
+          </Link>
+        </div>
       </div>
 
       <div className="mt-8 space-y-3">

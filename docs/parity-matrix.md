@@ -79,7 +79,7 @@
 | E6 | Real-time campaign feed | WS + SSE ➕ | ⚪ |
 | E7 | A/B title testing | ⚪ ➕ |
 | E8 | Best-send-time heatmap | ⚪ ➕ |
-| E9 | Analytics export (CSV) | ⚪ |
+| E9 | Analytics export (CSV) | 🟢 |
 
 ## F. Growth & collection
 
