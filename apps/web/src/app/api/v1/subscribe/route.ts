@@ -14,8 +14,8 @@ export const dynamic = "force-dynamic";
 const bodySchema = z.object({
   domainId: z.coerce.number().int().positive(),
   subscription: z.object({
-    endpoint: z.string().url(),
-    keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+    endpoint: z.string().url().max(2048),
+    keys: z.object({ p256dh: z.string().min(1).max(512), auth: z.string().min(1).max(128) }),
   }),
   device: z.string().trim().max(40).optional().or(z.literal("")),
   browser: z.string().trim().max(40).optional().or(z.literal("")),
@@ -43,6 +43,10 @@ export async function POST(req: Request) {
   if (!rateLimit(`subscribe:${data.domainId}:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000)) {
     return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429 });
   }
+  // Global per-domain window — cannot be rotated away by forged IP headers.
+  if (!rateLimit(`subscribe:dom:${data.domainId}`, 120, 60_000)) {
+    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429 });
+  }
 
   const [domain] = db
     .select({ id: domains.id, workspace_id: domains.workspace_id, name: domains.name })
@@ -52,7 +56,7 @@ export async function POST(req: Request) {
     .all();
   if (!domain) return NextResponse.json({ ok: false, error: "Unknown domain" }, { status: 404 });
 
-  if (data.subscribeUrl && !originAllowed(data.subscribeUrl, domain.name, req.headers.get("host"))) {
+  if (!requestOriginAllowed(req, data.subscribeUrl ?? "", domain.name)) {
     return NextResponse.json({ ok: false, error: "subscribe_url does not match the domain" }, { status: 403 });
   }
 
@@ -105,21 +109,60 @@ export async function POST(req: Request) {
 }
 
 /**
- * The subscribing page's origin must belong to the domain it subscribes to
- * (or a subdomain), or be the panel's own host (self-hosted sites and the
- * built-in sandbox demo). This stops forged `subscribe_url` values.
+ * Origin enforcement for the subscribe endpoint (m9):
+ * - When the browser sends an `Origin` header (all cross-origin POSTs do),
+ *   it is the strongest signal: the subscribing page must live on the
+ *   domain's own host (or a subdomain) or on the panel's own host (the
+ *   built-in sandbox demo / self-hosted sites). A site on any other origin
+ *   cannot forge this from a browser.
+ * - When `Origin` is absent (older clients, non-browser callers), fall back
+ *   to validating the client-supplied `subscribe_url` against the same sets.
+ *   Such callers can always fabricate the URL, but they are bounded by the
+ *   global per-domain rate window above.
  */
-function originAllowed(subscribeUrl: string, domainName: string, requestHost: string | null): boolean {
-  let hostname = "";
+function requestOriginAllowed(req: Request, subscribeUrl: string, domainName: string): boolean {
+  const pool = new Set<string>();
+  const name = domainName.toLowerCase().replace(/^\./, "");
+  pool.add(name);
+  const host = req.headers.get("host")?.split(":")[0]?.toLowerCase();
+  if (host) pool.add(host);
+  const appUrlHost = appUrlHostname();
+  if (appUrlHost) pool.add(appUrlHost);
+
+  const origin = req.headers.get("origin");
+  if (origin) {
+    try {
+      const originHost = new URL(origin).hostname.toLowerCase();
+      for (const allowed of pool) {
+        if (originHost === allowed || originHost.endsWith(`.${allowed}`)) return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  }
+
+  if (!subscribeUrl) return false;
   try {
-    hostname = new URL(subscribeUrl).hostname.toLowerCase();
+    const hostname = new URL(subscribeUrl).hostname.toLowerCase();
+    for (const allowed of pool) {
+      if (hostname === allowed || hostname.endsWith(`.${allowed}`)) return true;
+    }
   } catch {
     return false;
   }
-  const name = domainName.toLowerCase().replace(/^\./, "");
-  if (hostname === name || hostname.endsWith(`.${name}`)) return true;
-  const panelHost = requestHost?.split(":")[0]?.toLowerCase();
-  return hostname === panelHost;
+  return false;
+}
+
+/** APP_URL origin hostname, when the deployer fixed the panel's public URL. */
+function appUrlHostname(): string | null {
+  const url = process.env.APP_URL;
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
 }
 
 /** M4: event-driven welcome pushes — one campaign per active welcome automation. */

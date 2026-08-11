@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { deliveries, events, campaigns } from "@pushpanel/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,17 @@ export const dynamic = "force-dynamic";
  * Click beacon — the service worker pings this before opening the URL.
  * Records a `clicked` event (the analytics backbone) and redirects.
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ deliveryId: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ deliveryId: string }> }) {
+  // Public by design (the SW beacon), but bounded: a flood of beacons must
+  // not grow the events table without limit.
+  const ip = clientIp(req.headers);
+  if (!rateLimit(`click:${ip}`, 120, 60_000)) {
+    return NextResponse.json({ ok: false, error: "Too many clicks" }, { status: 429 });
+  }
+  if (!rateLimit("click:all", 1200, 60_000)) {
+    return NextResponse.json({ ok: false, error: "Too many clicks" }, { status: 429 });
+  }
+
   const { deliveryId } = await params;
   const id = Number(deliveryId);
   if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "Bad id" }, { status: 400 });

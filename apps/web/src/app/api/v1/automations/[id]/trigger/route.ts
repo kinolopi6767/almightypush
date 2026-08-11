@@ -8,9 +8,10 @@ export const dynamic = "force-dynamic";
 
 /**
  * M4: public webhook trigger for push_on_publish automations.
- * Auth: X-PushPanel-Signature = sha256=<HMAC-SHA256(secret, raw body)>, with
- * the per-automation secret shown in the panel. X-PushPanel-Timestamp must be
- * within the last 5 minutes (replay guard). On success the automation's
+ * Auth: X-PushPanel-Signature = sha256=<HMAC-SHA256(secret, "<ts>.<body>")>,
+ * with the per-automation secret shown in the panel. The signature covers
+ * X-PushPanel-Timestamp (must be within the last 5 minutes), so a captured
+ * request cannot be replayed with a fresh header. On success the automation's
  * next_run_at is set to now and the worker picks it up on the next tick.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -42,7 +43,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!secret) return NextResponse.json({ ok: false, error: "Automation has no webhook secret" }, { status: 500 });
 
   const signature = req.headers.get("X-PushPanel-Signature");
-  if (!verifyWebhook(secret, body, signature)) {
+  if (!verifyWebhook(secret, body, signature, timestamp)) {
     return NextResponse.json({ ok: false, error: "Invalid signature" }, { status: 401 });
   }
 

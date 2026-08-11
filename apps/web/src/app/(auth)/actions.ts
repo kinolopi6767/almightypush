@@ -19,6 +19,9 @@ const credentialsSchema = z.object({
 
 const LOGIN_LIMIT = () => envRateLimit("LOGIN_RATE_LIMIT", 10);
 const LOGIN_WINDOW_MS = 60_000;
+/** Account-level window — defeats per-IP rotation against a single account. */
+const ACCOUNT_WINDOW_MS = 15 * 60_000;
+const ACCOUNT_LIMIT = 30;
 
 export async function loginAction(_prev: AuthFormState, formData: FormData): Promise<NonNullable<AuthFormState>> {
   const ip = clientIp(await headers());
@@ -36,10 +39,15 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
     });
   if (!parsed.success) return { error: "Invalid email, password or code" };
 
+  const email = parsed.data.email.toLowerCase();
+  if (!rateLimit(`login:acct:${email}`, ACCOUNT_LIMIT, ACCOUNT_WINDOW_MS)) {
+    return { error: "Too many attempts — try again later" };
+  }
+
   const [user] = await db
     .select({ password_hash: users.password_hash, totp_secret: users.totp_secret, totp_enabled: users.totp_enabled })
     .from(users)
-    .where(eq(users.email, parsed.data.email.toLowerCase()))
+    .where(eq(users.email, email))
     .limit(1);
   if (!user?.password_hash) return { error: "Invalid email, password or code" };
   if (!(await verifyPassword(user.password_hash, parsed.data.password))) {
@@ -83,10 +91,15 @@ export async function checkTotpAction(_prev: TotpCheckState, formData: FormData)
   });
   if (!parsed.success) return { error: "Invalid email or password" };
 
+  const email = parsed.data.email.toLowerCase();
+  if (!rateLimit(`login:acct:${email}`, ACCOUNT_LIMIT, ACCOUNT_WINDOW_MS)) {
+    return { error: "Too many attempts — try again later" };
+  }
+
   const [user] = await db
     .select({ id: users.id, password_hash: users.password_hash, totp_enabled: users.totp_enabled })
     .from(users)
-    .where(eq(users.email, parsed.data.email.toLowerCase()))
+    .where(eq(users.email, email))
     .limit(1);
   if (!user?.password_hash) return { error: "Invalid email or password" };
   const ok = await verifyPassword(user.password_hash, parsed.data.password);

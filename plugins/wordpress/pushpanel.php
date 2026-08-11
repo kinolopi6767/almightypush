@@ -56,7 +56,8 @@ function pushpanel_on_publish($post_id, $post) {
 
   $body = wp_json_encode(array('post_id' => (int) $post_id, 'title' => get_the_title($post_id)));
   $ts = (string) (microtime(true) * 1000);
-  $sig = 'sha256=' . hash_hmac('sha256', $body, $secret);
+  // The HMAC covers the timestamp so captured requests cannot be replayed.
+  $sig = 'sha256=' . hash_hmac('sha256', $ts . '.' . $body, $secret);
 
   $response = wp_remote_post($url, array(
     'timeout' => 5,

@@ -1,20 +1,29 @@
 /**
  * Tiny in-memory sliding-window rate limiter (single web process).
  * Server actions and public API routes share it via `rateLimit()`.
+ *
+ * Client IP trust policy: forwarded headers (`X-Forwarded-For`,
+ * `X-Real-IP`) are only honored when the panel runs behind a reverse
+ * proxy — set `TRUST_PROXY=1` in that deployment. When unset, spoofable
+ * forwarded headers are ignored and limit keys collapse to the shared
+ * `"unknown"` bucket. Because a directly-exposed panel cannot reliably
+ * attribute requests, every public endpoint pairs its per-IP limit with a
+ * global resource-level limit (per domain / per account) that cannot be
+ * rotated away by header spoofing.
  */
 
 interface Bucket {
   hits: number[];
-  blockedUntil: number;
 }
 
 const buckets = new Map<string, Bucket>();
 const CLEANUP_EVERY = 1_000;
+const MAX_BUCKETS = 20_000;
 
 function cleanup(now: number): void {
   for (const [key, bucket] of buckets) {
     bucket.hits = bucket.hits.filter((t) => now - t < 60_000);
-    if (bucket.hits.length === 0 && now > bucket.blockedUntil) buckets.delete(key);
+    if (bucket.hits.length === 0) buckets.delete(key);
   }
 }
 
@@ -24,11 +33,12 @@ function cleanup(now: number): void {
  */
 export function rateLimit(key: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
-  if (buckets.size % CLEANUP_EVERY === 0) cleanup(now);
+  if (buckets.size === 0 || buckets.size % CLEANUP_EVERY === 0) cleanup(now);
+  if (buckets.size >= MAX_BUCKETS) cleanup(now);
 
-  const bucket = buckets.get(key) ?? { hits: [], blockedUntil: 0 };
+  const bucket = buckets.get(key) ?? { hits: [] };
   bucket.hits = bucket.hits.filter((t) => now - t < windowMs);
-  if (now < bucket.blockedUntil || bucket.hits.length >= limit) {
+  if (bucket.hits.length >= limit) {
     buckets.set(key, bucket);
     return false;
   }
@@ -37,8 +47,13 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
   return true;
 }
 
-/** Client IP from a request — respects X-Forwarded-For from reverse proxies. */
+/**
+ * Client IP from a request. Forwarded headers are honored only behind a
+ * trusted reverse proxy (`TRUST_PROXY=1`); otherwise they are ignored so a
+ * direct attacker cannot rotate rate-limit buckets at will.
+ */
 export function clientIp(headers: Headers): string {
+  if (process.env.TRUST_PROXY !== "1") return "unknown";
   const fwd = headers.get("x-forwarded-for");
   if (fwd) {
     const first = fwd.split(",")[0]?.trim();

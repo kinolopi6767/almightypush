@@ -180,16 +180,28 @@ test("webhook trigger runs push_on_publish automation", async ({ page, request }
 
   const id = Number((await row.getAttribute("data-testid"))!.replace("webhook-secret-", ""));
   const body = JSON.stringify({ published: true });
+  const ts = Date.now();
   const res = await request.post(`/api/v1/automations/${id}/trigger`, {
     data: body,
     headers: {
-      "X-PushPanel-Signature": `sha256=${signWebhook(secret, body)}`,
-      "X-PushPanel-Timestamp": String(Date.now()),
+      "X-PushPanel-Signature": `sha256=${signWebhook(secret, body, ts)}`,
+      "X-PushPanel-Timestamp": String(ts),
       "content-type": "application/json",
     },
   });
   expect(res.status()).toBe(200);
   expect((await res.json()).ok).toBe(true);
+
+  // the HMAC covers the timestamp: the same captured body+signature cannot
+  // be replayed with a freshly forged timestamp header
+  const replay = await request.post(`/api/v1/automations/${id}/trigger`, {
+    data: body,
+    headers: {
+      "X-PushPanel-Signature": `sha256=${signWebhook(secret, body, ts)}`,
+      "X-PushPanel-Timestamp": String(Date.now()),
+    },
+  });
+  expect(replay.status()).toBe(401);
 
   await expect.poll(() => countCampaigns(domainId, "Publish alert"), { timeout: 30_000 }).toBe(1);
   await expect.poll(() => mock.received.length, { timeout: 30_000 }).toBe(before + 1);
@@ -265,11 +277,12 @@ test("pause blocks both webhook and run-now; delete removes the automation", asy
   const secret = (await secretEl.textContent()) ?? "";
   const id = Number((await secretEl.getAttribute("data-testid"))!.replace("webhook-secret-", ""));
   const body = JSON.stringify({ published: true });
+  const ts = Date.now();
   const res = await request.post(`/api/v1/automations/${id}/trigger`, {
     data: body,
     headers: {
-      "X-PushPanel-Signature": `sha256=${signWebhook(secret, body)}`,
-      "X-PushPanel-Timestamp": String(Date.now()),
+      "X-PushPanel-Signature": `sha256=${signWebhook(secret, body, ts)}`,
+      "X-PushPanel-Timestamp": String(ts),
     },
   });
   expect(res.status()).toBe(409);

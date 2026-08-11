@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 
@@ -9,11 +10,16 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   domainId: z.coerce.number().int().positive(),
-  endpoint: z.string().url(),
+  endpoint: z.string().url().max(2048),
 });
 
 /** Public unsubscribe endpoint — called by the client SDK on logout/opt-out. */
 export async function POST(req: Request) {
+  const ip = clientIp(req.headers);
+  if (!rateLimit(`unsub:${ip}`, 30, 60_000)) {
+    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
+  }
+
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());
@@ -25,6 +31,9 @@ export async function POST(req: Request) {
   }
 
   const { domainId, endpoint } = parsed.data;
+  if (!rateLimit(`unsub:dom:${domainId}`, 60, 60_000)) {
+    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
+  }
   const tokenHash = sha256Hex(endpoint);
 
   const [row] = db

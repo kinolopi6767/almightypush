@@ -222,6 +222,8 @@ export async function subscribeViaApi(
       browser: "chromium",
       os: "linux",
       device: device ?? "desktop",
+      // simulates the SDK payload from a panel-hosted page (sandbox demo)
+      subscribeUrl: "https://127.0.0.1:3100/demo",
     },
   });
   if (!res.ok()) throw new Error(`subscribe failed: ${res.status()} ${await res.text()}`);
