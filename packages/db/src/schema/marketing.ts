@@ -80,6 +80,8 @@ export const automations = sqliteTable(
     last_run_at: text("last_run_at"),
     next_run_at: text("next_run_at"),
     error: text("error"),
+    /** consecutive poll failures since the last success (auto-pause). */
+    consecutive_failures: integer("consecutive_failures").notNull().default(0),
     ...timestamps(),
   },
   (t) => [index("idx_automations_next").on(t.status, t.next_run_at)],

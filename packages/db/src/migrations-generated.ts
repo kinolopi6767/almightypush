@@ -27,5 +27,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0003_add_claimed_at",
     "idx": 3,
     "sql": "ALTER TABLE `deliveries` ADD `claimed_at` integer;"
+  },
+  {
+    "tag": "0004_auto_pause_failures",
+    "idx": 4,
+    "sql": "ALTER TABLE `automations` ADD `consecutive_failures` integer DEFAULT 0;--> statement-breakpoint"
   }
 ];

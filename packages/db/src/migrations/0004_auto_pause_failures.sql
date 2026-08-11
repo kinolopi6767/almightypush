@@ -1,0 +1,1 @@
+ALTER TABLE `automations` ADD `consecutive_failures` integer DEFAULT 0;--> statement-breakpoint

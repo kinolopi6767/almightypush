@@ -17,7 +17,13 @@ interface AutomationRow {
   domain_id: number | null;
   type: string;
   config_json: string | null;
+  consecutive_failures: number;
 }
+
+/** C4: auto-pause an automation after this many consecutive poll failures. */
+export const MAX_CONSECUTIVE_FAILURES = 3;
+/** C4: how soon a failed poll is retried (a dead source is probed quickly, not after the full interval). */
+export const FAILURE_RETRY_MINUTES = 3;
 
 /**
  * M4 automation runner — runs once per worker tick.
@@ -37,6 +43,7 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
       domain_id: automations.domain_id,
       type: automations.type,
       config_json: automations.config_json,
+      consecutive_failures: automations.consecutive_failures,
     })
     .from(automations)
     .where(
@@ -59,12 +66,17 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
       stats.failed++;
     }
 
-    const next = nextRunAt(row, config, now);
+    const next = outcome.ok ? nextRunAt(row, config, now) : new Date(now.getTime() + FAILURE_RETRY_MINUTES * 60_000);
+    const fails = outcome.ok ? 0 : (row.consecutive_failures ?? 0) + 1;
+    const autoPaused = !outcome.ok && fails >= MAX_CONSECUTIVE_FAILURES;
+    const error = outcome.ok ? null : autoPaused ? `Auto-paused after ${fails} consecutive failures: ${outcome.error}` : outcome.error;
     db.update(automations)
       .set({
         last_run_at: nowIso,
-        next_run_at: next ? next.toISOString() : null,
-        error: outcome.ok ? null : outcome.error,
+        next_run_at: autoPaused ? null : next ? next.toISOString() : null,
+        status: autoPaused ? "paused" : "active",
+        consecutive_failures: fails,
+        error,
       })
       .where(eq(automations.id, row.id))
       .run();
