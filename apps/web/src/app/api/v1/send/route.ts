@@ -65,7 +65,9 @@ export async function POST(req: Request) {
   const url = typeof body.url === "string" && body.url.trim() ? body.url.trim() : null;
   if (url && !URL_RE.test(url)) return NextResponse.json({ ok: false, error: "url must be http(s)" }, { status: 400 });
   const iconUrl = typeof body.icon_url === "string" && body.icon_url.trim() ? body.icon_url.trim() : null;
+  if (iconUrl && !URL_RE.test(iconUrl)) return NextResponse.json({ ok: false, error: "icon_url must be http(s)" }, { status: 400 });
   const imageUrl = typeof body.image_url === "string" && body.image_url.trim() ? body.image_url.trim() : null;
+  if (imageUrl && !URL_RE.test(imageUrl)) return NextResponse.json({ ok: false, error: "image_url must be http(s)" }, { status: 400 });
 
   const buttonsRaw = Array.isArray(body.buttons) ? body.buttons : [];
   if (buttonsRaw.length > MAX_BUTTONS) {

@@ -141,8 +141,9 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
             height: 64,
             margin: "0 auto 20px",
             borderRadius: 18,
-            background: "#fff",
-            color: "#1d4ed8",
+            background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+            boxShadow: "0 12px 32px rgba(29,78,216,.45)",
+            color: "#fff",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -178,6 +179,18 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
               color: "#0f172a",
               cursor: busy ? "default" : "pointer",
               opacity: busy ? 0.7 : 1,
+              transition: "transform .15s ease, box-shadow .15s ease",
+              boxShadow: "0 8px 24px rgba(0,0,0,.25)",
+            }}
+            onMouseEnter={(e) => {
+              if (!busy) {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.boxShadow = "0 12px 28px rgba(0,0,0,.3)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,.25)";
             }}
           >
             {busy ? "Subscribing…" : "Allow notifications"}
@@ -193,6 +206,13 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
                 background: "transparent",
                 color: "#fff",
                 cursor: "pointer",
+                transition: "background .15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,.1)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
               }}
             >
               No thanks, take me there

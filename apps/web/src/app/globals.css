@@ -23,6 +23,8 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.585 0.233 277.117);
   --radius: 0.625rem;
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.04), 0 1px 3px oklch(0 0 0 / 0.04);
+  --shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.05), 0 8px 24px oklch(0 0 0 / 0.08);
 }
 
 .dark {
@@ -45,6 +47,8 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.685 0.169 277.004);
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 3px oklch(0 0 0 / 0.2);
+  --shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.35), 0 8px 24px oklch(0 0 0 / 0.45);
 }
 
 @theme inline {
@@ -77,8 +81,79 @@
   * {
     border-color: var(--border);
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      "Noto Sans",
+      sans-serif,
+      "Apple Color Emoji",
+      "Segoe UI Emoji";
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+  /* Themed scrollbars — subtle, panel-consistent. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 25%, transparent) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--foreground) 25%, transparent);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  /* Premium shell background: a barely-there radial tint that stays
+     tasteful in both themes. */
+  .app-shell {
+    background:
+      radial-gradient(1000px 500px at 85% -10%, color-mix(in oklab, var(--primary) 8%, transparent), transparent 60%),
+      radial-gradient(800px 400px at -10% 110%, color-mix(in oklab, var(--primary) 6%, transparent), transparent 60%),
+      var(--background);
+  }
+  .card-lift {
+    transition:
+      box-shadow 0.2s ease,
+      transform 0.2s ease,
+      border-color 0.2s ease;
+  }
+  .card-lift:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .kicker {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 }

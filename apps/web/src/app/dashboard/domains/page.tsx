@@ -66,7 +66,7 @@ export default async function DomainsPage() {
             <Link
               key={row.id}
               href={`/dashboard/domains/${row.id}`}
-              className="flex items-center justify-between rounded-xl border bg-card p-5 transition-colors hover:bg-accent/50"
+              className="card-lift flex items-center justify-between rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/50"
             >
               <div>
                 <p className="font-medium">{row.name}</p>

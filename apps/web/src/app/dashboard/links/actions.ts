@@ -12,11 +12,21 @@ import { logAudit } from "@/lib/audit";
 export type LinkFormState = { ok?: boolean; error?: string };
 
 const linkSchema = z.object({
-  target_url: z.string().trim().url("Enter a valid target URL"),
+  target_url: z
+    .string()
+    .trim()
+    .url("Enter a valid target URL")
+    .refine((u) => /^https?:\/\//i.test(u), "Target URL must be http(s)"),
   prompt_text: z.string().trim().max(120).optional().or(z.literal("")),
   force_subscribe: z.coerce.number().int().min(0).max(1).default(0),
   domain_id: z.coerce.number().int().positive().optional(),
-  deleted_target_url: z.string().trim().url().optional().or(z.literal("")),
+  deleted_target_url: z
+    .string()
+    .trim()
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), "Fallback URL must be http(s)")
+    .optional()
+    .or(z.literal("")),
 });
 
 const CODE_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";

@@ -2,55 +2,29 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { IosInstallHint } from "@/components/ios-install-hint";
-
-const NAV: { href: string; label: string; disabled?: boolean }[] = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/dashboard/domains", label: "Domains" },
-  { href: "/dashboard/campaigns", label: "Campaigns" },
-  { href: "/dashboard/analytics", label: "Analytics" },
-  { href: "/dashboard/segments", label: "Segments" },
-  { href: "/dashboard/templates", label: "Templates" },
-  { href: "/dashboard/links", label: "LP links" },
-  { href: "/dashboard/channels", label: "YouTube channels" },
-  { href: "/dashboard/automations", label: "Automations" },
-  { href: "/dashboard/status", label: "Status" },
-  { href: "/dashboard/api", label: "API" },
-  { href: "/dashboard/guides", label: "Guides" },
-  { href: "/dashboard/settings", label: "Settings" },
-  { href: "/dashboard/profile", label: "Profile" },
-];
+import { AppNav } from "@/components/app-nav";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   return (
-    <div className="flex min-h-svh">
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-card p-4 md:flex">
-        <div className="mb-6 flex items-center gap-2 px-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+    <div className="app-shell flex min-h-svh">
+      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r bg-card/60 px-3 py-5 backdrop-blur md:flex">
+        <div className="mb-6 flex items-center gap-2.5 px-2">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/60 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25">
             P
           </span>
-          <span className="font-semibold">PushPanel</span>
+          <span className="text-[15px] font-semibold tracking-tight">PushPanel</span>
         </div>
-        <nav className="flex flex-col gap-1 text-sm">
-          {NAV.map((item) =>
-            item.disabled ? (
-              <span key={item.href} className="px-3 py-2 text-muted-foreground">
-                {item.label}
-              </span>
-            ) : (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="rounded-md px-3 py-2 hover:bg-accent hover:text-accent-foreground"
-              >
-                {item.label}
-              </Link>
-            ),
-          )}
-        </nav>
-        <div className="mt-auto">
+        <div className="flex-1 overflow-y-auto">
+          <AppNav />
+        </div>
+        <div className="mt-4 border-t pt-4">
+          <div className="px-2 pb-2">
+            <p className="truncate text-xs font-medium">{session.user.name ?? session.user.email}</p>
+            <p className="truncate text-[11px] text-muted-foreground">{session.user.role}</p>
+          </div>
           <form
             action={async () => {
               "use server";
@@ -59,14 +33,125 @@ export default async function DashboardLayout({ children }: { children: React.Re
           >
             <button
               type="submit"
-              className="w-full rounded-md px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="w-full rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               Sign out
             </button>
           </form>
         </div>
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur md:hidden">
+          <div className="flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60 text-xs font-bold text-primary-foreground">
+              P
+            </span>
+            <span className="text-sm font-semibold tracking-tight">PushPanel</span>
+          </div>
+          <form
+            action={async () => {
+              "use server";
+              await signOut({ redirectTo: "/login" });
+            }}
+          >
+            <button
+              type="submit"
+              className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              Sign out
+            </button>
+          </form>
+        </header>
+        <nav className="sticky top-[49px] z-30 overflow-x-auto border-b bg-background/80 px-3 py-2 backdrop-blur md:hidden">
+          <div className="flex items-center gap-1 text-sm">
+            <Link
+              href="/dashboard"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/dashboard/domains"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Domains
+            </Link>
+            <Link
+              href="/dashboard/campaigns"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Campaigns
+            </Link>
+            <Link
+              href="/dashboard/analytics"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Analytics
+            </Link>
+            <Link
+              href="/dashboard/segments"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Segments
+            </Link>
+            <Link
+              href="/dashboard/templates"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Templates
+            </Link>
+            <Link
+              href="/dashboard/links"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              LP links
+            </Link>
+            <Link
+              href="/dashboard/channels"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              YouTube channels
+            </Link>
+            <Link
+              href="/dashboard/automations"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Automations
+            </Link>
+            <Link
+              href="/dashboard/status"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Status
+            </Link>
+            <Link
+              href="/dashboard/api"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              API
+            </Link>
+            <Link
+              href="/dashboard/guides"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Guides
+            </Link>
+            <Link
+              href="/dashboard/settings"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Settings
+            </Link>
+            <Link
+              href="/dashboard/profile"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Profile
+            </Link>
+          </div>
+        </nav>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 md:px-8">{children}</main>
+      </div>
       <IosInstallHint />
     </div>
   );

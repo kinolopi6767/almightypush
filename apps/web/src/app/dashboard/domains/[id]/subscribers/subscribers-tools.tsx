@@ -46,15 +46,13 @@ export function SubscribersTools({ domainId }: { domainId: number }) {
       URL.revokeObjectURL(url);
     }
   };
-  const exporting = false;
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => void download()}
-          disabled={exporting}
-          className="inline-flex h-9 items-center rounded-md bg-secondary px-4 text-sm font-medium transition-colors hover:bg-secondary/80 disabled:opacity-50"
+          className="inline-flex h-9 items-center rounded-md bg-secondary px-4 text-sm font-medium transition-colors hover:bg-secondary/80"
         >
           Export CSV
         </button>

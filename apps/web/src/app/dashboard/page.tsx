@@ -47,9 +47,12 @@ export default async function DashboardPage() {
       </p>
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map(([label, value]) => (
-          <div key={label} className="rounded-xl border bg-card p-5">
-            <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="mt-2 text-3xl font-semibold">{value}</p>
+          <div
+            key={label}
+            className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]"
+          >
+            <p className="kicker text-muted-foreground">{label}</p>
+            <p className="tabular mt-2.5 text-3xl font-semibold tracking-tight">{value.toLocaleString()}</p>
           </div>
         ))}
       </div>

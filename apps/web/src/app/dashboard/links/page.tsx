@@ -52,7 +52,7 @@ export default async function LinksPage() {
             </div>
           )}
           {rows.map((row) => (
-            <div key={row.id} className="rounded-xl border bg-card p-5">
+            <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="break-all text-sm font-medium">{row.target_url}</p>

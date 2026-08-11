@@ -42,13 +42,22 @@ export function LoginForm() {
   };
 
   return (
-    <div className="flex min-h-svh items-center justify-center px-4 py-12">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-2 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Sign in to PushPanel</h1>
-          <p className="text-sm text-muted-foreground">Your self-hosted push notification panel</p>
+    <div className="app-shell relative flex min-h-svh items-center justify-center px-4 py-12">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/15 to-transparent" />
+      <div className="relative w-full max-w-sm space-y-6">
+        <div className="space-y-3 text-center">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/60 text-base font-bold text-primary-foreground shadow-lg shadow-primary/25">
+            P
+          </span>
+          <div className="space-y-1.5">
+            <h1 className="text-2xl font-semibold tracking-tight">Sign in to PushPanel</h1>
+            <p className="text-sm text-muted-foreground">Your self-hosted push notification panel</p>
+          </div>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 rounded-2xl border bg-card/90 p-6 shadow-xl shadow-black/5 backdrop-blur dark:shadow-black/20"
+        >
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium">
               Email
@@ -91,7 +100,7 @@ export function LoginForm() {
                 maxLength={6}
                 autoComplete="one-time-code"
                 placeholder="000000"
-                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
             </div>

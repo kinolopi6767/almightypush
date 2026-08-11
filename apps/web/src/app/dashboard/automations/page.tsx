@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
@@ -14,6 +14,7 @@ export default async function AutomationsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!wsId) redirect("/setup");
 
   const [rows, domainRows] = await Promise.all([
     db
@@ -31,13 +32,13 @@ export default async function AutomationsPage() {
       })
       .from(automations)
       .leftJoin(domains, eq(domains.id, automations.domain_id))
-      .where(wsId ? eq(automations.workspace_id, wsId) : sql`1=1`)
+      .where(eq(automations.workspace_id, wsId))
       .orderBy(desc(automations.id))
       .all(),
     db
       .select({ id: domains.id, name: domains.name })
       .from(domains)
-      .where(wsId ? eq(domains.workspace_id, wsId) : sql`1=1`)
+      .where(eq(domains.workspace_id, wsId))
       .orderBy(domains.name)
       .all(),
   ]);
@@ -61,7 +62,7 @@ export default async function AutomationsPage() {
           </div>
         )}
         {rows.map((row) => (
-          <div key={row.id} className="rounded-xl border bg-card p-4">
+          <div key={row.id} className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
             <div className="flex flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

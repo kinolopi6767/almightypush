@@ -2,56 +2,58 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { auditLog, backups, settings } from "@pushpanel/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { SettingsForm } from "./settings-form";
 import { BackupsPanel } from "./settings-form";
 
 export const metadata = { title: "Settings" };
 
+const SETTING_KEYS = [
+  "timezone",
+  "cleanup_unsubs_retention_days",
+  "sending_speed",
+  "utm_enabled",
+  "api_access_enabled",
+  "backup_auto_interval",
+  "backup_retention",
+] as const;
+
 export default async function SettingsPage() {
   const session = await auth();
   if (!session?.user) return <p className="text-sm text-muted-foreground">Not signed in.</p>;
 
-  const [timezoneRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "timezone")).limit(1).all();
-  const [retentionRow] = db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, "cleanup_unsubs_retention_days"))
-    .limit(1)
-    .all();
-  const [speedRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "sending_speed")).limit(1).all();
-  const [utmRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "utm_enabled")).limit(1).all();
-  const [apiAccessRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "api_access_enabled")).limit(1).all();
-  const [backupIntervalRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "backup_auto_interval")).limit(1).all();
-  const [backupRetentionRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "backup_retention")).limit(1).all();
+  const [settingsRows, backupList, auditRows] = await Promise.all([
+    db.select({ key: settings.key, value: settings.value }).from(settings).where(inArray(settings.key, [...SETTING_KEYS])).all(),
+    db
+      .select({
+        id: backups.id,
+        kind: backups.kind,
+        status: backups.status,
+        size_bytes: backups.size_bytes,
+        created_at: backups.created_at,
+      })
+      .from(backups)
+      .orderBy(desc(backups.id))
+      .limit(50)
+      .all(),
+    db
+      .select({
+        id: auditLog.id,
+        action: auditLog.action,
+        entity_type: auditLog.entity_type,
+        entity_id: auditLog.entity_id,
+        meta_json: auditLog.meta_json,
+        ts: auditLog.ts,
+      })
+      .from(auditLog)
+      .where(eq(auditLog.workspace_id, Number(session.user.workspaceId)))
+      .orderBy(desc(auditLog.ts), desc(auditLog.id))
+      .limit(20)
+      .all(),
+  ]);
 
-  const backupList = await db
-    .select({
-      id: backups.id,
-      kind: backups.kind,
-      status: backups.status,
-      size_bytes: backups.size_bytes,
-      created_at: backups.created_at,
-    })
-    .from(backups)
-    .orderBy(desc(backups.id))
-    .limit(50)
-    .all();
-
-  const auditRows = await db
-    .select({
-      id: auditLog.id,
-      action: auditLog.action,
-      entity_type: auditLog.entity_type,
-      entity_id: auditLog.entity_id,
-      meta_json: auditLog.meta_json,
-      ts: auditLog.ts,
-    })
-    .from(auditLog)
-    .where(eq(auditLog.workspace_id, Number(session.user.workspaceId)))
-    .orderBy(desc(auditLog.ts), desc(auditLog.id))
-    .limit(20)
-    .all();
+  const valueOf = (key: (typeof SETTING_KEYS)[number]): string | undefined =>
+    settingsRows.find((r) => r.key === key)?.value ?? undefined;
 
   return (
     <div className="space-y-8">
@@ -61,13 +63,13 @@ export default async function SettingsPage() {
       </div>
 
       <SettingsForm
-        timezone={timezoneRow?.value ?? ""}
-        retentionDays={retentionRow?.value ?? "30"}
-        sendingSpeed={speedRow?.value ?? "25"}
-        utmEnabled={utmRow?.value === "1"}
-        apiAccess={apiAccessRow?.value !== "0"}
-        backupInterval={backupIntervalRow?.value ?? "off"}
-        backupRetention={backupRetentionRow?.value ?? "10"}
+        timezone={valueOf("timezone") ?? ""}
+        retentionDays={valueOf("cleanup_unsubs_retention_days") ?? "30"}
+        sendingSpeed={valueOf("sending_speed") ?? "25"}
+        utmEnabled={valueOf("utm_enabled") === "1"}
+        apiAccess={valueOf("api_access_enabled") !== "0"}
+        backupInterval={valueOf("backup_auto_interval") ?? "off"}
+        backupRetention={valueOf("backup_retention") ?? "10"}
       />
 
       <BackupsPanel rows={backupList} />

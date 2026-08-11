@@ -58,7 +58,7 @@ export default async function SegmentsPage() {
               domainsLabel = "All domains";
             }
             return (
-              <div key={row.id} className="rounded-xl border bg-card p-5">
+              <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-medium">{row.name}</p>

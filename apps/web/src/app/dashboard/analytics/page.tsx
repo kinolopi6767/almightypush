@@ -143,17 +143,17 @@ export default async function AnalyticsPage({
       </form>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border bg-card p-4">
-          <p className="text-sm text-muted-foreground">Subscribers (filter)</p>
-          <p className="mt-1 text-3xl font-semibold">{totalRow?.value ?? 0}</p>
+        <div className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
+          <p className="kicker text-muted-foreground">Subscribers (filter)</p>
+          <p className="tabular mt-2 text-3xl font-semibold tracking-tight">{totalRow?.value ?? 0}</p>
         </div>
-        <div className="rounded-xl border bg-card p-4">
-          <p className="text-sm text-muted-foreground">Active</p>
-          <p className="mt-1 text-3xl font-semibold text-emerald-600">{activeRow?.value ?? 0}</p>
+        <div className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
+          <p className="kicker text-muted-foreground">Active</p>
+          <p className="tabular mt-2 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{activeRow?.value ?? 0}</p>
         </div>
-        <div className="rounded-xl border bg-card p-4">
-          <p className="text-sm text-muted-foreground">Unsubscribed</p>
-          <p className="mt-1 text-3xl font-semibold text-muted-foreground">{(totalRow?.value ?? 0) - (activeRow?.value ?? 0)}</p>
+        <div className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
+          <p className="kicker text-muted-foreground">Unsubscribed</p>
+          <p className="tabular mt-2 text-3xl font-semibold tracking-tight text-muted-foreground">{(totalRow?.value ?? 0) - (activeRow?.value ?? 0)}</p>
         </div>
       </div>
 
@@ -199,8 +199,8 @@ export default async function AnalyticsPage({
             const intensity = v === 0 ? 0 : 0.15 + (v / maxHour) * 0.85;
             return (
               <div key={h} title={`${String(h).padStart(2, "0")}:00 — ${v} clicks`}
-                className="flex h-10 items-center justify-center rounded text-[11px] font-medium text-white"
-                style={{ backgroundColor: v === 0 ? "hsl(var(--muted))" : `rgba(22, 163, 74, ${intensity})` }}>
+                className="flex h-10 items-center justify-center rounded text-[11px] font-medium text-primary-foreground"
+                style={{ backgroundColor: v === 0 ? "hsl(var(--muted))" : `color-mix(in oklab, var(--primary) ${Math.round(intensity * 100)}%, transparent)` }}>
                 {h}
               </div>
             );

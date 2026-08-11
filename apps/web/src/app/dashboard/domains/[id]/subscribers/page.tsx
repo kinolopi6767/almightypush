@@ -41,19 +41,23 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
   const status = sp.status ?? "all";
-  const page = Math.max(1, Number(sp.page ?? 1));
+  const rawPage = Number(sp.page);
+  const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+
+  const escapeLike = (value: string) => value.replace(/[%_\\]/g, "");
+  const term = q ? `%${escapeLike(q)}%` : undefined;
 
   const where = and(
     eq(subscribers.domain_id, domainId),
     status === "active" ? isNull(subscribers.unsubscribed_at) : undefined,
     status === "unsubscribed" ? isNotNull(subscribers.unsubscribed_at) : undefined,
-    q
+    q && term
       ? or(
-          like(subscribers.browser, `%${q}%`),
-          like(subscribers.os, `%${q}%`),
-          like(subscribers.device, `%${q}%`),
-          like(subscribers.country, `%${q}%`),
-          like(subscribers.state, `%${q}%`),
+          like(subscribers.browser, term),
+          like(subscribers.os, term),
+          like(subscribers.device, term),
+          like(subscribers.country, term),
+          like(subscribers.state, term),
         )
       : undefined,
   );
@@ -176,7 +180,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
                     </td>
                     <td className="px-4 py-2 text-muted-foreground">{location}</td>
                     <td className="max-w-[220px] truncate px-4 py-2 text-muted-foreground" title={s.subscribe_url ?? ""}>
-                      {s.subscribe_url ? new URL(s.subscribe_url).hostname : "—"}
+                      {safeHostname(s.subscribe_url)}
                     </td>
                     <td className="px-4 py-2 text-muted-foreground">{new Date(s.subscribe_at ?? Date.now()).toLocaleString()}</td>
                     <td className="px-4 py-2 text-muted-foreground">
@@ -231,4 +235,13 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
       )}
     </div>
   );
+}
+
+function safeHostname(url: string | null | undefined): string {
+  if (!url) return "—";
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "—";
+  }
 }

@@ -25,13 +25,22 @@ export function AuthCard({ title, description, action, footer, children, submitL
   }, [state, onSuccess]);
 
   return (
-    <div className="flex min-h-svh items-center justify-center px-4 py-12">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-2 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground">{description}</p>
+    <div className="app-shell relative flex min-h-svh items-center justify-center px-4 py-12">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/15 to-transparent" />
+      <div className="relative w-full max-w-sm space-y-6">
+        <div className="space-y-3 text-center">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/60 text-base font-bold text-primary-foreground shadow-lg shadow-primary/25">
+            P
+          </span>
+          <div className="space-y-1.5">
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <p className="text-sm text-muted-foreground">{description}</p>
+          </div>
         </div>
-        <form action={formAction} className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
+        <form
+          action={formAction}
+          className="space-y-4 rounded-2xl border bg-card/90 p-6 shadow-xl shadow-black/5 backdrop-blur dark:shadow-black/20"
+        >
           {children}
           {state?.error && (
             <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

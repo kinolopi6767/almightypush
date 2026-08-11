@@ -19,7 +19,7 @@ export function GrowthChart({ data }: { data: GrowthPoint[] }) {
           cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
           contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))", fontSize: 12 }}
         />
-        <Bar dataKey="count" name="Subscribers" fill="hsl(142 71% 45%)" radius={[3, 3, 0, 0]} />
+        <Bar dataKey="count" name="Subscribers" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
