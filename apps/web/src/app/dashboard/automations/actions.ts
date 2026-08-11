@@ -23,6 +23,7 @@ const createSchema = z.object({
   range: z.coerce.number().int().min(1).max(100).default(10),
   rotation_json: z.string().trim().optional().or(z.literal("")),
   feed_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+  schedule_cron: z.string().trim().min(1).max(100).optional().or(z.literal("")),
 });
 
 export async function createAutomationAction(_prev: AutomationFormState | undefined, formData: FormData): Promise<AutomationFormState> {
@@ -46,6 +47,7 @@ export async function createAutomationAction(_prev: AutomationFormState | undefi
     range: formData.get("range") ?? 10,
     rotation_json: formData.get("rotation_json") ?? "",
     feed_url: formData.get("feed_url") ?? "",
+    schedule_cron: formData.get("schedule_cron") ?? "",
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
@@ -73,9 +75,10 @@ export async function createAutomationAction(_prev: AutomationFormState | undefi
     config.rotation_json = JSON.stringify(list);
   }
   if (data.type === "youtube_push" || data.type === "rss_push") config.feed_url = data.feed_url;
-  if (data.type === "push_on_publish") config.secret = newWebhookSecret();
 
   const isPollType = data.type === "automagic_dynamic" || data.type === "automagic_static" || data.type === "youtube_push" || data.type === "rss_push";
+  if (isPollType && data.schedule_cron) config.schedule_cron = data.schedule_cron;
+  if (data.type === "push_on_publish") config.secret = newWebhookSecret();
   db.insert(automations)
     .values({
       workspace_id: workspaceId,

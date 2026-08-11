@@ -133,3 +133,18 @@ describe("rss_push dedupe helpers", () => {
     expect(pickNewestChangedItem([{ guid: "a" }], "")?.guid).toBe("a");
   });
 });
+
+describe("runAutomations crontab scheduling (C3)", () => {
+  it("re-arms to the next crontab fire time when schedule_cron is set", async () => {
+    const { db } = setup();
+    const id = insertAutomation(db, { type: "automagic_dynamic", config: { schedule_cron: "0 9 * * *" } });
+
+    const stats = await runAutomations(db, new Date("2026-01-01T10:00:00.000Z"));
+    expect(stats.ran).toBe(1);
+
+    const after = row(db, id);
+    expect(after.status).toBe("active");
+    expect(after.consecutive_failures).toBe(1);
+    expect(after.next_run_at).toBe(new Date(2026, 0, 2, 9, 0, 0).toISOString()); // next 09:00 local
+  });
+});

@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { automations } from "@pushpanel/db";
-import { assertPublicHttpUrl, parseAutomationConfig, type AutomationConfig } from "@pushpanel/core";
+import { assertPublicHttpUrl, hasCronSchedule, nextCronRun, parseAutomationConfig, type AutomationConfig } from "@pushpanel/core";
 import { enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
 import Parser from "rss-parser";
 
@@ -284,6 +284,10 @@ export function pickNewestChangedItem(items: RssFeedItem[], lastGuid?: string | 
 
 function nextRunAt(row: AutomationRow, config: AutomationConfig, now: Date): Date | null {
   if (row.type === "push_on_publish" || row.type === "welcome_push") return null;
+  if (hasCronSchedule(config)) {
+    const cronNext = nextCronRun(config.schedule_cron ?? "", now);
+    if (cronNext) return cronNext;
+  }
   return new Date(now.getTime() + (config.interval_minutes ?? 15) * 60_000);
 }
 

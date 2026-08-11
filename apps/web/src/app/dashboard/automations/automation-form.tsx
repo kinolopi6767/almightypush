@@ -31,10 +31,19 @@ const TYPE_DETAILS: Record<string, string> = {
   rss_push: "Polls any RSS/Atom feed and pushes when a new item appears.",
 };
 
+const CRON_PRESETS = [
+  { label: "Every 30 minutes", value: "*/30 * * * *" },
+  { label: "Every hour", value: "0 * * * *" },
+  { label: "Twice a day (9:00, 21:00)", value: "0 9,21 * * *" },
+  { label: "Daily at 9:00", value: "0 9 * * *" },
+  { label: "Weekly, Monday 9:00", value: "0 9 * * 1" },
+];
+
 export function AutomationForm({ domains }: { domains: DomainOption[] }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(createAutomationAction, undefined as AutomationFormState | undefined);
   const [type, setType] = useState<string>("welcome_push");
+  const [cron, setCron] = useState<string>("");
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -116,6 +125,37 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
                 <div>
                   <label className={label} htmlFor="automation-interval">Interval (minutes)</label>
                   <input id="automation-interval" name="interval_minutes" type="number" min={1} max={10080} defaultValue={15} className={`mt-1 ${inputCls}`} />
+                </div>
+              )}
+
+              {(type === "automagic_dynamic" || type === "automagic_static" || type === "youtube_push" || type === "rss_push") && (
+                <div>
+                  <label className={label} htmlFor="automation-cron">Crontab schedule (optional)</label>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      id="automation-cron"
+                      name="schedule_cron"
+                      value={cron}
+                      onChange={(e) => setCron(e.target.value)}
+                      className={inputCls}
+                      placeholder="0 9 * * *"
+                    />
+                    <select
+                      aria-label="Crontab preset"
+                      value={""}
+                      onChange={(e) => setCron(e.target.value)}
+                      className={inputCls}
+                    >
+                      <option value="">Presets…</option>
+                      {CRON_PRESETS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Overrides the interval above when set. 5 fields: minute hour day month weekday —{" "}
+                    <a href="https://crontab.guru" target="_blank" rel="noreferrer" className="underline">crontab.guru</a>.
+                  </p>
                 </div>
               )}
 
