@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { campaigns, deliveries, domains, events, subscribers } from "@pushpanel/db/schema";
 import { STATUS_STYLES } from "../status";
 import { CancelCampaignForm } from "./cancel-form";
+import { DuplicateCampaignForm } from "./duplicate-form";
 
 export const metadata = { title: "Campaign" };
 
@@ -155,6 +156,7 @@ export default async function CampaignDetailPage({ params }: Props) {
         </div>
 
         <CancelCampaignForm campaignId={campaign.id} status={campaign.status} />
+        {["done", "failed", "cancelled", "sent"].includes(campaign.status) && <DuplicateCampaignForm campaignId={campaign.id} />}
       </div>
     </>
   );

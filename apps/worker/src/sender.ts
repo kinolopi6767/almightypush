@@ -180,7 +180,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
   }
 
   const [campaign] = db
-    .select({ title: campaigns.title, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url })
+    .select({ title: campaigns.title, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
     .from(campaigns)
     .where(eq(campaigns.id, row.campaign_id))
     .limit(1)
@@ -206,7 +206,9 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     title: campaign.title,
     body: campaign.message ?? undefined,
     icon: campaign.icon_url ?? undefined,
+    image: campaign.image_url ?? undefined,
     url: campaign.launch_url ?? undefined,
+    buttons: campaign.buttons_json ? (JSON.parse(campaign.buttons_json) as PushMessage["buttons"]) : undefined,
     // M8: the service worker echoes these in its click beacon.
     deliveryId: row.id,
     campaignId: row.campaign_id,

@@ -6,6 +6,7 @@ export type AuditAction =
   | "domain.delete"
   | "campaign.create"
   | "campaign.cancel"
+  | "campaign.duplicate"
   | "automation.create"
   | "automation.toggle"
   | "automation.run"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { Fragment, useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createCampaignAction, type CampaignFormState } from "./actions";
 
@@ -21,6 +21,9 @@ export function CampaignForm({
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [launchUrl, setLaunchUrl] = useState("");
+  const [iconUrl, setIconUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [buttons, setButtons] = useState<{ label: string; url: string }[]>([{ label: "", url: "" }]);
 
   useEffect(() => {
     if (state?.ok && state.id) router.push(`/dashboard/campaigns/${state.id}`);
@@ -35,6 +38,16 @@ export function CampaignForm({
       if (t.launch_url) setLaunchUrl(t.launch_url);
     }
   };
+
+  const updateButton = (index: number, field: "label" | "url", value: string) => {
+    setButtons((prev) => prev.map((b, i) => (i === index ? { ...b, [field]: value } : b)));
+  };
+
+  const removeButton = (index: number) => setButtons((prev) => prev.filter((_, i) => i !== index));
+
+  const addButton = () => setButtons((prev) => (prev.length >= 3 ? prev : [...prev, { label: "", url: "" }]));
+
+  const filledButtons = buttons.filter((b) => b.label.trim() || b.url.trim());
 
   return (
     <form action={formAction} className="rounded-xl border bg-card p-5">
@@ -125,6 +138,83 @@ export function CampaignForm({
             placeholder="https://app.example.com/sale"
             className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label htmlFor="iconUrl" className="text-sm font-medium">
+              Icon URL
+            </label>
+            <input
+              id="iconUrl"
+              name="iconUrl"
+              type="url"
+              value={iconUrl}
+              onChange={(e) => setIconUrl(e.target.value)}
+              placeholder="https://example.com/icon.png"
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div>
+            <label htmlFor="imageUrl" className="text-sm font-medium">
+              Image URL
+            </label>
+            <input
+              id="imageUrl"
+              name="imageUrl"
+              type="url"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://example.com/banner.png"
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        </div>
+        <div>
+          <span className="text-sm font-medium">Action buttons</span>
+          <p className="mt-0.5 text-xs text-muted-foreground">Shown below the notification on desktop. Up to 3.</p>
+          {filledButtons.map((b, i) => (
+            <div key={i} className="mt-2 grid grid-cols-[1fr_1.4fr_auto] gap-2">
+              <input
+                aria-label={`Button ${i + 1} label`}
+                value={b.label}
+                onChange={(e) => updateButton(i, "label", e.target.value)}
+                placeholder="Label"
+                maxLength={24}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <input
+                aria-label={`Button ${i + 1} URL`}
+                value={b.url}
+                onChange={(e) => updateButton(i, "url", e.target.value)}
+                placeholder="https://example.com/x"
+                type="url"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button
+                type="button"
+                onClick={() => removeButton(i)}
+                aria-label={`Remove button ${i + 1}`}
+                className="rounded-md border px-3 text-sm text-muted-foreground hover:bg-muted"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {buttons.length < 3 && (
+            <button
+              type="button"
+              onClick={addButton}
+              className="mt-2 rounded-md border border-dashed px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
+            >
+              + Add button
+            </button>
+          )}
+          {buttons.filter((b) => b.label.trim() && b.url.trim()).map((b, i) => (
+            <Fragment key={i}>
+              <input type="hidden" name="buttonLabel" value={b.label} />
+              <input type="hidden" name="buttonUrl" value={b.url} />
+            </Fragment>
+          ))}
         </div>
         <div>
           <label htmlFor="schedule" className="text-sm font-medium">
