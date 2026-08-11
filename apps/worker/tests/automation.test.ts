@@ -179,6 +179,7 @@ describe("runAutomations drip sequences (C8)", () => {
 
     const camps = db
       .select({
+        id: campaigns.id,
         title: campaigns.title,
         status: campaigns.status,
         schedule_at: campaigns.schedule_at,
@@ -195,7 +196,7 @@ describe("runAutomations drip sequences (C8)", () => {
 
     const deliveryRows = db.select({ campaign_id: deliveries.campaign_id }).from(deliveries).all();
     expect(deliveryRows).toHaveLength(1); // only the immediate step queues now
-    expect(deliveryRows[0]!.campaign_id).toBe(camps.find((c) => c.title === "Welcome")!.id);
+    expect(deliveryRows[0]!.campaign_id).toBe(byTitle("Welcome").id);
   });
 
   it("fails cleanly when the sequence has no steps", async () => {
