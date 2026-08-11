@@ -12,13 +12,14 @@ interface DomainOption {
 
 // Mirrors @pushpanel/core AUTOMATION_TYPES — kept client-side so the client
 // bundle never imports packages that pull native bindings (argon2) into it.
-const TYPES = ["welcome_push", "push_on_publish", "automagic_dynamic", "automagic_static", "youtube_push"] as const;
+const TYPES = ["welcome_push", "push_on_publish", "automagic_dynamic", "automagic_static", "youtube_push", "rss_push"] as const;
 const TYPE_LABEL: Record<string, string> = {
   welcome_push: "Welcome push",
   push_on_publish: "Push on publish (webhook)",
   automagic_dynamic: "AutoMagic dynamic",
   automagic_static: "AutoMagic static",
   youtube_push: "YouTube push",
+  rss_push: "RSS publish",
 };
 
 const TYPE_DETAILS: Record<string, string> = {
@@ -27,6 +28,7 @@ const TYPE_DETAILS: Record<string, string> = {
   automagic_dynamic: "Fetches the newest posts from a WordPress REST API and sends a random pick.",
   automagic_static: "Rotates through a curated list of messages on an interval.",
   youtube_push: "Polls a channel RSS feed and pushes when a new video appears.",
+  rss_push: "Polls any RSS/Atom feed and pushes when a new item appears.",
 };
 
 export function AutomationForm({ domains }: { domains: DomainOption[] }) {
@@ -110,7 +112,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
                 </div>
               )}
 
-              {(type === "automagic_dynamic" || type === "automagic_static" || type === "youtube_push") && (
+              {(type === "automagic_dynamic" || type === "automagic_static" || type === "youtube_push" || type === "rss_push") && (
                 <div>
                   <label className={label} htmlFor="automation-interval">Interval (minutes)</label>
                   <input id="automation-interval" name="interval_minutes" type="number" min={1} max={10080} defaultValue={15} className={`mt-1 ${inputCls}`} />
@@ -138,10 +140,10 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
                 </div>
               )}
 
-              {type === "youtube_push" && (
+              {(type === "youtube_push" || type === "rss_push") && (
                 <div>
-                  <label className={label} htmlFor="automation-feed">Channel RSS feed URL</label>
-                  <input id="automation-feed" name="feed_url" type="url" className={`mt-1 ${inputCls}`} placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…" />
+                  <label className={label} htmlFor="automation-feed">Feed URL</label>
+                  <input id="automation-feed" name="feed_url" type="url" className={`mt-1 ${inputCls}`} placeholder="https://example.com/feed.xml" />
                 </div>
               )}
 

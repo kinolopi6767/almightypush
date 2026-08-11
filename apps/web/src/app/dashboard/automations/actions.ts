@@ -72,10 +72,10 @@ export async function createAutomationAction(_prev: AutomationFormState | undefi
     if (data.rotation_json && list.length === 0) return { error: "Rotation list must be a JSON array of { title, ... } items" };
     config.rotation_json = JSON.stringify(list);
   }
-  if (data.type === "youtube_push") config.feed_url = data.feed_url;
+  if (data.type === "youtube_push" || data.type === "rss_push") config.feed_url = data.feed_url;
   if (data.type === "push_on_publish") config.secret = newWebhookSecret();
 
-  const isPollType = data.type === "automagic_dynamic" || data.type === "automagic_static" || data.type === "youtube_push";
+  const isPollType = data.type === "automagic_dynamic" || data.type === "automagic_static" || data.type === "youtube_push" || data.type === "rss_push";
   db.insert(automations)
     .values({
       workspace_id: workspaceId,

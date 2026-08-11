@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createMemoryDb } from "@pushpanel/db";
 import { automations, domains, workspaces } from "@pushpanel/db/schema";
-import { runAutomations, MAX_CONSECUTIVE_FAILURES, FAILURE_RETRY_MINUTES } from "../src/automation.js";
+import { runAutomations, MAX_CONSECUTIVE_FAILURES, FAILURE_RETRY_MINUTES, itemGuid, pickNewestChangedItem } from "../src/automation.js";
 
 type Db = ReturnType<typeof createMemoryDb>["db"];
 
@@ -106,5 +106,30 @@ describe("runAutomations auto-pause", () => {
     expect(after.error).toBeNull();
     expect(after.status).toBe("active");
     expect(after.next_run_at).toBeNull(); // event-driven types do not re-arm
+  });
+});
+
+describe("rss_push dedupe helpers", () => {
+  it("itemGuid prefers guid, then id, then link", () => {
+    expect(itemGuid({ guid: "g", id: "i", link: "l" })).toBe("g");
+    expect(itemGuid({ id: "i", link: "l" })).toBe("i");
+    expect(itemGuid({ link: "l" })).toBe("l");
+    expect(itemGuid({ isoDate: "2026-01-01" })).toBe("2026-01-01");
+  });
+
+  it("returns the newest item when nothing was sent yet or the key changed", () => {
+    const items = [{ guid: "a" }, { guid: "b" }];
+    expect(pickNewestChangedItem(items)?.guid).toBe("a");
+    expect(pickNewestChangedItem(items, "old")?.guid).toBe("a");
+  });
+
+  it("returns null when the newest item was already sent", () => {
+    expect(pickNewestChangedItem([{ guid: "a" }], "a")).toBeNull();
+    expect(pickNewestChangedItem([], "a")).toBeNull();
+    expect(pickNewestChangedItem([], undefined)).toBeNull();
+  });
+
+  it("fires once on first poll even with an empty last key", () => {
+    expect(pickNewestChangedItem([{ guid: "a" }], "")?.guid).toBe("a");
   });
 });

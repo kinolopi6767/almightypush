@@ -153,6 +153,19 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
         });
         return ok(1, result.queued);
       }
+      case "rss_push": {
+        const item = await awaitLatestFeedItem(db, row, config);
+        if (!item) return ok(0, 0);
+        const result = enqueueAutomationCampaign({
+          db,
+          workspaceId: row.workspace_id,
+          domainId: row.domain_id,
+          automationId: row.id,
+          payload: { ...config.payload, title: item.title ?? config.payload.title, message: item.body ?? config.payload.message, launch_url: item.url ?? config.payload.launch_url },
+          now,
+        });
+        return ok(1, result.queued);
+      }
       default:
         return { ok: false, campaigns: 0, queued: 0, error: `Unknown automation type: ${row.type}` };
     }
@@ -221,6 +234,52 @@ async function awaitLatestVideo(db: PushDb, row: AutomationRow, config: Automati
     .run();
 
   return { title: entry.title ?? undefined, body: undefined, url: entry.link ?? undefined };
+}
+
+/** C5: generic RSS/Atom publish poll — dedupe key is guid ?? id ?? link. */
+export interface RssFeedItem {
+  title?: string;
+  guid?: string;
+  id?: string;
+  link?: string;
+  isoDate?: string;
+  contentSnippet?: string;
+  summary?: string;
+}
+
+export async function awaitLatestFeedItem(db: PushDb, row: AutomationRow, config: AutomationConfig): Promise<FeedItem | null> {
+  const xml = await fetchText(config.feed_url ?? "");
+  const parser = new Parser();
+  const feed = await parser.parseString(xml);
+  const entry = pickNewestChangedItem(feed.items as RssFeedItem[], config.last_item_guid);
+  if (!entry) return null;
+
+  const updated: AutomationConfig = { ...config, last_item_guid: itemGuid(entry) };
+  db.update(automations)
+    .set({ config_json: JSON.stringify(updated) })
+    .where(eq(automations.id, row.id))
+    .run();
+
+  return {
+    title: entry.title ?? undefined,
+    body: entry.contentSnippet ?? entry.summary ?? undefined,
+    url: entry.link ?? undefined,
+  };
+}
+
+export function itemGuid(item: RssFeedItem): string {
+  return item.guid?.trim() || item.id?.trim() || item.link?.trim() || item.isoDate || String(Math.random());
+}
+
+/**
+ * Newest item from a parsed feed whose guid differs from the last sent one
+ * (mirrors the YouTube dedupe: only the newest entry is considered).
+ */
+export function pickNewestChangedItem(items: RssFeedItem[], lastGuid?: string | null): RssFeedItem | null {
+  const first = items[0];
+  if (!first) return null;
+  if (lastGuid && itemGuid(first) === lastGuid) return null;
+  return first;
 }
 
 function nextRunAt(row: AutomationRow, config: AutomationConfig, now: Date): Date | null {

@@ -11,6 +11,7 @@ export const AUTOMATION_TYPES = [
   "automagic_dynamic",
   "automagic_static",
   "youtube_push",
+  "rss_push",
 ] as const;
 export type AutomationType = (typeof AUTOMATION_TYPES)[number];
 
@@ -43,6 +44,8 @@ export const automationConfigSchema = z.object({
   rotation_index: z.coerce.number().int().min(0).optional(),
   /** internal: last sent youtube video id (dedupe). */
   last_video_id: z.string().optional(),
+  /** internal: last sent rss item key (dedupe). */
+  last_item_guid: z.string().optional(),
 });
 export type AutomationConfig = z.infer<typeof automationConfigSchema>;
 
@@ -52,6 +55,7 @@ export const AUTOMATION_TYPE_LABEL: Record<AutomationType, string> = {
   automagic_dynamic: "AutoMagic dynamic",
   automagic_static: "AutoMagic static",
   youtube_push: "YouTube push",
+  rss_push: "RSS publish",
 };
 
 export function parseAutomationConfig(json: string | null | undefined): AutomationConfig {
