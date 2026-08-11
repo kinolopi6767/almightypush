@@ -40,11 +40,11 @@
 |---|---|---|
 | C1 | AutoMagic Dynamic (WP API URL + range + random pick) | content adapter (RSS/WP/JSON) ➕ | 🟢 |
 | C2 | AutoMagic Static (evergreen fixed campaign) | static automation | 🟢 |
-| C3 | AutoMagic cron scheduling (crontab input + preset) | cron UI + crontab.guru link | 🟡 interval_minutes polling; cron-text parser pending |
-| C4 | Auto-pause if source API down | retry w/ backoff + alert | 🟡 per-run error + retries; auto-pause/alert pending |
+| C3 | AutoMagic cron scheduling (crontab input + preset) | cron UI + crontab.guru link | 🟢 crontab input + presets, cron-parser re-arm |
+| C4 | Auto-pause if source API down | retry w/ backoff + alert | 🟢 3 consecutive failures -> paused + fast retry probe |
 | C5 | Push on Publish (WP plugin toggle + delay) | plugin + webhook + RSS triple ➕ | 🟢 plugin + HMAC webhook shipped; RSS poll pending |
 | C6 | Welcome Push (auto on subscribe) | welcome automation | 🟢 |
-| C7 | YouTube Push (channel → LP link → auto notify) | YT channel module | 🟡 channel polling shipped; channel mgmt page pending |
+| C7 | YouTube Push (channel → LP link → auto notify) | YT channel module | 🟢 channel mgmt page + LP link creation |
 | C8 | Drip notifications (sequence) | drip builder ➕ | ⚪ |
 | C9 | Webhook → Push trigger | webhook automation ➕ | 🟢 push_on_publish trigger endpoint |
 
