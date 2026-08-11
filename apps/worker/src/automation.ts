@@ -216,24 +216,55 @@ function nextRunAt(row: AutomationRow, config: AutomationConfig, now: Date): Dat
   return new Date(now.getTime() + (config.interval_minutes ?? 15) * 60_000);
 }
 
+const MAX_FETCH_BYTES = 1024 * 1024;
+const MAX_REDIRECTS = 3;
+
+/**
+ * SSRF-aware fetch: every hop (including redirect targets) is re-validated
+ * with assertPublicHttpUrl before the request is made, redirects are capped
+ * (the default `redirect: "follow"` would skip re-validation), and the
+ * response body is size-capped so a hostile feed cannot exhaust memory.
+ */
+async function safeFetch(sourceUrl: string, path: (base: URL) => URL): Promise<{ text: string; url: URL }> {
+  let current = new URL(sourceUrl);
+  for (let hops = 0; ; hops++) {
+    const checked = await assertPublicHttpUrl(current.toString());
+    if (!checked.ok || !checked.url) throw new Error(checked.error ?? "Invalid source URL");
+    const target = path(checked.url);
+    const res = await fetch(target, { signal: AbortSignal.timeout(10_000), redirect: "manual" });
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get("location");
+      if (!location) throw new Error("Redirect without location");
+      if (hops >= MAX_REDIRECTS) throw new Error("Too many redirects");
+      current = new URL(location, target);
+      continue;
+    }
+    if (!res.ok) throw new Error(`Source returned HTTP ${res.status}`);
+    const text = await res.text();
+    if (text.length > MAX_FETCH_BYTES) throw new Error("Source response too large");
+    return { text, url: target };
+  }
+}
+
 async function fetchPosts(sourceUrl: string, range: number): Promise<unknown[]> {
-  const checked = await assertPublicHttpUrl(sourceUrl);
-  if (!checked.ok) throw new Error(checked.error ?? "Invalid source URL");
-  const url = new URL(`${sourceUrl.replace(/\/+$/, "")}/wp-json/wp/v2/posts`);
-  url.searchParams.set("per_page", String(Math.min(range, 100)));
-  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-  if (!res.ok) throw new Error(`Source returned HTTP ${res.status}`);
-  const data = (await res.json()) as unknown;
+  const { text } = await safeFetch(sourceUrl, (base) => {
+    const url = new URL(`${sourceUrl.replace(/\/+$/, "")}/wp-json/wp/v2/posts`);
+    url.searchParams.set("per_page", String(Math.min(range, 100)));
+    return url;
+  });
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("Source did not return valid JSON");
+  }
   if (!Array.isArray(data)) throw new Error("Source did not return a post array");
   return data.slice(0, range);
 }
 
 async function fetchText(sourceUrl: string): Promise<string> {
-  const checked = await assertPublicHttpUrl(sourceUrl);
-  if (!checked.ok) throw new Error(checked.error ?? "Invalid feed URL");
-  const res = await fetch(sourceUrl, { signal: AbortSignal.timeout(10_000) });
-  if (!res.ok) throw new Error(`Feed returned HTTP ${res.status}`);
-  return res.text();
+  const { text } = await safeFetch(sourceUrl, (base) => new URL(base.toString()));
+  return text;
 }
 
 function normalizePost(item: Record<string, unknown>): AutomationPayload {

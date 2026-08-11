@@ -9,6 +9,7 @@ import { resolveDbPath } from "@pushpanel/db";
 import { backups, settings } from "@pushpanel/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { isValidTimezone } from "@pushpanel/core";
 import { logAudit } from "@/lib/audit";
 
 export type SettingsFormState =
@@ -27,7 +28,13 @@ async function requireOwner() {
 }
 
 const generalSchema = z.object({
-  timezone: z.string().trim().min(1).max(64).optional(),
+  timezone: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .refine((v) => isValidTimezone(v), { message: "Unknown timezone — pick one from the list" })
+    .optional(),
   cleanupRetentionDays: z.coerce.number().int().min(0).max(3650).optional(),
 });
 

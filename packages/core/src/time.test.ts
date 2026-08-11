@@ -40,6 +40,19 @@ describe("naiveLocalToUtcMs", () => {
     expect(Number.isNaN(naiveLocalToUtcMs("not-a-date", "UTC"))).toBe(true);
   });
 
+  it("throws InvalidTimezoneError for unknown zones", () => {
+    expect(() => naiveLocalToUtcMs("2026-07-01T12:30", "Bogus/Zone")).toThrow(/Invalid timezone/);
+  });
+
+  it("validates timezone names", async () => {
+    const { isValidTimezone } = await import("./time");
+    expect(isValidTimezone("Europe/Berlin")).toBe(true);
+    expect(isValidTimezone("America/New_York")).toBe(true);
+    expect(isValidTimezone("Bogus/Zone")).toBe(false);
+    expect(isValidTimezone("")).toBe(true);
+    expect(isValidTimezone(undefined)).toBe(true);
+  });
+
   it("round-trips: the timezone shows the original wall clock", () => {
     const input = "2026-12-01T23:15";
     const utc = naiveLocalToUtcMs(input, "Europe/Berlin");

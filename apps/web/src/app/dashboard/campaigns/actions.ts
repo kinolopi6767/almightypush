@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { campaigns, deliveries, domains, settings, subscribers } from "@pushpanel/db/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
-import { naiveLocalToUtcMs } from "@pushpanel/core";
+import { InvalidTimezoneError, naiveLocalToUtcMs } from "@pushpanel/core";
 import { z } from "zod";
 
 export type CampaignFormState = { error?: string; ok?: boolean; id?: number } | undefined;
@@ -68,7 +68,18 @@ export async function createCampaignAction(
       .where(eq(settings.key, "timezone"))
       .limit(1)
       .all();
-    const t = naiveLocalToUtcMs(parsed.data.schedule, tzRow?.value || undefined);
+    let t: number;
+    try {
+      t = naiveLocalToUtcMs(parsed.data.schedule, tzRow?.value || undefined);
+    } catch (error) {
+      // a legacy/bad stored timezone must not brick scheduling — fall back
+      // to the server's local interpretation and surface a warning
+      if (error instanceof InvalidTimezoneError) {
+        t = naiveLocalToUtcMs(parsed.data.schedule, undefined);
+      } else {
+        throw error;
+      }
+    }
     if (Number.isNaN(t)) return { error: "Invalid schedule time" };
     scheduleAt = new Date(t).toISOString();
   } else {

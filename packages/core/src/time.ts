@@ -5,13 +5,47 @@
  * be interpreted in that timezone, not the server's local one.
  */
 
+/** Thrown when a timezone string is not a valid IANA zone name. */
+export class InvalidTimezoneError extends Error {
+  constructor(timeZone: string) {
+    super(`Invalid timezone: ${timeZone}`);
+    this.name = "InvalidTimezoneError";
+  }
+}
+
+const VALID_ZONES = new Set<string>();
+const INVALID_ZONES = new Set<string>();
+
+/**
+ * True when `tz` is a valid IANA timezone name (empty is allowed).
+ * `Intl.DateTimeFormat` construction is the ground truth; `supportedValuesOf`
+ * omits zones on some ICU builds (e.g. "Asia/Kolkata" on Node 24 small-icu).
+ */
+export function isValidTimezone(tz: string | undefined | null): boolean {
+  if (!tz) return true;
+  if (VALID_ZONES.has(tz)) return true;
+  if (INVALID_ZONES.has(tz)) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    VALID_ZONES.add(tz);
+    return true;
+  } catch {
+    INVALID_ZONES.add(tz);
+    return false;
+  }
+}
+
 /**
  * The UTC epoch (ms) at which a given IANA timezone shows the naive wall
  * clock reading `naive` ("YYYY-MM-DDTHH:MM[:SS]"). Falls back to the
- * server-local interpretation when the timezone is missing/unknown, and to
+ * server-local interpretation when the timezone is missing, and to
  * `Date.parse` semantics when the input is invalid (returns NaN like Date).
+ * Throws `InvalidTimezoneError` when an unknown timezone is supplied.
  */
 export function naiveLocalToUtcMs(naive: string, timeZone?: string): number {
+  if (timeZone !== undefined && timeZone !== "" && !isValidTimezone(timeZone)) {
+    throw new InvalidTimezoneError(timeZone);
+  }
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(naive.trim());
   if (!match) {
     const fallback = Date.parse(naive);

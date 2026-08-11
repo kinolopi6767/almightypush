@@ -28,7 +28,7 @@ export async function assertPublicHttpUrl(raw: string): Promise<UrlCheckResult> 
   const allowPrivate = process.env.ALLOW_PRIVATE_UPSTREAM === "1";
   if (allowPrivate) return { ok: true, url };
 
-  const hostname = url.hostname;
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(hostname) !== 0) {
     if (isPrivateIp(hostname)) return { ok: false, url, error: "Private or reserved IPs are not allowed" };
     return { ok: true, url };
@@ -63,19 +63,38 @@ export function isPrivateIp(ip: string): boolean {
     return false;
   }
   if (v === 6) {
-    // Normalize IPv4-mapped IPv6 (::ffff:192.168.1.1) and handle IPv6 ranges.
-    const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-    if (mapped) return isPrivateIp(mapped[1]!);
     const lower = ip.toLowerCase();
+    // Fully-expanded forms of loopback / unspecified.
+    if (lower === "0:0:0:0:0:0:0:1" || lower === "0:0:0:0:0:0:0:0") return true;
+    // IPv4-mapped (::ffff:192.168.1.1), IPv4 hex-mapped (::ffff:7f00:1) and
+    // IPv4-embedded (::127.0.0.1) forms classify as their IPv4 counterpart.
+    const v4form = extractEmbeddedV4(lower);
+    if (v4form) return isPrivateIp(v4form);
     if (lower === "::" || lower === "::1") return true;
     if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA fc00::/7
-    if (lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb")) return true; // link-local fe80::/10
+    if (/^fe[89ab]/.test(lower)) return true; // link-local fe80::/10
     if (lower.startsWith("2001:db8")) return true; // documentation ::/32
     if (lower.startsWith("2001:10")) return true; // deprecated ORCHID 2001:10::/28
     if (lower.startsWith("2001:20")) return true; // ORCHIDv2 2001:20::/28
+    if (lower.startsWith("2001:0:") || lower.startsWith("2001::")) return true; // Teredo 2001::/32 (v4 tunnel reach)
+    if (lower.startsWith("2002:")) return true; // 6to4 2002::/16 (v4 tunnel reach)
     if (lower.startsWith("64:ff9b")) return true; // NAT64 well-known prefix
     if (lower.startsWith("100:")) return true; // discard-only 100::/64
     return false;
   }
   return false;
+}
+
+/** Extract an embedded IPv4 address from an IPv6 string, or null. */
+function extractEmbeddedV4(lower: string): string | null {
+  const dotted = /:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(lower);
+  if (dotted) return dotted[1]!;
+  // Hex-encoded mapped form: ::ffff:7f00:1 or 0:0:0:0:0:ffff:7f00:1
+  const hex = /^(?:[0-9a-f:]+):ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
+  if (hex) {
+    const hi = parseInt(hex[1]!, 16);
+    const lo = parseInt(hex[2]!, 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return null;
 }
