@@ -41,21 +41,24 @@ export default async function TemplatesPage() {
             </div>
           )}
           {rows.map((row) => (
-            <div key={row.id} className="rounded-xl border bg-card p-5">
+            <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium">{row.name}</p>
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {row.title}
                     {row.message ? ` — ${row.message.slice(0, 60)}` : ""}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-3">
                   <Link href={`/dashboard/templates/${row.id}`} className="text-sm text-primary hover:underline">
                     Edit
                   </Link>
                   <form action={deleteTemplateAction.bind(null, row.id)}>
-                    <button type="submit" className="text-sm text-muted-foreground hover:text-destructive">
+                    <button
+                      type="submit"
+                      className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    >
                       Delete
                     </button>
                   </form>

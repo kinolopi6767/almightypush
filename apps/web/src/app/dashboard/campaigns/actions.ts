@@ -2,8 +2,8 @@
 
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { campaigns, deliveries, domains, segments, settings, subscribers } from "@pushpanel/db/schema";
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { campaigns, deliveries, domains, segments, settings } from "@pushpanel/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { InvalidTimezoneError, naiveLocalToUtcMs } from "@pushpanel/core";
 import { z } from "zod";
@@ -166,16 +166,6 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
 
   logAudit(db, { workspaceId, action: "campaign.cancel", entityType: "campaign", entityId: campaignId });
   return { ok: true };
-}
-
-/** Active subscriber count for a domain — the audience a campaign will reach. */
-export async function audienceCountForDomain(domainId: number): Promise<number> {
-  const [row] = db
-    .select({ value: count() })
-    .from(subscribers)
-    .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
-    .all();
-  return row?.value ?? 0;
 }
 
 /**

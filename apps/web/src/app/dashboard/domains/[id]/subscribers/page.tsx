@@ -124,7 +124,11 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Subscribers</h1>
           <p className="text-sm text-muted-foreground">
-            {active} active · {unsubscribed} unsubscribed · {total} total
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">{active} active</span>
+            {" · "}
+            <span>{unsubscribed} unsubscribed</span>
+            {" · "}
+            <span>{total} total</span>
           </p>
         </div>
       </div>
@@ -137,9 +141,9 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
           name="q"
           defaultValue={q}
           placeholder="Search browser, OS, device, country…"
-          className="h-9 w-64 rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-64 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
-        <select name="status" aria-label="Status" defaultValue={status} className="h-9 rounded-md border bg-transparent px-2 text-sm">
+        <select name="status" aria-label="Status" defaultValue={status} className="h-9 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="unsubscribed">Unsubscribed</option>
@@ -149,7 +153,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
         </button>
       </form>
 
-      <div className="rounded-lg border">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-[var(--shadow-card)]">
         {list.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">
             No subscribers yet — add the SDK snippet to your site or import a list.
@@ -157,14 +161,14 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="px-4 py-2 font-medium">Client</th>
-                <th className="px-4 py-2 font-medium">Location</th>
-                <th className="px-4 py-2 font-medium">Subscribe URL</th>
-                <th className="px-4 py-2 font-medium">Subscribed</th>
-                <th className="px-4 py-2 font-medium">Last active</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium" />
+              <tr className="border-b bg-muted/40 text-left text-muted-foreground">
+                <th className="px-4 py-2.5 font-medium">Client</th>
+                <th className="px-4 py-2.5 font-medium">Location</th>
+                <th className="px-4 py-2.5 font-medium">Subscribe URL</th>
+                <th className="px-4 py-2.5 font-medium">Subscribed</th>
+                <th className="px-4 py-2.5 font-medium">Last active</th>
+                <th className="px-4 py-2.5 font-medium">Status</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -172,7 +176,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
                 const client = [s.browser, s.os, s.device].filter(Boolean).join(" · ") || "—";
                 const location = [s.country, s.state].filter(Boolean).join(", ") || "—";
                 return (
-                  <tr key={s.id} className="border-b last:border-0">
+                  <tr key={s.id} className="border-b transition-colors last:border-0 hover:bg-accent/30">
                     <td className="px-4 py-2">
                       <Link href={subsPath} title={client} className="line-clamp-1 max-w-[220px] text-primary hover:underline">
                         {client}

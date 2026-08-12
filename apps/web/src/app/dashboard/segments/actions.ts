@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { domains, segments } from "@pushpanel/db/schema";
 import { estimateSegmentRules, refreshSegmentEstimate } from "@pushpanel/db";
 import { logAudit } from "@/lib/audit";
-import { normalizeRules, type SegmentRules } from "@pushpanel/core";
+import { normalizeRules } from "@pushpanel/core";
 
 export type SegmentFormState = { ok?: boolean; error?: string };
 
@@ -122,16 +122,15 @@ export async function updateSegmentAction(id: number, formData: FormData): Promi
   return { ok: true };
 }
 
-export async function deleteSegmentAction(id: number): Promise<{ ok: boolean; error?: string }> {
+export async function deleteSegmentAction(id: number): Promise<void> {
   const session = await auth();
-  if (!session?.user?.workspaceId) return { ok: false, error: "Not signed in" };
+  if (!session?.user?.workspaceId) return;
 
   db.delete(segments)
     .where(and(eq(segments.id, id), eq(segments.workspace_id, Number(session.user.workspaceId))))
     .run();
   logAudit(db, { workspaceId: Number(session.user.workspaceId), action: "segment.delete", entityType: "segment", entityId: id });
   revalidatePath("/dashboard/segments");
-  return { ok: true };
 }
 
 export interface SegmentEstimateResult {
@@ -165,34 +164,3 @@ export async function estimateSegmentDraft(formData: FormData): Promise<SegmentE
   const count = estimateSegmentRules(db, Number(session.user.workspaceId), rules, owned.ids.length > 0 ? owned.ids : undefined);
   return { count };
 }
-
-export type Segment = {
-  id: number;
-  name: string;
-  domain_ids_json: string | null;
-  conditions_json: string;
-  estimate_count: number | null;
-  estimate_at: string | null;
-  last_used_at: string | null;
-};
-
-export async function listSegments(): Promise<Segment[]> {
-  const session = await auth();
-  if (!session?.user?.workspaceId) return [];
-  return db
-    .select({
-      id: segments.id,
-      name: segments.name,
-      domain_ids_json: segments.domain_ids_json,
-      conditions_json: segments.conditions_json,
-      estimate_count: segments.estimate_count,
-      estimate_at: segments.estimate_at,
-      last_used_at: segments.last_used_at,
-    })
-    .from(segments)
-    .where(eq(segments.workspace_id, Number(session.user.workspaceId)))
-    .orderBy(segments.created_at)
-    .all();
-}
-
-export type { SegmentRules };

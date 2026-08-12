@@ -111,11 +111,21 @@ export const OPENAPI_SPEC = {
           "Webhook entry point. Requires an HMAC-SHA256 signature header derived from the automation's secret. Signed requests only.",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "integer" } },
+          {
+            name: "X-PushPanel-Signature",
+            in: "header",
+            required: true,
+            schema: { type: "string" },
+            description: "sha256=hex(HMAC-SHA256(secret, rawBody))",
+          },
+          {
+            name: "X-PushPanel-Timestamp",
+            in: "header",
+            required: true,
+            schema: { type: "string" },
+            description: "ms since epoch, within ±5min",
+          },
         ],
-        headers: {
-          "X-PushPanel-Signature": { schema: { type: "string" }, description: "sha256=hex(HMAC-SHA256(secret, rawBody))" },
-          "X-PushPanel-Timestamp": { schema: { type: "string" }, description: "ms since epoch, within ±5min" },
-        },
         responses: {
           "200": { description: "Automation enqueued" },
           "401": { description: "Bad signature" },

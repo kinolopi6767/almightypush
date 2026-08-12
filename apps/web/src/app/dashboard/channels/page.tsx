@@ -25,14 +25,14 @@ export default async function ChannelsPage() {
           </div>
         )}
         {rows.map((row) => (
-          <div key={row.id} className="rounded-xl border bg-card p-4">
+          <div key={row.id} className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/50">
             <div className="flex flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{row.title ?? row.channel_url}</span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
-                      row.status === "active" ? "bg-emerald-500/15 text-emerald-700" : "bg-muted text-muted-foreground"
+                      row.status === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {row.status}
@@ -50,19 +50,27 @@ export default async function ChannelsPage() {
                 )}
                 {row.prompt_text && <p className="mt-0.5 text-sm text-muted-foreground">“{row.prompt_text}”</p>}
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  last video {row.last_video_at ?? "—"} · last polled {row.last_polled_at ?? "—"}
+                  last video {row.last_video_at ? new Date(row.last_video_at).toLocaleString() : "—"} · last polled{" "}
+                  {row.last_polled_at ? new Date(row.last_polled_at).toLocaleString() : "—"}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-4 text-sm text-muted-foreground">
-                <span>{row.clicks_count} clicks</span>
-                <span>{row.desktop_subs + row.mobile_subs} subs</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                  {row.clicks_count} clicks · {row.desktop_subs + row.mobile_subs} subs
+                </span>
                 <form action={toggleChannelAction.bind(null, row.id)}>
-                  <button type="submit" className="hover:text-foreground">
+                  <button
+                    type="submit"
+                    className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+                  >
                     {row.status === "active" ? "Pause" : "Resume"}
                   </button>
                 </form>
                 <form action={deleteChannelAction.bind(null, row.id)}>
-                  <button type="submit" className="text-muted-foreground hover:text-destructive">
+                  <button
+                    type="submit"
+                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10"
+                  >
                     Delete
                   </button>
                 </form>

@@ -91,34 +91,3 @@ export async function deleteTemplateAction(id: number): Promise<void> {
   logAudit(db, { workspaceId: Number(session.user.workspaceId), action: "template.delete", entityType: "template", entityId: id });
   revalidatePath("/dashboard/templates");
 }
-
-export type Template = {
-  id: number;
-  name: string;
-  title: string | null;
-  message: string | null;
-  icon_url: string | null;
-  image_url: string | null;
-  launch_url: string | null;
-  buttons_json: string | null;
-};
-
-export async function listTemplates(): Promise<Template[]> {
-  const session = await auth();
-  if (!session?.user?.workspaceId) return [];
-  return db
-    .select({
-      id: templates.id,
-      name: templates.name,
-      title: templates.title,
-      message: templates.message,
-      icon_url: templates.icon_url,
-      image_url: templates.image_url,
-      launch_url: templates.launch_url,
-      buttons_json: templates.buttons_json,
-    })
-    .from(templates)
-    .where(eq(templates.workspace_id, Number(session.user.workspaceId)))
-    .orderBy(templates.created_at)
-    .all();
-}

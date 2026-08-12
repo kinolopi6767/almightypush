@@ -4,6 +4,7 @@ import { domains, segments } from "@pushpanel/db/schema";
 import { auth } from "@/auth";
 import { eq } from "drizzle-orm";
 import { SegmentForm } from "./segment-form";
+import { deleteSegmentAction } from "./actions";
 
 export const metadata = { title: "Segments" };
 
@@ -72,6 +73,11 @@ export default async function SegmentsPage() {
                   <Link href={`/dashboard/segments/${row.id}`} className="text-primary hover:underline">
                     Edit
                   </Link>
+                  <form action={deleteSegmentAction.bind(null, row.id)}>
+                    <button type="submit" className="text-muted-foreground hover:text-destructive">
+                      Delete
+                    </button>
+                  </form>
                   <span className="text-xs">
                     {row.estimate_at ? `estimated ${new Date(row.estimate_at).toLocaleString()}` : "not estimated yet"}
                   </span>
