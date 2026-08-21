@@ -36,6 +36,13 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 # Worker: bundled ESM (native deps resolved from the traced node_modules).
 COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
 
+# FIX: standalone trace misses native argon2/better-sqlite3 platform binaries — copy from deps
+COPY --from=deps /app/node_modules/@node-rs ./node_modules/@node-rs
+COPY --from=deps /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
+COPY --from=deps /app/node_modules/.pnpm ./node_modules/.pnpm
+# Ensure drizzle-orm is present for runtime (externalized)
+COPY --from=deps /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+
 # Shared data volume (SQLite + WAL + backups).
 VOLUME ["/app/data"]
 ENV DATABASE_PATH=/app/data/pushpanel.db
