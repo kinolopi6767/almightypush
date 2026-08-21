@@ -40,12 +40,11 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
 
 # FIX: Next standalone trace misses native binaries with pnpm isolated store.
-# Overlay full deps node_modules (with built .node files) on top of standalone's pruned one.
-# This ensures @node-rs/argon2 + better-sqlite3 are present at runtime regardless of tracing.
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
-COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+# Copy the actual pnpm virtual-store paths (not symlink targets) — BuildKit can resolve these.
+# Also overlay packages/core node_modules where @pushpanel/core's argon2 dep lives.
+COPY --from=deps /app/packages/core/node_modules/@node-rs ./packages/core/node_modules/@node-rs
+COPY --from=deps /app/node_modules/.pnpm/@node-rs+argon2* ./node_modules/.pnpm/
+COPY --from=deps /app/node_modules/.pnpm/better-sqlite3* ./node_modules/.pnpm/
 
 # Shared data volume (SQLite + WAL + backups).
 VOLUME ["/app/data"]
