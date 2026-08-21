@@ -91,7 +91,15 @@ function buildZip(entries: { name: string; data: Buffer }[]): Buffer {
 }
 
 /** Downloadable WordPress plugin (push on publish webhook client). */
-export async function GET() {
+export async function GET(req: Request) {
+  // Light rate-limit: 30/min per IP to avoid zip-build abuse
+  try {
+    const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
+    const rl = rateLimitWithHeaders(`wp-zip:${clientIp(req.headers)}`, 30, 60_000);
+    if (!rl.allowed) return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
+  } catch {
+    // ignore rate-limit import failure — still serve
+  }
   try {
     const pluginDir = await resolvePluginDir();
     const entries = await Promise.all(
@@ -101,11 +109,17 @@ export async function GET() {
       })),
     );
     const zip = buildZip(entries);
+    const etag = `"wp-${zip.length}-${Buffer.from(zip).subarray(0, 64).toString("hex").slice(0, 16)}"`;
+    if (req.headers.get("if-none-match") === etag) {
+      return new Response(null, { status: 304, headers: { ETag: etag } });
+    }
     return new NextResponse(new Uint8Array(zip), {
       headers: {
         "content-type": "application/zip",
         "content-disposition": 'attachment; filename="pushpanel.zip"',
         "cache-control": "no-store",
+        ETag: etag,
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apiKeys, settings } from "@pushpanel/db/schema";
-import { rateLimit, envRateLimit } from "@/lib/rate-limit";
+import { rateLimitWithHeaders, envRateLimit } from "@/lib/rate-limit";
 import { sha256Hex } from "@pushpanel/core";
 
 /**
@@ -57,7 +57,9 @@ export function requireApiKey(headers: Headers): ApiKeyResult {
     return { ok: false, error: "API key expired", status: 401 };
   }
 
-  if (!rateLimit(`apikey:${key.id}`, envRateLimit("API_KEY_RPM", 300), 60_000)) {
+  const rl = rateLimitWithHeaders(`apikey:${key.id}`, envRateLimit("API_KEY_RPM", 300), 60_000);
+  if (!rl.allowed) {
+    // Caller should attach rate-limit headers; we return status 429 here and let route add headers if needed
     return { ok: false, error: "Rate limit exceeded", status: 429 };
   }
 

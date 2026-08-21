@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
@@ -50,16 +50,14 @@ export default async function CampaignDetailPage({ params }: Props) {
     .limit(1)
     .all();
 
-  const [audienceRow] = db
-    .select({ value: count() })
-    .from(subscribers)
-    .where(sql`${subscribers.domain_id} = ${campaign.domain_id ?? -1} AND ${subscribers.unsubscribed_at} IS NULL`)
-    .all();
+  const audienceRow = campaign.domain_id
+    ? db.select({ value: count() }).from(subscribers).where(and(eq(subscribers.domain_id, campaign.domain_id), isNull(subscribers.unsubscribed_at))).get()
+    : null;
 
   const [clickedRow] = db
     .select({ value: count() })
     .from(events)
-    .where(sql`${events.campaign_id} = ${campaignId} AND ${events.type} = 'clicked'`)
+    .where(and(eq(events.campaign_id, campaignId), eq(events.type, "clicked")))
     .all();
 
   const deliveryRows = await db

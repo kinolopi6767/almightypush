@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { domains, subscribers } from "@pushpanel/db/schema";
-import { and, count, desc, eq, isNotNull, isNull, like, or } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { SubscribersTools } from "./subscribers-tools";
 import { UnsubscribeButton } from "./unsubscribe-button";
 
@@ -44,7 +44,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
   const rawPage = Number(sp.page);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
 
-  const escapeLike = (value: string) => value.replace(/[%_\\]/g, "");
+  const escapeLike = (value: string) => value.replace(/[\\%_]/g, (m) => `\\${m}`);
   const term = q ? `%${escapeLike(q)}%` : undefined;
 
   const where = and(
@@ -53,11 +53,12 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
     status === "unsubscribed" ? isNotNull(subscribers.unsubscribed_at) : undefined,
     q && term
       ? or(
-          like(subscribers.browser, term),
-          like(subscribers.os, term),
-          like(subscribers.device, term),
-          like(subscribers.country, term),
-          like(subscribers.state, term),
+          sql`${subscribers.browser} LIKE ${term} ESCAPE '\'`,
+          sql`${subscribers.os} LIKE ${term} ESCAPE '\'`,
+          sql`${subscribers.device} LIKE ${term} ESCAPE '\'`,
+          sql`${subscribers.country} LIKE ${term} ESCAPE '\'`,
+          sql`${subscribers.state} LIKE ${term} ESCAPE '\'`,
+          sql`${subscribers.city} LIKE ${term} ESCAPE '\'`,
         )
       : undefined,
   );

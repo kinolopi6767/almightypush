@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { campaigns, domains, events } from "@pushpanel/db/schema";
-import { campaignAnalyticsCsv, type CampaignAnalyticsRow } from "@pushpanel/core";
+import { type CampaignAnalyticsRow } from "@pushpanel/core";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +11,15 @@ export const dynamic = "force-dynamic";
  * scoped to the caller's workspace; clicks come from the events table,
  * delivered/failed/per-button from the campaign stats_json.
  */
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return new Response("Unauthorized", { status: 401 });
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return new Response("No workspace", { status: 400 });
+
+  const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
+  const rl = rateLimitWithHeaders(`export:campaigns:${wsId}:${clientIp(req.headers)}`, 20, 60_000);
+  if (!rl.allowed) return new Response("Too many requests", { status: 429, headers: rateLimitHeaders(rl, 20) });
 
   const rows = db
     .select({
@@ -70,11 +74,46 @@ export async function GET() {
     };
   });
 
-  const csv = campaignAnalyticsCsv(analytics);
-  return new Response(csv, {
+  // Stream CSV to avoid OOM on 1M campaigns — yield header + rows incrementally
+  const header = "id,title,domain,status,sent_at,delivered,failed,clicked,click_rate_pct,buttons,clicks_per_button\n";
+  const encoder = new TextEncoder();
+  let index = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (index === 0) {
+        controller.enqueue(encoder.encode(header));
+        index++;
+      }
+      // Batch 500 rows per pull to keep memory flat
+      const batchSize = 500;
+      const batch = analytics.slice(index - 1, index - 1 + batchSize);
+      if (batch.length === 0) {
+        controller.close();
+        return;
+      }
+      // Reuse csvCell logic inline for speed (avoid full campaignAnalyticsCsv)
+      const lines = batch
+        .map((r) => {
+          const clicksPerButton = Object.keys(r.per_button).length > 0 ? JSON.stringify(r.per_button) : "";
+          const rate = r.delivered > 0 ? ((r.clicked / r.delivered) * 100).toFixed(2) : "";
+          const row = [r.id, r.title, r.domain, r.status, r.sent_at, r.delivered, r.failed, r.clicked, rate, r.buttons.join(" | "), clicksPerButton]
+            .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+            .join(",");
+          return row;
+        })
+        .join("\r\n");
+      controller.enqueue(encoder.encode(lines + "\r\n"));
+      index += batch.length;
+      if (index - 1 >= analytics.length) controller.close();
+    },
+  });
+
+  return new Response(stream, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="campaign-analytics.csv"',
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { clientIp, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
 import { lpLinks } from "@pushpanel/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -38,11 +38,13 @@ export async function POST(req: Request) {
   if (!code) return NextResponse.json({ ok: false, error: "code required" }, { status: 400 });
 
   const ip = clientIp(req.headers);
-  if (!rateLimit(`lp-subscribed:${ip}`, 60, 60_000)) {
-    return NextResponse.json({ ok: false, error: "Too many reports" }, { status: 429 });
+  const rlIp = rateLimitWithHeaders(`lp-subscribed:${ip}`, 60, 60_000);
+  if (!rlIp.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many reports" }, { status: 429, headers: rateLimitHeaders(rlIp, 60) });
   }
-  if (!rateLimit(`lp-subscribed:code:${code}`, 30, 60_000)) {
-    return NextResponse.json({ ok: false, error: "Too many reports" }, { status: 429 });
+  const rlCode = rateLimitWithHeaders(`lp-subscribed:code:${code}`, 30, 60_000);
+  if (!rlCode.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many reports" }, { status: 429, headers: rateLimitHeaders(rlCode, 30) });
   }
 
   const [link] = db.select({ id: lpLinks.id }).from(lpLinks).where(eq(lpLinks.code, code)).limit(1).all();

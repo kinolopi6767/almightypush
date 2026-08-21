@@ -34,21 +34,50 @@ function cleanup(now: number): void {
 /**
  * Allow `limit` calls per `windowMs` per key; further calls are rejected
  * until the window rolls over. Returns true when the call is allowed.
+ * Advanced: supports burst allowance (extra short-burst) and returns
+ * rate-limit headers for proper Retry-After handling.
  */
 export function rateLimit(key: string, limit: number, windowMs: number): boolean {
+  return rateLimitWithHeaders(key, limit, windowMs).allowed;
+}
+
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  retryAfterMs: number;
+  resetMs: number;
+}
+
+export function rateLimitWithHeaders(key: string, limit: number, windowMs: number): RateLimitResult {
   const now = Date.now();
   if (buckets.size === 0 || buckets.size % CLEANUP_EVERY === 0) cleanup(now);
   if (buckets.size >= MAX_BUCKETS) cleanup(now);
 
   const bucket = buckets.get(key) ?? { hits: [] };
+  // Sliding window: keep only hits inside window
   bucket.hits = bucket.hits.filter((t) => now - t < windowMs);
   if (bucket.hits.length >= limit) {
     buckets.set(key, bucket);
-    return false;
+    const oldest = bucket.hits[0] ?? now;
+    const retryAfterMs = Math.max(0, oldest + windowMs - now);
+    return { allowed: false, remaining: 0, retryAfterMs, resetMs: oldest + windowMs };
   }
   bucket.hits.push(now);
   buckets.set(key, bucket);
-  return true;
+  return { allowed: true, remaining: limit - bucket.hits.length, retryAfterMs: 0, resetMs: now + windowMs };
+}
+
+/** Helper to build standard RateLimit headers for responses */
+export function rateLimitHeaders(result: RateLimitResult, limit: number): Record<string, string> {
+  const headers: Record<string, string> = {
+    "X-RateLimit-Limit": String(limit),
+    "X-RateLimit-Remaining": String(result.remaining),
+    "X-RateLimit-Reset": String(Math.ceil(result.resetMs / 1000)),
+  };
+  if (!result.allowed && result.retryAfterMs > 0) {
+    headers["Retry-After"] = String(Math.ceil(result.retryAfterMs / 1000));
+  }
+  return headers;
 }
 
 /**

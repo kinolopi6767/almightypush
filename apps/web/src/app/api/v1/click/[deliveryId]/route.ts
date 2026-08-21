@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { clientIp, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
 import { deliveries, events, campaigns } from "@pushpanel/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -14,11 +14,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ delivery
   // Public by design (the SW beacon), but bounded: a flood of beacons must
   // not grow the events table without limit.
   const ip = clientIp(req.headers);
-  if (!rateLimit(`click:${ip}`, 120, 60_000)) {
-    return NextResponse.json({ ok: false, error: "Too many clicks" }, { status: 429 });
+  const rlIp = rateLimitWithHeaders(`click:${ip}`, 120, 60_000);
+  if (!rlIp.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many clicks" }, { status: 429, headers: rateLimitHeaders(rlIp, 120) });
   }
-  if (!rateLimit("click:all", 1200, 60_000)) {
-    return NextResponse.json({ ok: false, error: "Too many clicks" }, { status: 429 });
+  const rlAll = rateLimitWithHeaders("click:all", 1200, 60_000);
+  if (!rlAll.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many clicks" }, { status: 429, headers: rateLimitHeaders(rlAll, 1200) });
   }
 
   const { deliveryId } = await params;

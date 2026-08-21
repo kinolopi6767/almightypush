@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { clientIp, envRateLimit, rateLimit } from "@/lib/rate-limit";
+import { clientIp, envRateLimit, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
 import { createCipher, isValidTimezone, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
@@ -49,12 +49,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Invalid timezone" }, { status: 400 });
   }
   const ip = clientIp(req.headers);
-  if (!rateLimit(`subscribe:${data.domainId}:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000)) {
-    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429 });
+  const rl1 = rateLimitWithHeaders(`subscribe:${data.domainId}:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000);
+  if (!rl1.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl1, 30) });
   }
   // Global per-domain window — cannot be rotated away by forged IP headers.
-  if (!rateLimit(`subscribe:dom:${data.domainId}`, 120, 60_000)) {
-    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429 });
+  const rl2 = rateLimitWithHeaders(`subscribe:dom:${data.domainId}`, 120, 60_000);
+  if (!rl2.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl2, 120) });
   }
 
   const [domain] = db

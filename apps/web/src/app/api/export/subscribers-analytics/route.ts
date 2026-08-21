@@ -18,6 +18,10 @@ export async function GET(request: Request) {
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return new Response("No workspace", { status: 400 });
 
+  const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
+  const rl = rateLimitWithHeaders(`export:subs:${wsId}:${clientIp(request.headers)}`, 20, 60_000);
+  if (!rl.allowed) return new Response("Too many requests", { status: 429, headers: rateLimitHeaders(rl, 20) });
+
   const url = new URL(request.url);
   const filter = parseSubscriberFilters(url.searchParams);
   const where = and(...subscriberConditions(filter, wsId));
@@ -42,21 +46,38 @@ export async function GET(request: Request) {
     .orderBy(subscribers.id)
     .all();
 
+  // Stream to avoid OOM on 1M subs — batch 1000 rows per pull
+  const header = "id,browser,os,device,country,state,domain,subscribe_url,subscribe_at,last_active_at,unsubscribed_at\n";
+  const encoder = new TextEncoder();
   const esc = (v: string | number | null | undefined): string => {
     const s = v === null || v === undefined ? "" : String(v);
     return `"${s.replace(/"/g, '""')}"`;
   };
-  const lines = [
-    "id,browser,os,device,country,state,domain,subscribe_url,subscribe_at,last_active_at,unsubscribed_at",
-    ...rows.map((r) =>
-      [r.id, r.browser, r.os, r.device, r.country, r.state, r.domain_name, r.subscribe_url, r.subscribe_at, r.last_active_at, r.unsubscribed_at].map(esc).join(","),
-    ),
-  ];
+  let offset = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset === 0) {
+        controller.enqueue(encoder.encode(header));
+      }
+      const batchSize = 1000;
+      const batch = rows.slice(offset, offset + batchSize);
+      if (batch.length === 0) {
+        controller.close();
+        return;
+      }
+      const chunk = batch.map((r) => [r.id, r.browser, r.os, r.device, r.country, r.state, r.domain_name, r.subscribe_url, r.subscribe_at, r.last_active_at, r.unsubscribed_at].map(esc).join(",")).join("\n");
+      controller.enqueue(encoder.encode(chunk + "\n"));
+      offset += batch.length;
+      if (offset >= rows.length) controller.close();
+    },
+  });
 
-  return new Response(lines.join("\n"), {
+  return new Response(stream, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="subscribers-analytics.csv"',
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }
