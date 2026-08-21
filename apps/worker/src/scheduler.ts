@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { campaigns, deliveries, domains, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
+import { campaigns, deliveries, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
@@ -17,6 +17,8 @@ interface CampaignRow {
   schedule_at: string | null;
   audience_json: string | null;
   title_b: string | null;
+  variants_json: string | null;
+  topic: string | null;
 }
 
 /**
@@ -38,6 +40,8 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
       schedule_at: campaigns.schedule_at,
       audience_json: campaigns.audience_json,
       title_b: campaigns.title_b,
+      variants_json: campaigns.variants_json,
+      topic: campaigns.topic,
     })
     .from(campaigns)
     .where(
@@ -77,27 +81,38 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
     return { queued: 0, skipped: 1 };
   }
 
-  db.transaction((tx) => {
-    for (const subscriberId of audience) {
-      tx.insert(deliveries)
-        .values({
-          campaign_id: campaign.id,
-          subscriber_id: subscriberId,
-          domain_id: campaign.domain_id!,
-          requested_at: Date.now(),
-          // E7: deterministic 50/50 A/B split by subscriber id (odd/even).
-          // Chosen here, once, so the variant is stable across retries and
-          // all downstream stages (send, click attribution) read it from
-          // the delivery row.
-          variant: campaign.title_b ? (subscriberId % 2 === 0 ? "a" : "b") : null,
-        })
-        .run();
-    }
-    tx.update(campaigns)
-      .set({ status: "sending" })
-      .where(eq(campaigns.id, campaign.id))
-      .run();
-  });
+  // LumaPush: up to 10 variants via variants_json [{key,weight}] or legacy title_b 50/50
+  const variants = parseVariants(campaign.variants_json, campaign.title_b);
+
+  // 1M scale: chunk 500 inserts per transaction to avoid 1M-row single tx lock (3min) + OOM
+  const CHUNK = Number(process.env.SCHEDULER_CHUNK ?? 500);
+  for (let i = 0; i < audience.length; i += CHUNK) {
+    const slice = audience.slice(i, i + CHUNK);
+    db.transaction((tx) => {
+      for (const subscriberId of slice) {
+        const variant = variants ? pickVariant(subscriberId, variants) : campaign.title_b ? (subscriberId % 2 === 0 ? "a" : "b") : null;
+        tx.insert(deliveries)
+          .values({
+            campaign_id: campaign.id,
+            subscriber_id: subscriberId,
+            domain_id: campaign.domain_id!,
+            requested_at: Date.now(),
+            variant,
+          })
+          .run();
+      }
+      if (i === 0) {
+        tx.update(campaigns)
+          .set({ status: "sending" })
+          .where(eq(campaigns.id, campaign.id))
+          .run();
+      }
+    });
+  }
+  // Edge: ensure campaign marked sending even if chunked (first chunk already did)
+  if (audience.length > 0) {
+    db.update(campaigns).set({ status: "sending" }).where(eq(campaigns.id, campaign.id)).run();
+  }
 
   return { queued: audience.length, skipped: 0 };
 }
@@ -147,8 +162,40 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
   const rows = db
     .select({ id: subscribers.id })
     .from(subscribers)
-    .innerJoin(domains, eq(domains.id, subscribers.domain_id))
     .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+    .orderBy(subscribers.id)
     .all();
   return rows.map((r) => r.id);
+}
+
+function parseVariants(json: string | null, titleB: string | null): { key: string; weight: number }[] | null {
+  if (json) {
+    try {
+      const arr = JSON.parse(json) as { key?: string; weight?: number; title?: string }[];
+      if (Array.isArray(arr) && arr.length > 1 && arr.length <= 10) {
+        const cleaned = arr
+          .map((v, i) => ({ key: v.key ?? String.fromCharCode(65 + i), weight: Math.max(1, Math.min(100, Number(v.weight) || 10)) }))
+          .filter((v) => v.key);
+        if (cleaned.length > 1) return cleaned;
+      }
+    } catch {
+      void 0;
+    }
+  }
+  if (titleB) return [{ key: "a", weight: 50 }, { key: "b", weight: 50 }];
+  return null;
+}
+
+function pickVariant(subscriberId: number, variants: { key: string; weight: number }[]): string {
+  const total = variants.reduce((s, v) => s + v.weight, 0);
+  // deterministic weighted pick via subscriberId hash (LCG)
+  let h = subscriberId * 2654435761;
+  h = (h ^ (h >>> 16)) >>> 0;
+  const r = h % total;
+  let acc = 0;
+  for (const v of variants) {
+    acc += v.weight;
+    if (r < acc) return v.key;
+  }
+  return variants[0]!.key;
 }

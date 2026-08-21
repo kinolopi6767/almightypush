@@ -9,9 +9,13 @@ export const campaigns = sqliteTable(
     workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     /** NULL = multi-domain */
     domain_id: integer("domain_id"),
+    /** LumaPush: push | email (unified) */
+    channel: text("channel").notNull().default("push"),
     title: text("title").notNull(),
     /** E7: B-variant title for 50/50 A/B testing (NULL = single title) */
     title_b: text("title_b"),
+    /** LumaPush: up to 10 variants JSON [{key,title,message,image,weight}] */
+    variants_json: text("variants_json"),
     message: text("message"),
     icon_url: text("icon_url"),
     image_url: text("image_url"),
@@ -25,15 +29,19 @@ export const campaigns = sqliteTable(
     scheduled: integer("scheduled").notNull().default(0),
     /** draft | scheduled | sending | paused | done | failed | cancelled */
     status: text("status").notNull().default("draft"),
-    /** panel | api | wordpress | automation */
+    /** panel | api | wordpress | automation | journey | ai */
     source: text("source").notNull().default("panel"),
     template_id: integer("template_id"),
-    /** { accepted, delivered, clicked, perButton: {...} } */
+    /** LumaPush delivery controls: topic 64ch collapse, TTL 0-86400, urgency */
+    topic: text("topic"),
+    ttl: integer("ttl").notNull().default(86400),
+    urgency: text("urgency").notNull().default("normal"),
+    /** { accepted, delivered, clicked, perButton: {...}, perVariant: {...} } */
     stats_json: text("stats_json").notNull().default("{}"),
     sent_at: text("sent_at"),
     ...timestamps(),
   },
-  (t) => [index("idx_campaigns_ws").on(t.workspace_id, t.status, t.sent_at)],
+  (t) => [index("idx_campaigns_ws").on(t.workspace_id, t.status, t.sent_at), index("idx_campaigns_channel").on(t.channel)],
 );
 
 export const templates = sqliteTable("templates", {

@@ -1,5 +1,5 @@
-import { and, count, eq, isNotNull, isNull, lt } from "drizzle-orm";
-import { domains, settings, subscribers } from "@pushpanel/db/schema";
+import { and, count, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
+import { deliveries, domains, events, settings, subscribers } from "@pushpanel/db/schema";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
 
@@ -56,6 +56,42 @@ function recomputeSubscriberCounts(db: BetterSQLite3Database<typeof allTables>):
       .where(eq(domains.id, domain.id))
       .run();
   }
+}
+
+/**
+ * 1M scale: prune old deliveries/events to keep SQLite file <10GB.
+ * Runs daily (guarded by last_prune_at). Default 7d deliveries, 30d events — tunable.
+ * 1 campaign/day * 1M = 30M rows/month ~4GB. Prune after 7d keeps ~7GB.
+ */
+export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>, now: Date = new Date()): { deliveries: number; events: number } {
+  const lastPrune = readSetting(db, "last_prune_at");
+  if (lastPrune && now.getTime() - new Date(lastPrune).getTime() < 24 * 60 * 60 * 1000) return { deliveries: 0, events: 0 };
+
+  const delDays = Number(readSetting(db, "retention_deliveries_days") ?? process.env.RETENTION_DELIVERIES_DAYS ?? 7);
+  const evtDays = Number(readSetting(db, "retention_events_days") ?? process.env.RETENTION_EVENTS_DAYS ?? 30);
+  let prunedDel = 0;
+  let prunedEvt = 0;
+
+  if (delDays > 0) {
+    const cutoff = now.getTime() - delDays * 86_400_000;
+    try {
+      const res = db.delete(deliveries).where(and(inArray(deliveries.status, ["sent", "failed", "cancelled", "unsubscribed"]), isNotNull(deliveries.sent_at), lt(deliveries.sent_at, cutoff))).run();
+      prunedDel = res.changes;
+    } catch {
+      void 0;
+    }
+  }
+  if (evtDays > 0) {
+    const cutoffIso = new Date(now.getTime() - evtDays * 86_400_000).toISOString();
+    try {
+      const res = db.delete(events).where(lt(events.ts, cutoffIso)).run();
+      prunedEvt = res.changes;
+    } catch {
+      void 0;
+    }
+  }
+  writeSetting(db, "last_prune_at", now.toISOString());
+  return { deliveries: prunedDel, events: prunedEvt };
 }
 
 export function readSetting(db: BetterSQLite3Database<typeof allTables>, key: string): string | null {

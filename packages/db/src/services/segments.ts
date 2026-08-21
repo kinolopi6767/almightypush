@@ -45,7 +45,7 @@ export function resolveSegment(db: PushDb, opts: ResolveSegmentOptions): Segment
 
 /** Estimate the size of arbitrary rules without persisting a segment. */
 export function estimateSegmentRules(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds?: number[]): number {
-  return resolveSubscribers(db, workspaceId, rules, domainIds ?? null).count;
+  return countSubscribers(db, workspaceId, rules, domainIds ?? null);
 }
 
 /**
@@ -64,7 +64,7 @@ export function refreshSegmentEstimate(db: PushDb, segmentId: number, workspaceI
     .all();
   if (!row) return;
   const rules = parseRules(row.conditions_json);
-  const count = resolveSubscribers(db, workspaceId, rules, parseDomainFilter(row.domain_ids_json)).count;
+  const count = countSubscribers(db, workspaceId, rules, parseDomainFilter(row.domain_ids_json));
   db.update(segments)
     .set({ estimate_count: count, estimate_at: new Date().toISOString() })
     .where(eq(segments.id, segmentId))
@@ -72,12 +72,12 @@ export function refreshSegmentEstimate(db: PushDb, segmentId: number, workspaceI
 }
 
 /**
+ * Shared WHERE builder for segment queries — enforces workspace isolation.
  * A segment can never match subscribers outside its own workspace, even when
  * no domain ids are stored (NULL domain_ids_json means "all domains of the
- * workspace", not "all domains everywhere"). The workspace subquery enforces
- * that regardless of how the rule set was constructed or deserialized.
+ * workspace", not "all domains everywhere").
  */
-function resolveSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds: number[] | null): SegmentMatch {
+function buildSegmentWhere(workspaceId: number, rules: SegmentRules, domainIds: number[] | null): { where: string; params: unknown[] } {
   const conds: string[] = [
     "s.unsubscribed_at IS NULL",
     "s.domain_id IN (SELECT id FROM domains WHERE workspace_id = ?)",
@@ -90,11 +90,19 @@ function resolveSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules
   const compiled = compileSegmentWhere(rules, "s");
   if (compiled.sql) conds.push(`(${compiled.sql})`);
   params.push(...compiled.params);
+  return { where: conds.join(" AND "), params };
+}
 
-  const rows = ((db as WithClient).$client
-    .prepare(`SELECT s.id FROM subscribers s WHERE ${conds.join(" AND ")}`)
-    .all(...params) as { id: number }[]);
+function resolveSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds: number[] | null): SegmentMatch {
+  const { where, params } = buildSegmentWhere(workspaceId, rules, domainIds);
+  const rows = ((db as WithClient).$client.prepare(`SELECT s.id FROM subscribers s WHERE ${where}`).all(...params) as { id: number }[]);
   return { subscriberIds: rows.map((r) => r.id), count: rows.length };
+}
+
+function countSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds: number[] | null): number {
+  const { where, params } = buildSegmentWhere(workspaceId, rules, domainIds);
+  const row = ((db as WithClient).$client.prepare(`SELECT COUNT(*) as cnt FROM subscribers s WHERE ${where}`).get(...params) as { cnt: number } | undefined);
+  return row?.cnt ?? 0;
 }
 
 function parseDomainFilter(json: string | null, override?: number): number[] | null {

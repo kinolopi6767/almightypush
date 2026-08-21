@@ -16,6 +16,7 @@ self.addEventListener("push", (event) => {
     url = "/",
     deliveryId = null,
     buttons = [],
+    panelOrigin = null,
   } = data;
 
   event.waitUntil(
@@ -23,7 +24,7 @@ self.addEventListener("push", (event) => {
       body,
       icon: icon || undefined,
       image: image || undefined,
-      data: { url, deliveryId, buttons: buttons.map((b) => ({ label: b.label, url: b.url })) },
+      data: { url, deliveryId, panelOrigin, buttons: buttons.map((b) => ({ label: b.label, url: b.url })) },
       actions: buttons.map((b, i) => ({ action: String(i), title: b.label })),
       badge: undefined,
     }),
@@ -32,16 +33,18 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   const notification = event.notification;
-  const { url = "/", deliveryId = null, buttons = [] } = notification.data || {};
+  const { url = "/", deliveryId = null, panelOrigin = null, buttons = [] } = notification.data || {};
   notification.close();
 
   const fire = (btn = "") => {
     if (deliveryId) {
-      // Absolute against the SW scope: the beacon must hit the panel, not
-      // whatever page the notification was clicked from. `btn` lets the
-      // panel attribute a click to a specific action button (E4).
       const query = btn ? `?btn=${encodeURIComponent(btn)}` : "";
-      fetch(new URL(`api/v1/click/${deliveryId}${query}`, self.registration.scope).toString(), { method: "GET", keepalive: true }).catch(() => undefined);
+      // Prefer the panel origin embedded in the push payload (site SW scope
+      // is the site origin, not the panel). Fallback to SW scope for legacy
+      // deliveries that predate panelOrigin.
+      const base = panelOrigin ? new URL(panelOrigin).origin : self.registration.scope;
+      const beaconUrl = new URL(`api/v1/click/${deliveryId}${query}`, base).toString();
+      event.waitUntil(fetch(beaconUrl, { method: "GET", keepalive: true }).catch(() => undefined));
     }
   };
 

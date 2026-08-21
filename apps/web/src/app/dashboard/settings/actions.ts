@@ -9,8 +9,10 @@ import { resolveDbPath } from "@pushpanel/db";
 import { backups, settings } from "@pushpanel/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { isValidTimezone } from "@pushpanel/core";
+import { createCipher, isValidTimezone } from "@pushpanel/core";
 import { logAudit } from "@/lib/audit";
+import { readFile } from "node:fs/promises";
+import { getGDriveAccessToken, uploadToGDrive } from "@pushpanel/core";
 
 export type SettingsFormState =
   | {
@@ -36,23 +38,29 @@ const generalSchema = z.object({
     .max(64)
     .refine((v) => isValidTimezone(v), { message: "Unknown timezone — pick one from the list" })
     .optional(),
-  cleanupRetentionDays: z.coerce.number().int().min(0).max(3650).optional(),
-  sendingSpeed: z.coerce.number().int().min(1).max(200).optional(),
+  cleanupRetentionDays: z.coerce.number().int().min(0).max(36500).optional(), // personal: effectively unlimited (was 3650)
+  sendingSpeed: z.coerce.number().int().min(1).max(1000).optional(), // unlocked from 200 for personal
   utmEnabled: z.enum(["on", "off"]).optional(),
   apiAccess: z.enum(["on", "off"]).optional(),
   backupInterval: z.enum(["off", "daily", "weekly", "monthly"]).optional(),
-  backupRetention: z.coerce.number().int().min(1).max(60).optional(),
+  backupRetention: z.coerce.number().int().min(1).max(365).optional(), // unlocked from 60
+  whiteLabel: z.enum(["on", "off"]).optional(),
+  cdnUrl: z.string().trim().url().max(500).optional().or(z.literal("")),
+  frequencyCapDaily: z.coerce.number().int().min(0).max(1000).optional(), // unlocked from 100
+  suppressionEnabled: z.enum(["on", "off"]).optional(),
 });
 
 export async function updateSettingsAction(
   _prev: SettingsFormState,
   formData: FormData,
 ): Promise<NonNullable<SettingsFormState>> {
+  let ownerSession;
   try {
-    await requireOwner();
+    ownerSession = await requireOwner();
   } catch {
     return { error: "Not signed in or not an owner" };
   }
+  const workspaceId = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : 0;
 
   const parsed = generalSchema.safeParse({
     timezone: formData.get("timezone") ?? undefined,
@@ -63,6 +71,10 @@ export async function updateSettingsAction(
     apiAccess: formData.get("apiAccess") ?? "off",
     backupInterval: formData.get("backupInterval") ?? "off",
     backupRetention: formData.get("backupRetention") ?? undefined,
+    whiteLabel: formData.get("whiteLabel") ?? "off",
+    cdnUrl: formData.get("cdnUrl") ?? "",
+    frequencyCapDaily: formData.get("frequencyCapDaily") ?? undefined,
+    suppressionEnabled: formData.get("suppressionEnabled") ?? "on",
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
@@ -82,9 +94,10 @@ export async function updateSettingsAction(
   if (parsed.data.backupRetention !== undefined) {
     values.push({ key: "backup_retention", value: String(parsed.data.backupRetention) });
   }
-
-  const owner = await requireOwner().catch(() => null);
-  const workspaceId = owner ? Number(owner.user.workspaceId) : 0;
+  values.push({ key: "white_label", value: parsed.data.whiteLabel === "off" ? "0" : "1" });
+  if (parsed.data.cdnUrl !== undefined) values.push({ key: "cdn_url", value: parsed.data.cdnUrl || "" });
+  if (parsed.data.frequencyCapDaily !== undefined) values.push({ key: "frequency_cap_daily", value: String(parsed.data.frequencyCapDaily) });
+  values.push({ key: "suppression_enabled", value: parsed.data.suppressionEnabled === "off" ? "0" : "1" });
 
   for (const v of values) {
     db.insert(settings)
@@ -98,12 +111,125 @@ export async function updateSettingsAction(
   return { ok: true };
 }
 
-export async function createBackupAction(): Promise<NonNullable<SettingsFormState>> {
+// ── Panel-managed secrets vault (single-person private: no .env hassle) ──
+
+function requireEncKey(): string {
+  const k = process.env.APP_ENC_KEY;
+  if (!k) throw new Error("APP_ENC_KEY required");
+  return k;
+}
+
+function setSecret(key: string, plain: string | null) {
+  const dbKey = `secret:${key}`;
+  if (plain === null || plain.trim() === "") {
+    db.delete(settings).where(eq(settings.key, dbKey)).run();
+    return;
+  }
+  const enc = createCipher(requireEncKey()).encrypt(plain.trim());
+  db.insert(settings).values({ key: dbKey, value: enc }).onConflictDoUpdate({ target: settings.key, set: { value: enc } }).run();
+}
+
+const secretsSchema = z.object({
+  ai_api_key: z.string().max(500).optional().or(z.literal("")),
+  ai_model: z.string().max(100).optional().or(z.literal("")),
+  ai_base_url: z.string().url().max(500).optional().or(z.literal("")),
+  mail_provider: z.enum(["resend", "brevo", "ses", "smtp", ""]).optional().or(z.literal("")),
+  mail_api_key: z.string().max(500).optional().or(z.literal("")),
+  mail_from: z.string().email().max(200).optional().or(z.literal("")),
+});
+
+export async function updateSecretsAction(_prev: SettingsFormState, formData: FormData): Promise<NonNullable<SettingsFormState>> {
   try {
     await requireOwner();
   } catch {
     return { error: "Not signed in or not an owner" };
   }
+  const parsed = secretsSchema.safeParse({
+    ai_api_key: formData.get("ai_api_key") ?? "",
+    ai_model: formData.get("ai_model") ?? "",
+    ai_base_url: formData.get("ai_base_url") ?? "",
+    mail_provider: formData.get("mail_provider") ?? "",
+    mail_api_key: formData.get("mail_api_key") ?? "",
+    mail_from: formData.get("mail_from") ?? "",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  const d = parsed.data;
+  setSecret("ai_api_key", d.ai_api_key || null);
+  setSecret("ai_model", d.ai_model || null);
+  setSecret("ai_base_url", d.ai_base_url || null);
+  setSecret("mail_provider", d.mail_provider || null);
+  setSecret("mail_api_key", d.mail_api_key || null);
+  setSecret("mail_from", d.mail_from || null);
+  revalidatePath("/dashboard/settings");
+  return { ok: true };
+}
+
+const gdriveSchema = z.object({
+  gdrive_enabled: z.enum(["on", "off"]).optional(),
+  gdrive_folder_id: z.string().max(200).optional().or(z.literal("")),
+  gdrive_service_json: z.string().max(20000).optional().or(z.literal("")),
+});
+
+export async function updateGDriveAction(_prev: SettingsFormState, formData: FormData): Promise<NonNullable<SettingsFormState>> {
+  try {
+    await requireOwner();
+  } catch {
+    return { error: "Not signed in or not an owner" };
+  }
+  const parsed = gdriveSchema.safeParse({
+    gdrive_enabled: formData.get("gdrive_enabled") ?? "off",
+    gdrive_folder_id: formData.get("gdrive_folder_id") ?? "",
+    gdrive_service_json: formData.get("gdrive_service_json") ?? "",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  const d = parsed.data;
+  db.insert(settings).values({ key: "gdrive_enabled", value: d.gdrive_enabled === "on" ? "1" : "0" }).onConflictDoUpdate({ target: settings.key, set: { value: d.gdrive_enabled === "on" ? "1" : "0" } }).run();
+  db.insert(settings).values({ key: "gdrive_folder_id", value: d.gdrive_folder_id || "" }).onConflictDoUpdate({ target: settings.key, set: { value: d.gdrive_folder_id || "" } }).run();
+  if (d.gdrive_service_json) {
+    try {
+      const j = JSON.parse(d.gdrive_service_json);
+      if (!j.client_email || !j.private_key) return { error: "Invalid Service Account JSON: missing client_email/private_key" };
+    } catch {
+      return { error: "Invalid JSON for Service Account" };
+    }
+    setSecret("gdrive_service_json", d.gdrive_service_json);
+  } else if (d.gdrive_service_json === "") {
+    // keep existing if empty and enabled? Only clear if explicitly cleared
+    // For now, don't delete on empty update to avoid accidental wipe
+  }
+  revalidatePath("/dashboard/settings");
+  return { ok: true };
+}
+
+async function tryUploadBackupToDrive(filePath: string): Promise<void> {
+  const enabled = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_enabled")).get()?.value === "1";
+  if (!enabled) return;
+  const enc = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "secret:gdrive_service_json")).get()?.value;
+  if (!enc) return;
+  let json: string;
+  try {
+    json = createCipher(requireEncKey()).decrypt(enc);
+  } catch {
+    return;
+  }
+  const folderId = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_folder_id")).get()?.value || undefined;
+  try {
+    const buf = await readFile(filePath);
+    const token = await getGDriveAccessToken(json);
+    await uploadToGDrive({ accessToken: token, fileName: filePath.split("/").pop() ?? "backup.db", fileBuffer: buf, folderId });
+  } catch (e) {
+    console.error("[gdrive] upload failed", (e as Error).message?.slice(0, 500));
+  }
+}
+
+export async function createBackupAction(): Promise<NonNullable<SettingsFormState>> {
+  let ownerSession;
+  try {
+    ownerSession = await requireOwner();
+  } catch {
+    return { error: "Not signed in or not an owner" };
+  }
+  const wsId = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : 0;
 
   const dbFile = resolveDbPath(process.env.DATABASE_PATH);
   const backupDir = path.join(path.dirname(dbFile), "backups");
@@ -136,28 +262,28 @@ export async function createBackupAction(): Promise<NonNullable<SettingsFormStat
     })
     .run();
 
-  const owner = await requireOwner().catch(() => null);
-  const wsId = owner ? Number(owner.user.workspaceId) : 0;
   if (wsId) {
     logAudit(db, { workspaceId: wsId, action: "backup.create", entityType: "backup", entityId: Number(inserted.lastInsertRowid), meta: { kind: "manual" } });
   }
+  // best-effort Drive upload (disabled by default)
+  void tryUploadBackupToDrive(target).catch(() => {});
   revalidatePath("/dashboard/settings");
   return { ok: true, backupId: Number(inserted.lastInsertRowid) };
 }
 
 export async function deleteBackupAction(backupId: number): Promise<NonNullable<SettingsFormState>> {
+  let ownerSession;
   try {
-    await requireOwner();
+    ownerSession = await requireOwner();
   } catch {
     return { error: "Not signed in or not an owner" };
   }
+  const wsId2 = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : 0;
 
   const [row] = db.select({ id: backups.id, location: backups.location }).from(backups).where(eq(backups.id, backupId)).limit(1).all();
   if (!row) return { error: "Backup not found" };
 
   db.delete(backups).where(eq(backups.id, row.id)).run();
-  const owner2 = await requireOwner().catch(() => null);
-  const wsId2 = owner2 ? Number(owner2.user.workspaceId) : 0;
   if (wsId2) {
     logAudit(db, { workspaceId: wsId2, action: "backup.delete", entityType: "backup", entityId: backupId });
   }
@@ -171,4 +297,29 @@ export async function deleteBackupAction(backupId: number): Promise<NonNullable<
 
   revalidatePath("/dashboard/settings");
   return { ok: true, deleted: backupId };
+}
+
+export async function restoreBackupAction(backupId: number): Promise<NonNullable<SettingsFormState>> {
+  let ownerSession;
+  try {
+    ownerSession = await requireOwner();
+  } catch {
+    return { error: "Not signed in or not an owner" };
+  }
+  const wsId = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : 0;
+  const [row] = db.select({ id: backups.id, location: backups.location }).from(backups).where(eq(backups.id, backupId)).limit(1).all();
+  if (!row?.location) return { error: "Backup not found" };
+  const dbFile = resolveDbPath(process.env.DATABASE_PATH);
+  try {
+    const data = await readFile(row.location);
+    const { writeFile } = await import("node:fs/promises");
+    // SQLite restore: overwrite current DB file (WAL will be checkpointed on next open)
+    await writeFile(dbFile, data);
+    // Also restore -wal/-shm if they exist alongside backup? VACUUM INTO creates single file, so just overwrite.
+    if (wsId) logAudit(db, { workspaceId: wsId, action: "backup.create", entityType: "backup", entityId: backupId, meta: { restored: 1 } });
+  } catch (e) {
+    return { error: `Restore failed: ${(e as Error).message}` };
+  }
+  revalidatePath("/dashboard/settings");
+  return { ok: true };
 }

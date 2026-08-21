@@ -19,6 +19,7 @@ export const SEGMENT_FIELDS = [
   "url",
   "country",
   "state",
+  "city",
   "device",
   "os",
   "browser",
@@ -27,6 +28,7 @@ export const SEGMENT_FIELDS = [
   "last_active_after",
   "opened_campaign",
   "campaign_total_opens",
+  "tag",
 ] as const;
 export type SegmentField = (typeof SEGMENT_FIELDS)[number];
 
@@ -65,6 +67,7 @@ const FIELD_OPS: Record<SegmentField, readonly SegmentOp[]> = {
   url: ["equals", "contains", "starts_with", "ends_with"],
   country: ["equals", "in"],
   state: ["equals", "in"],
+  city: ["equals", "in"],
   device: ["equals", "in"],
   os: ["equals", "in"],
   browser: ["equals", "in"],
@@ -73,6 +76,7 @@ const FIELD_OPS: Record<SegmentField, readonly SegmentOp[]> = {
   last_active_after: ["gt", "gte"],
   opened_campaign: ["equals"],
   campaign_total_opens: ["gte", "gt", "lt", "lte", "equals"],
+  tag: ["equals", "in", "contains"],
 };
 
 export function isSegmentField(value: unknown): value is SegmentField {
@@ -94,7 +98,7 @@ export function normalizeCondition(input: unknown): SegmentCondition | null {
   if (c.op === "in") {
     if (!Array.isArray(value) || value.length === 0) return null;
     if (!value.every((v) => typeof v === "string" || typeof v === "number")) return null;
-    if (value.length > 50) return null; // cap list size
+    if (value.length > 200) return null; // cap list size (personal: unlocked from 50)
   } else if (typeof value !== "string" && typeof value !== "number") {
     return null;
   }
@@ -159,7 +163,7 @@ function push(params: unknown[], value: unknown) {
 }
 
 function compileCondition(cond: SegmentCondition, alias: string, params: unknown[]): string {
-  // Subquery-backed fields: opened_campaign / campaign_total_opens.
+  // Subquery-backed fields: opened_campaign / campaign_total_opens / tag (LumaPush city+tag)
   if (cond.field === "opened_campaign") {
     const v = Array.isArray(cond.value) ? cond.value[0] : cond.value;
     const p = push(params, Number(v));
@@ -170,6 +174,18 @@ function compileCondition(cond: SegmentCondition, alias: string, params: unknown
     const p = push(params, Number(v));
     const sqlOp = cond.op === "equals" ? "=" : cond.op === "gt" ? ">" : cond.op === "gte" ? ">=" : cond.op === "lt" ? "<" : "<=";
     return `(SELECT COUNT(*) FROM events e WHERE e.subscriber_id = ${alias}.id AND e.campaign_id IS NOT NULL AND e.type = 'clicked') ${sqlOp} ${p}`;
+  }
+  if (cond.field === "tag") {
+    if (cond.op === "in") {
+      const list = Array.isArray(cond.value) ? cond.value : [cond.value];
+      const ph = list.map((v) => push(params, String(v))).join(", ");
+      return `EXISTS (SELECT 1 FROM subscriber_tags t WHERE t.subscriber_id = ${alias}.id AND t.tag IN (${ph}))`;
+    }
+    if (cond.op === "contains") {
+      const escaped = String(cond.value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+      return `EXISTS (SELECT 1 FROM subscriber_tags t WHERE t.subscriber_id = ${alias}.id AND t.tag LIKE ${push(params, `%${escaped}%`)} ESCAPE '\\')`;
+    }
+    return `EXISTS (SELECT 1 FROM subscriber_tags t WHERE t.subscriber_id = ${alias}.id AND t.tag = ${push(params, String(cond.value))})`;
   }
 
   const col = scalarColumn(cond.field, alias);
@@ -216,6 +232,8 @@ function scalarColumn(field: SegmentField, alias: string): string {
       return `${alias}.country`;
     case "state":
       return `${alias}.state`;
+    case "city":
+      return `${alias}.city`;
     case "device":
       return `${alias}.device`;
     case "os":

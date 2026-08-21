@@ -34,7 +34,7 @@ describe("normalizeCondition", () => {
 
   it("caps in-list size", () => {
     expect(
-      normalizeCondition({ field: "country", op: "in", value: Array.from({ length: 51 }, (_, i) => `C${i}`) }),
+      normalizeCondition({ field: "country", op: "in", value: Array.from({ length: 201 }, (_, i) => `C${i}`) }),
     ).toBeNull();
   });
 });

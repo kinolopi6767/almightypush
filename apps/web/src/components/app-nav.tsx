@@ -21,6 +21,14 @@ const SECTIONS: { heading: string; items: { href: string; label: string }[] }[] 
       { href: "/dashboard/links", label: "LP links" },
       { href: "/dashboard/channels", label: "YouTube channels" },
       { href: "/dashboard/automations", label: "Automations" },
+      { href: "/dashboard/journeys", label: "Journeys" },
+      { href: "/dashboard/email", label: "Email" },
+    ],
+  },
+  {
+    heading: "Intelligence",
+    items: [
+      { href: "/dashboard/ai", label: "AI Studio" },
     ],
   },
   {
@@ -29,6 +37,7 @@ const SECTIONS: { heading: string; items: { href: string; label: string }[] }[] 
       { href: "/dashboard/status", label: "Status" },
       { href: "/dashboard/api", label: "API" },
       { href: "/dashboard/guides", label: "Guides" },
+      { href: "/dashboard/team", label: "Team" },
       { href: "/dashboard/settings", label: "Settings" },
       { href: "/dashboard/profile", label: "Profile" },
     ],

@@ -101,6 +101,57 @@ add_action('publish_post', function ($post_id, $post) {
 </script>`}
           />
         </Section>
+
+        <Section title="Shopify (LumaPush parity)">
+          <P>
+            Add the SDK to your Shopify theme&apos;s <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">layout/theme.liquid</code> before{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{"</head>"}</code> and trigger on the
+            order-thank-you page. Works with cart-recovery Journeys:
+          </P>
+          <CodeBlock
+            label="Shopify theme.liquid"
+            code={`<!-- PushPanel Shopify -->
+<script src="https://your-panel.example.com/sdk/pushpanel-sdk.js"></script>
+<script>
+  const api = PushPanel.init({ domain: 7, publicKey: "VAPID_KEY", baseUrl: "https://your-panel.example.com", prompt: { type: "auto", position: "bottom-right" }});
+  // Shopify cart recovery: on /cart, tag subscriber via API
+  fetch('/api/v1/track', {method:'POST', body: JSON.stringify({event:'cart_view', tags:['cart']})});
+</script>`}
+          />
+        </Section>
+
+        <Section title="Ghost CMS (RSS AutoMagic)">
+          <P>
+            Ghost exposes <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">/rss/</code>. Create an{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">automagic_dynamic</code> automation with
+            source <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">https://your-ghost.com/rss/</code> and
+            interval 15m — identical to Blogger, plus native email via Ghost members import.
+          </P>
+          <CodeBlock label="Ghost RSS" code={`https://your-ghost.com/rss/`} />
+        </Section>
+
+        <Section title="Zapier & Make.com (Webhooks)">
+          <P>
+            Every campaign/automation trigger is a webhook: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">POST /api/v1/send</code>{" "}
+            (X-Api-Key) or <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">POST /api/v1/automations/{"{id}"}/trigger</code>{" "}
+            (HMAC). Connect 1k+ apps via Zapier/Make by forwarding their hook to these endpoints.
+          </P>
+          <CodeBlock
+            label="Zapier webhook"
+            code={`curl -X POST https://your-panel.example.com/api/v1/send \\
+  -H "X-Api-Key: ppk_live_xxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{"domain":"example.com","title":"New post","url":"https://example.com/new","audience":{"kind":"segment","segment_id":3}}'`}
+          />
+        </Section>
+
+        <Section title="Email — Shopify/Ghost to PushPanel">
+          <P>
+            Import existing lists via CSV at <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">/dashboard/email</code> →{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">email_contacts</code> (1→unlimited tags, SPF/DKIM/DMARC at{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">/dashboard/email</code> sending domains). Drip via Journeys.
+          </P>
+        </Section>
       </div>
     </>
   );

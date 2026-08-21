@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 /**
  * At-rest encryption (AES-256-GCM) for secrets: domains.provider_config,
@@ -46,14 +46,21 @@ export function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
-/** Constant-ish-time comparison for API key / token checks. */
+/** Constant-time comparison for API key / token checks. */
 export function safeEqual(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
-  if (ba.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ba.length; i++) diff |= ba[i]! ^ bb[i]!;
-  return diff === 0;
+  if (ba.length !== bb.length) {
+    // Avoid early-return timing leak on length: compare dummy buffers of same length
+    const dummy = Buffer.alloc(Math.max(ba.length, bb.length));
+    try {
+      timingSafeEqual(dummy, dummy);
+    } catch {
+      // never throws for equal length
+    }
+    return false;
+  }
+  return timingSafeEqual(ba, bb);
 }
 /** H5: one-time plaintext API key token (`ppk_live_` + 48 hex chars). */
 export function generateApiKeyToken(): string {

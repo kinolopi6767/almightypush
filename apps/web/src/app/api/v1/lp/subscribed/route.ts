@@ -21,7 +21,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "origin not allowed" }, { status: 403 });
   }
   const allowed = [hostFromUrl(process.env.APP_URL), req.headers.get("host")?.split(":")[0]?.toLowerCase()].filter(Boolean) as string[];
-  if (allowed.length === 0 || !allowed.some((h) => host === h || host.endsWith(`.${h}`))) {
+  // Strict exact-match: subdomains are NOT allowed to report LP conversions.
+  // If you serve the panel behind a subdomain proxy, set APP_URL to the
+  // canonical host and ensure the landing page uses that same host.
+  if (allowed.length === 0 || !allowed.some((h) => host === h)) {
     return NextResponse.json({ ok: false, error: "origin not allowed" }, { status: 403 });
   }
 
@@ -42,10 +45,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Too many reports" }, { status: 429 });
   }
 
-  const [link] = await db.select({ id: lpLinks.id }).from(lpLinks).where(eq(lpLinks.code, code)).limit(1).all();
+  const [link] = db.select({ id: lpLinks.id }).from(lpLinks).where(eq(lpLinks.code, code)).limit(1).all();
   if (!link) return NextResponse.json({ ok: false, error: "unknown link" }, { status: 404 });
 
-  await db.update(lpLinks).set({ subscribers_count: sql`${lpLinks.subscribers_count} + 1` }).where(eq(lpLinks.id, link.id)).run();
+  db.update(lpLinks)
+    .set({ subscribers_count: sql`${lpLinks.subscribers_count} + 1` })
+    .where(eq(lpLinks.id, link.id))
+    .run();
   return NextResponse.json({ ok: true });
 }
 

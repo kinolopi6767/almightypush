@@ -26,7 +26,8 @@ const DEFAULT_PRAGMAS: Record<string, string | number> = {
   busy_timeout: 5000,
   foreign_keys: "ON",
   synchronous: "NORMAL",
-  cache_size: -64000, // 64MB
+  // VPS tune: 64MB default for AWS t2.micro 1GB, 256MB for 2GB+ VPS via SQLITE_CACHE_MB env
+  cache_size: -(Number(process.env.SQLITE_CACHE_MB ?? 64) * 1024),
 };
 
 /**
@@ -50,7 +51,8 @@ export function createDb(
   path: string,
   opts?: { migrate?: boolean } & Pick<DbOptions, "pragmas">,
 ): BetterSQLite3Database<typeof allTables> {
-  const client = createSqlite(path, opts?.pragmas);
+  const merged = opts?.pragmas ? { ...DEFAULT_PRAGMAS, ...opts.pragmas } : DEFAULT_PRAGMAS;
+  const client = createSqlite(path, merged);
   const db = drizzle(client, { schema: allTables }) as BetterSQLite3Database<typeof allTables>;
   if (opts?.migrate) {
     runMigrations(db, client);

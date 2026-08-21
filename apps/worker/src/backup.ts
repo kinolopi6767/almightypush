@@ -1,10 +1,12 @@
 import path from "node:path";
-import { mkdirSync, statSync, unlinkSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { sql } from "drizzle-orm";
 import { backups, type allTables } from "@pushpanel/db/schema";
 import { desc, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "@pushpanel/db";
 import { readSetting, writeSetting } from "./cleanup";
+import { getGDriveAccessToken, uploadToGDrive } from "@pushpanel/core";
+import { getGDriveConfig } from "./secrets";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
 
@@ -20,7 +22,8 @@ const INTERVALS_MS: Record<string, number> = {
  * backups enabled (`backup_auto_interval` = daily/weekly/monthly), snapshot
  * the live SQLite file into `data/backups/` once per interval.
  */
-export function runBackupScheduler(db: PushDb, dbFile: string): boolean {
+export function runBackupScheduler(db: PushDb, dbFile: string, nowMs: number = Date.now()): boolean {
+  if (!dbFile || dbFile === ":memory:") return false;
   const interval = readSetting(db, "backup_auto_interval");
   if (!interval || interval === "off") return false;
 
@@ -28,15 +31,16 @@ export function runBackupScheduler(db: PushDb, dbFile: string): boolean {
   if (!intervalMs) return false;
 
   const lastRunAt = readSetting(db, "last_backup_at");
-  if (lastRunAt && Date.now() - new Date(lastRunAt).getTime() < intervalMs) return false;
+  if (lastRunAt && nowMs - new Date(lastRunAt).getTime() < intervalMs) return false;
 
-  const created = createSnapshot(db, dbFile, "auto");
+  const created = createSnapshot(db, dbFile, "auto", nowMs);
   if (created) pruneBackups(db, resolveRetention(db));
-  return true;
+  return created;
 }
 
 /** Create a VACUUM INTO snapshot row + file. */
-export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "auto" = "manual"): boolean {
+export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "auto" = "manual", nowMs: number = Date.now()): boolean {
+  if (!dbFile || dbFile === ":memory:") return false;
   const backupDir = path.join(path.dirname(dbFile), "backups");
   try {
     mkdirSync(backupDir, { recursive: true });
@@ -44,7 +48,7 @@ export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "aut
     return false;
   }
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const stamp = new Date(nowMs).toISOString().replace(/[:.]/g, "-");
   const target = path.join(backupDir, `backup-${kind}-${stamp}.db`);
 
   try {
@@ -54,7 +58,7 @@ export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "aut
     // scheduler backs off for the whole interval instead of hammering the
     // (probably full/permission-broken) disk on every tick.
     db.insert(backups).values({ kind, status: "failed", size_bytes: 0, location: target }).run();
-    writeSetting(db, "last_backup_at", new Date().toISOString());
+    writeSetting(db, "last_backup_at", new Date(nowMs).toISOString());
     return false;
   }
 
@@ -66,8 +70,26 @@ export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "aut
   }
 
   db.insert(backups).values({ kind, status: "done", size_bytes: size, location: target }).run();
-  writeSetting(db, "last_backup_at", new Date().toISOString());
+  writeSetting(db, "last_backup_at", new Date(nowMs).toISOString());
+
+  // Fire-and-forget Google Drive upload (disabled by default, best-effort)
+  void tryUploadToDrive(db, target).catch(() => {});
+
   return true;
+}
+
+async function tryUploadToDrive(db: PushDb, filePath: string): Promise<void> {
+  const { enabled, folderId, serviceJson } = getGDriveConfig(db);
+  if (!enabled || !serviceJson) return;
+  try {
+    const buf = readFileSync(filePath);
+    const token = await getGDriveAccessToken(serviceJson);
+    const fileName = path.basename(filePath);
+    await uploadToGDrive({ accessToken: token, fileName, fileBuffer: buf, folderId: folderId ?? undefined });
+  } catch (e) {
+    // best-effort: log but don't fail backup
+    console.error("[backup] Drive upload failed:", (e as Error).message?.slice(0, 500));
+  }
 }
 
 /**

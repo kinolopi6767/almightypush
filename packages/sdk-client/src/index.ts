@@ -27,18 +27,26 @@ export interface PushPanelOptions {
 
 export interface PushPromptConfig {
   /**
-   * auto — permission card appears shortly after load.
+   * auto — permission card (custom-card).
+   * backdrop — card + dark backdrop overlay.
+   * fullscreen — full-screen hero layout.
    * firstVisit — the card appears only on the first visit (localStorage).
    * bell — a floating bell widget; clicking subscribes.
    * none — no UI; call subscribe() yourself (e.g. your own button).
    */
-  type?: "auto" | "firstVisit" | "bell" | "none";
-  /** where the card/bell sits on the viewport */
+  type?: "auto" | "backdrop" | "fullscreen" | "firstVisit" | "bell" | "none";
+  /** where the card/bell sits on the viewport (ignored for fullscreen) */
   position?: "bottom-left" | "bottom-right" | "top-left" | "top-right";
   /** how long to wait before showing an auto/firstVisit card (ms) */
   delayMs?: number;
   /** dismiss means we never re-prompt in this browser (honours denial) */
   noRePromptIfDenied?: boolean;
+  /** Visual trigger: show after scroll depth 0-1 (e.g. 0.65 = 65%) */
+  scrollDepth?: number;
+  /** Visual trigger: show after idle ms */
+  idleMs?: number;
+  /** Custom CSS injected into prompt card (LumaPush Full Custom CSS) */
+  customCss?: string;
   texts?: {
     title?: string;
     message?: string;
@@ -70,7 +78,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-function guessDevice(): { device: string; browser: string; os: string } {
+function guessDevice(): { device: string; browser: string; os: string; timezone: string; locale: string; screenWidth: number; screenHeight: number } {
   const ua = navigator.userAgent;
   const isMobile = /Mobi|Android/i.test(ua);
   const os = /Windows/i.test(ua)
@@ -95,7 +103,23 @@ function guessDevice(): { device: string; browser: string; os: string } {
           : /Safari\//i.test(ua)
             ? "safari"
             : "unknown";
-  return { device: isMobile ? "mobile" : "desktop", browser, os };
+  let timezone = "UTC";
+  let locale = "en-US";
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    locale = navigator.language || "en-US";
+  } catch {
+    void 0;
+  }
+  return {
+    device: isMobile ? "mobile" : "desktop",
+    browser,
+    os,
+    timezone,
+    locale,
+    screenWidth: typeof window !== "undefined" ? window.screen.width : 0,
+    screenHeight: typeof window !== "undefined" ? window.screen.height : 0,
+  };
 }
 
 export function isInstalledPwa(): boolean {
@@ -120,11 +144,15 @@ function appleNotificationAllowed(): boolean {
   return apple === "granted";
 }
 
-function injectStyles(): void {
+function injectStyles(customCss?: string): void {
   const id = "pp-sdk-styles";
-  if (document.getElementById(id)) return;
-  const style = document.createElement("style");
-  style.id = id;
+  if (document.getElementById(id) && !customCss) return;
+  let style = document.getElementById(id) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = id;
+    document.head.appendChild(style);
+  }
   style.textContent = `
 .pp-sdk{all:initial;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:inherit;z-index:2147483647}
 .pp-sdk *{all:unset;box-sizing:border-box}
@@ -139,8 +167,11 @@ function injectStyles(): void {
 .pp-sdk-bell{position:fixed;z-index:2147483647;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--pp-sdk-accent,#2563eb);color:#fff;box-shadow:0 8px 22px rgba(0,0,0,.25)}
 .pp-sdk-bell.pp-sdk-bottom-left{left:16px;bottom:16px}.pp-sdk-bell.pp-sdk-bottom-right{right:16px;bottom:16px}.pp-sdk-bell.pp-sdk-top-left{left:16px;top:16px}.pp-sdk-bell.pp-sdk-top-right{right:16px;top:16px}
 .pp-sdk-bell svg{width:26px;height:26px;display:block}
+.pp-sdk-backdrop{position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
+.pp-sdk-fullscreen{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 600px at 50% -10%, #1d4ed8, #0f172a);color:#fff;padding:24px}
+.pp-sdk-fullscreen-inner{max-width:460px;text-align:center}
+${customCss ?? ""}
 `;
-  document.head.appendChild(style);
 }
 
 function positionClass(position: NonNullable<PushPromptConfig["position"]>): string {
@@ -182,7 +213,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
   function mountUi(): void {
     if (uiMounted || current === "unsupported" || alreadySubscribed()) return;
     uiMounted = true;
-    injectStyles();
+    injectStyles(prompt.customCss);
 
     const type = prompt.type ?? "auto";
     if (type === "bell") {
@@ -194,15 +225,105 @@ export function init(options: PushPanelOptions): PushPanelApi {
     if (prompt.noRePromptIfDenied && ("Notification" in window ? Notification.permission === "denied" : true)) return;
 
     const show = () => {
-      if (uiMounted && document.querySelector(".pp-sdk-card")) return;
-      mountCard();
+      if (uiMounted && document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen")) return;
+      mountCard(type);
     };
-    queueMicrotask(() => setTimeout(show, prompt.delayMs ?? 1500));
+
+    const scheduleShow = () => queueMicrotask(() => setTimeout(show, prompt.delayMs ?? 1500));
+
+    // LumaPush visual triggers: scroll depth & idle
+    if (prompt.scrollDepth !== undefined && prompt.scrollDepth > 0 && prompt.scrollDepth <= 1) {
+      let fired = false;
+      const onScroll = () => {
+        const depth = (window.scrollY + window.innerHeight) / Math.max(document.documentElement.scrollHeight, 1);
+        if (!fired && depth >= (prompt.scrollDepth ?? 0)) {
+          fired = true;
+          window.removeEventListener("scroll", onScroll);
+          scheduleShow();
+        }
+      };
+      window.addEventListener("scroll", onScroll, { passive: true });
+      // fallback delay if user never scrolls
+      setTimeout(() => {
+        if (!fired) scheduleShow();
+      }, (prompt.delayMs ?? 1500) + 8000);
+      return;
+    }
+    if (prompt.idleMs !== undefined && prompt.idleMs > 0) {
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      const reset = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(scheduleShow, prompt.idleMs);
+      };
+      ["mousemove", "keydown", "scroll", "touchstart"].forEach((e) => window.addEventListener(e, reset, { passive: true }));
+      reset();
+      return;
+    }
+
+    scheduleShow();
   }
 
-  function mountCard(): void {
+  function mountCard(kind: string = "auto"): void {
+    const isFullscreen = kind === "fullscreen";
+    const isBackdrop = kind === "backdrop";
+
+    let backdrop: HTMLElement | null = null;
+    if (isBackdrop) {
+      backdrop = document.createElement("div");
+      backdrop.className = "pp-sdk-backdrop";
+      backdrop.addEventListener("click", () => {
+        markPromptDismissed();
+        current = "dismissed";
+        backdrop?.remove();
+        document.querySelector(".pp-sdk-card")?.remove();
+      });
+      document.body.appendChild(backdrop);
+    }
+
     // built without innerHTML so no text from config is ever injected as HTML
     const wrap = document.createElement("div");
+    if (isFullscreen) {
+      wrap.className = "pp-sdk-fullscreen";
+      const inner = document.createElement("div");
+      inner.className = "pp-sdk-fullscreen-inner";
+      const logo = document.createElement("div");
+      logo.style.cssText = "width:64px;height:64px;margin:0 auto 20px;border-radius:18px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800";
+      logo.textContent = "P";
+      const title = document.createElement("div");
+      title.style.cssText = "font-size:24px;font-weight:700;margin:0";
+      title.textContent = texts.title ?? "Get notifications";
+      const msg = document.createElement("div");
+      msg.style.cssText = "margin:10px 0 0;color:rgba(255,255,255,.75);font-size:14px";
+      msg.textContent = texts.message ?? "We can send you a push when something new happens.";
+      const row = document.createElement("div");
+      row.style.cssText = "margin-top:28px;display:flex;flex-direction:column;gap:10px";
+      const allow = document.createElement("button");
+      allow.type = "button";
+      allow.style.cssText = "border-radius:999px;border:0;padding:12px 20px;font-size:15px;font-weight:600;background:#fff;color:#0f172a;cursor:pointer";
+      allow.textContent = texts.allow ?? "Allow";
+      allow.addEventListener("click", () => {
+        void subscribe().finally(() => {
+          wrap.remove();
+          backdrop?.remove();
+        });
+      });
+      const dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.style.cssText = "border-radius:999px;border:1px solid rgba(255,255,255,.3);padding:10px 20px;font-size:14px;background:transparent;color:#fff;cursor:pointer";
+      dismiss.textContent = texts.dismiss ?? "Not now";
+      dismiss.addEventListener("click", () => {
+        markPromptDismissed();
+        current = "dismissed";
+        wrap.remove();
+        backdrop?.remove();
+      });
+      row.append(allow, dismiss);
+      inner.append(logo, title, msg, row);
+      wrap.append(inner);
+      document.body.appendChild(wrap);
+      return;
+    }
+
     wrap.className = `pp-sdk pp-sdk-card ${positionClass(pos)}`;
 
     const title = document.createElement("div");
@@ -222,13 +343,17 @@ export function init(options: PushPanelOptions): PushPanelApi {
       markPromptDismissed();
       current = "dismissed";
       wrap.remove();
+      backdrop?.remove();
     });
     const allow = document.createElement("button");
     allow.type = "button";
     allow.className = "pp-sdk-btn pp-sdk-allow";
     allow.textContent = texts.allow ?? "Allow";
     allow.addEventListener("click", () => {
-      void subscribe().finally(() => wrap.remove());
+      void subscribe().finally(() => {
+        wrap.remove();
+        backdrop?.remove();
+      });
     });
 
     row.append(dismiss, allow);

@@ -20,9 +20,13 @@ const buckets = new Map<string, Bucket>();
 const CLEANUP_EVERY = 1_000;
 const MAX_BUCKETS = 20_000;
 
+const MAX_WINDOW_MS = 15 * 60_000;
+
 function cleanup(now: number): void {
   for (const [key, bucket] of buckets) {
-    bucket.hits = bucket.hits.filter((t) => now - t < 60_000);
+    // Retain hits for the longest window we use (15 min account limit) so
+    // longer windows are not under-counted by premature eviction.
+    bucket.hits = bucket.hits.filter((t) => now - t < MAX_WINDOW_MS);
     if (bucket.hits.length === 0) buckets.delete(key);
   }
 }

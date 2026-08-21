@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
-import { lpLinks } from "@pushpanel/db/schema";
+import { domains, lpLinks } from "@pushpanel/db/schema";
 import { LandingClient } from "./landing-client";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +27,11 @@ export default async function LandingPage({ params, searchParams }: { params: Pr
     .all();
   if (!link) notFound();
 
-  // Count the visit — before any redirect.
-  await db.update(lpLinks).set({ clicks_count: sql`${lpLinks.clicks_count} + 1` }).where(eq(lpLinks.id, link.id)).run();
+  // Count the visit — before any redirect. db.run is synchronous; no await needed.
+  db.update(lpLinks)
+    .set({ clicks_count: sql`${lpLinks.clicks_count} + 1` })
+    .where(eq(lpLinks.id, link.id))
+    .run();
 
   if (link.deleted_at) {
     redirect(link.target_url);
@@ -40,10 +43,19 @@ export default async function LandingPage({ params, searchParams }: { params: Pr
 
   let publicKey = "";
   if (link.domain_id) {
-    const res = await fetch(`${baseUrl}/api/v1/info?domain=${link.domain_id}`, { cache: "no-store" }).catch(() => null);
-    if (res?.ok) {
-      const data = (await res.json()) as { publicKey?: string };
-      publicKey = data.publicKey ?? "";
+    const [domain] = db
+      .select({ provider_config_json: domains.provider_config_json, status: domains.status })
+      .from(domains)
+      .where(eq(domains.id, link.domain_id))
+      .limit(1)
+      .all();
+    if (domain?.status === "active" && domain.provider_config_json) {
+      try {
+        const cfg = JSON.parse(domain.provider_config_json) as { publicKey?: string };
+        publicKey = cfg.publicKey ?? "";
+      } catch {
+        publicKey = "";
+      }
     }
   }
 

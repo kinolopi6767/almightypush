@@ -3,7 +3,7 @@ import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimit } from "@/lib/rate-limit";
-import { createCipher, sha256Hex } from "@pushpanel/core";
+import { createCipher, isValidTimezone, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
 import { enqueueAutomationCampaign } from "@pushpanel/db";
@@ -21,6 +21,11 @@ const bodySchema = z.object({
   browser: z.string().trim().max(40).optional().or(z.literal("")),
   os: z.string().trim().max(40).optional().or(z.literal("")),
   subscribeUrl: z.string().trim().max(500).optional().or(z.literal("")),
+  city: z.string().trim().max(80).optional().or(z.literal("")),
+  timezone: z.string().trim().max(64).optional().or(z.literal("")),
+  locale: z.string().trim().max(20).optional().or(z.literal("")),
+  screenWidth: z.coerce.number().int().min(0).max(10000).optional(),
+  screenHeight: z.coerce.number().int().min(0).max(10000).optional(),
 });
 
 /**
@@ -39,6 +44,10 @@ export async function POST(req: Request) {
   }
 
   const data = parsed.data;
+  // LumaPush hyper-precision geo + Smart Send timezone must be valid IANA
+  if (data.timezone && !isValidTimezone(data.timezone)) {
+    return NextResponse.json({ ok: false, error: "Invalid timezone" }, { status: 400 });
+  }
   const ip = clientIp(req.headers);
   if (!rateLimit(`subscribe:${data.domainId}:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000)) {
     return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429 });
@@ -81,7 +90,18 @@ export async function POST(req: Request) {
   if (existing) {
     subscriberId = existing.id;
     db.update(subscribers)
-      .set({ token: enc.encrypt(token), last_active_at: now, device: data.device || null, browser: data.browser || null, os: data.os || null })
+      .set({
+        token: enc.encrypt(token),
+        last_active_at: now,
+        device: data.device || null,
+        browser: data.browser || null,
+        os: data.os || null,
+        city: (data as { city?: string }).city || null,
+        timezone: (data as { timezone?: string }).timezone || null,
+        locale: (data as { locale?: string }).locale || null,
+        screen_width: (data as { screenWidth?: number }).screenWidth ?? null,
+        screen_height: (data as { screenHeight?: number }).screenHeight ?? null,
+      })
       .where(eq(subscribers.id, existing.id))
       .run();
   } else {
@@ -97,6 +117,11 @@ export async function POST(req: Request) {
           device: data.device || null,
           browser: data.browser || null,
           os: data.os || null,
+          city: (data as { city?: string }).city || null,
+          timezone: (data as { timezone?: string }).timezone || null,
+          locale: (data as { locale?: string }).locale || null,
+          screen_width: (data as { screenWidth?: number }).screenWidth ?? null,
+          screen_height: (data as { screenHeight?: number }).screenHeight ?? null,
           subscribe_url: data.subscribeUrl || null,
           subscribe_at: now,
           last_active_at: now,
@@ -114,7 +139,18 @@ export async function POST(req: Request) {
         .all();
       if (!winner) throw new Error("subscriber insert failed without a winner");
       db.update(subscribers)
-        .set({ token: enc.encrypt(token), last_active_at: now, device: data.device || null, browser: data.browser || null, os: data.os || null })
+        .set({
+          token: enc.encrypt(token),
+          last_active_at: now,
+          device: data.device || null,
+          browser: data.browser || null,
+          os: data.os || null,
+          city: (data as { city?: string }).city || null,
+          timezone: (data as { timezone?: string }).timezone || null,
+          locale: (data as { locale?: string }).locale || null,
+          screen_width: (data as { screenWidth?: number }).screenWidth ?? null,
+          screen_height: (data as { screenHeight?: number }).screenHeight ?? null,
+        })
         .where(eq(subscribers.id, winner.id))
         .run();
       return NextResponse.json({ ok: true, id: winner.id });
@@ -246,9 +282,10 @@ function activeSubscribers(domainId: number): number {
   return row?.value ?? 0;
 }
 
-/** Hard per-domain cap on active subscribers (env-overridable). */
+/** Per-domain cap — removed for personal/private single-tenant use: unlimited. */
 function maxSubscribersPerDomain(): number {
   const raw = Number(process.env.MAX_SUBSCRIBERS_PER_DOMAIN);
-  if (!Number.isFinite(raw) || raw <= 0) return 250_000;
-  return Math.min(Math.floor(raw), 10_000_000);
+  // Personal use: unlimited by default. Only enforce if env var explicitly set to >0.
+  if (!Number.isFinite(raw) || raw <= 0) return Number.POSITIVE_INFINITY;
+  return Math.min(Math.floor(raw), 100_000_000);
 }

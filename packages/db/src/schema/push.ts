@@ -56,6 +56,12 @@ export const subscribers = sqliteTable(
     browser: text("browser"),
     country: text("country"),
     state: text("state"),
+    /** LumaPush: city-level geo (hyper-precision) + timezone for Smart Send */
+    city: text("city"),
+    timezone: text("timezone"),
+    locale: text("locale"),
+    screen_width: integer("screen_width"),
+    screen_height: integer("screen_height"),
     subscribe_url: text("subscribe_url"),
     subscribe_at: text("subscribe_at"),
     last_active_at: text("last_active_at"),
@@ -68,6 +74,7 @@ export const subscribers = sqliteTable(
     index("idx_subs_domain").on(t.domain_id, t.unsubscribed_at),
     index("idx_subs_domain_date").on(t.domain_id, t.subscribe_at),
     index("idx_subs_domain_geo").on(t.domain_id, t.country, t.state),
+    index("idx_subs_domain_city").on(t.domain_id, t.city),
     index("idx_subs_domain_dev").on(t.domain_id, t.device, t.browser, t.os),
     // Partial unique — one active subscription per domain+token.
     // Predicate is a raw SQL fragment to avoid a self-referencing closure.

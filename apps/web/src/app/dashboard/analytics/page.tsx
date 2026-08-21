@@ -14,6 +14,7 @@ const DIMENSIONS = [
   { key: "os", label: "OS" },
   { key: "country", label: "Country" },
   { key: "state", label: "State" },
+  { key: "city", label: "City" },
 ] as const;
 
 const inputCls =

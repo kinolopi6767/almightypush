@@ -1,0 +1,16 @@
+# Litestream continuous replication — for ephemeral free tiers or 1M extra safety
+# Copy to litestream.yml and set env R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+# Enable by uncommenting `litestream` service in docker-compose.yml
+
+dbs:
+  - path: /app/data/pushpanel.db
+    replicas:
+      - type: s3
+        bucket: pushpanel-litestream
+        path: pushpanel.db
+        endpoint: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+        region: auto
+        sync-interval: 10s
+        snapshot-interval: 24h
+        retention: 72h
+        retention-check-interval: 6h

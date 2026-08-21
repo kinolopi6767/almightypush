@@ -21,17 +21,17 @@ RUN pnpm turbo run build --filter=@pushpanel/web --filter=@pushpanel/worker
 
 # ---------- runtime ----------
 FROM node:22-alpine AS runtime
+RUN apk add --no-cache wget
 ENV NODE_ENV=production PORT=3000
 WORKDIR /app
 
 # Web: Next standalone server (self-contained) + its traced node_modules.
-COPY --from=build /app/apps/web/.next/standalone/apps/web ./apps/web
-COPY --from=build /app/apps/web/.next/standalone/node_modules ./node_modules
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /app/apps/web/.next/standalone ./
 
 # Standalone output does not include public/ — the SDK bundle, service
 # worker, manifest and icons live there and must be served at /.
 COPY --from=build /app/apps/web/public ./apps/web/public
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 
 # Worker: bundled ESM (native deps resolved from the traced node_modules).
 COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs

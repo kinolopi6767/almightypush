@@ -17,6 +17,7 @@ export interface SubscriberFilter {
   os?: string;
   country?: string;
   state?: string;
+  city?: string;
   showOnly: "active" | "unsubscribed" | "all";
 }
 
@@ -27,7 +28,7 @@ export function parseSubscriberFilterValue(value: string | string[] | undefined)
   return value === undefined || value === "" ? undefined : value;
 }
 
-const FILTER_KEYS = ["device", "browser", "os", "country", "state"] as const;
+const FILTER_KEYS = ["device", "browser", "os", "country", "state", "city"] as const;
 
 export function parseSubscriberFilters(
   params: Record<string, string | string[] | undefined> | URLSearchParams,

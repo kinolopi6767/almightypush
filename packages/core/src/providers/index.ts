@@ -29,6 +29,8 @@ export interface PushMessage {
   deliveryId?: number;
   campaignId?: number;
   subscriberId?: number;
+  /** Panel origin for the click beacon (e.g. https://push.example.com) */
+  panelOrigin?: string;
 }
 
 export interface VapidDetails {

@@ -119,6 +119,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
               Automations
             </Link>
             <Link
+              href="/dashboard/journeys"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Journeys
+            </Link>
+            <Link
+              href="/dashboard/email"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Email
+            </Link>
+            <Link
+              href="/dashboard/ai"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              AI Studio
+            </Link>
+            <Link
               href="/dashboard/status"
               className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
             >
@@ -135,6 +153,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
               className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
             >
               Guides
+            </Link>
+            <Link
+              href="/dashboard/team"
+              className="rounded-md px-2.5 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-accent"
+            >
+              Team
             </Link>
             <Link
               href="/dashboard/settings"

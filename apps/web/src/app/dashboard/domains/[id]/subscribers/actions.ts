@@ -121,7 +121,7 @@ export async function exportSubscribersAction(
   return { ok: true, csv, filename: `subscribers-domain-${domainId}-${Date.now()}.csv` };
 }
 
-const IMPORT_LINE_LIMIT = 5_000;
+const IMPORT_LINE_LIMIT = 100_000; // personal: unlocked from 5k
 
 export async function importSubscribersAction(
   domainId: number,
@@ -132,7 +132,7 @@ export async function importSubscribersAction(
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a file to import" };
-  const text = (await file.text()).slice(0, 2_000_000);
+  const text = (await file.text()).slice(0, 10_000_000); // personal: unlocked from 2M
 
   const parsed: { endpoint?: string; p256dh?: string; auth?: string; browser?: string; os?: string; device?: string; subscribe_url?: string; provider?: string }[] = [];
 

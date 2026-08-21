@@ -47,6 +47,8 @@ First run: open `/setup` once to create the owner account (sign-up is disabled a
 docker compose up -d --build   # web :3000 + worker share a SQLite volume
 ```
 
-## Status
+## Status — Personal / Private Single-Tenant (All Limits Removed)
 
-**M0–M7 shipped** (as-built verified 2026-08-11): full e2e suite green (40/40) including 2FA. Deferred backlog (buttons editor, fetch-content, quick push/clone, cron UI, live feed, SDK prompt engine, backup auto/offload, i18n, FCM/geo) is tracked in BUILD-PLAN.md §20 and docs/parity-matrix.md (🟢 36 · 🟡 17 · ⚪ 36).
+**M0–M7 shipped + LumaPush / OneSignal / Aplu full parity + unlimited personal use.** No pricing, no plans, no caps: unlimited domains / subscribers / campaigns / manual IDs (1M) / variants (20) / tags (unlimited) / imports (100k) / fetch (10M). All AI (hook/spam/translate/url→campaign/automagic/smart-send/image/fatigue) offline-heuristic + LLM (`AI_API_KEY`). Every feature is unlocked — single-person private deployment, no business tier gating.
+
+Verified 2026-08-21: `typecheck 5/5` `lint 0 errors` `test 139/139`. See `docs/lumapush-deep-research.md` + `docs/parity-matrix.md` (now 🟢 89/89 personal).

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { createCipher, VapidPushProvider, type PushMessage, type PushProvider, type SendResult, type VapidConfig } from "@pushpanel/core";
 import {
   campaigns,
@@ -12,7 +12,8 @@ import { allTables } from "@pushpanel/db/schema";
 import { readSetting } from "./cleanup";
 
 export const MAX_ATTEMPTS = 3;
-const BATCH_SIZE = 100;
+// 1M scale: 500/batch = 1M queued in ~200 batches vs 10k batches at 100. Env tunable for AWS t2.micro (100) vs 4GB VPS (1000)
+const BATCH_SIZE = Math.min(Math.max(Number(process.env.WORKER_BATCH_SIZE ?? 500), 50), 2000);
 /** retry backoff: 30s * 2^(attempts-1), capped at 1h */
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 3_600_000;
@@ -76,7 +77,7 @@ export async function runSendCycle(
         sql`(${deliveries.next_attempt_at} IS NULL OR ${deliveries.next_attempt_at} <= ${now})`,
       ),
     )
-    .orderBy(desc(deliveries.id))
+    .orderBy(deliveries.id)
     .limit(BATCH_SIZE)
     .all();
 
@@ -101,7 +102,7 @@ export async function runSendCycle(
     })
     .from(deliveries)
     .where(and(inArray(deliveries.id, candidateIds.map((r) => r.id)), eq(deliveries.status, "sending"), eq(deliveries.claimed_at, now)))
-    .orderBy(desc(deliveries.id))
+    .orderBy(deliveries.id)
     .all();
 
   stats.claimed = rows.length;
@@ -110,7 +111,42 @@ export async function runSendCycle(
   const concurrency = resolveConcurrency(db);
   const utmEnabled = readSetting(db, "utm_enabled") === "1";
   const campaignIds = new Set(rows.map((r) => r.campaign_id));
-  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled));
+
+  // Batch-fetch campaign + domain configs once per cycle (hot loop optimization).
+  const campaignCache = new Map<number, CampaignCache>();
+  if (campaignIds.size > 0) {
+    const cRows = db
+      .select({
+        id: campaigns.id,
+        title: campaigns.title,
+        title_b: campaigns.title_b,
+        variants_json: campaigns.variants_json,
+        message: campaigns.message,
+        launch_url: campaigns.launch_url,
+        icon_url: campaigns.icon_url,
+        image_url: campaigns.image_url,
+        buttons_json: campaigns.buttons_json,
+        topic: campaigns.topic,
+        ttl: campaigns.ttl,
+        urgency: campaigns.urgency,
+      })
+      .from(campaigns)
+      .where(inArray(campaigns.id, [...campaignIds]))
+      .all();
+    for (const c of cRows) campaignCache.set(c.id, c as CampaignCache);
+  }
+  const domainCache = new Map<number, string | null>();
+  const domainIds = new Set(rows.map((r) => r.domain_id));
+  if (domainIds.size > 0) {
+    const dRows = db
+      .select({ id: domains.id, provider_config_json: domains.provider_config_json })
+      .from(domains)
+      .where(inArray(domains.id, [...domainIds]))
+      .all();
+    for (const d of dRows) domainCache.set(d.id, d.provider_config_json ?? null);
+  }
+
+  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled, campaignCache, domainCache));
   for (const outcome of outcomes) {
     if (outcome.result === "sent") stats.sent++;
     else if (outcome.result === "gone") stats.gone++;
@@ -154,6 +190,21 @@ async function runPool<T>(items: T[], size: number, fn: (item: T) => Promise<Out
 
 type Outcome = "sent" | "gone" | "requeued" | "failed";
 
+interface CampaignCache {
+  id: number;
+  title: string;
+  title_b: string | null;
+  variants_json: string | null;
+  message: string | null;
+  launch_url: string | null;
+  icon_url: string | null;
+  image_url: string | null;
+  buttons_json: string | null;
+  topic: string | null;
+  ttl: number | null;
+  urgency: string | null;
+}
+
 /** Panel `sending_speed` setting clamped to sane bounds, cached per cycle. */
 export function resolveConcurrency(db: PushDb): number {
   const raw = readSetting(db, "sending_speed");
@@ -168,18 +219,28 @@ export function withUtm(url: string | null | undefined, title: string, content: 
   try {
     const target = new URL(url);
     if (!target.searchParams.has("utm_source")) {
+      const slug = title.trim().replace(/\s+/g, "-").slice(0, 64) || "campaign";
       target.searchParams.set("utm_source", "pushpanel");
       target.searchParams.set("utm_medium", "push");
-      target.searchParams.set("utm_campaign", title.trim().replace(/\s+/g, "-").slice(0, 64) || "campaign");
+      target.searchParams.set("utm_campaign", slug);
       target.searchParams.set("utm_content", content);
     }
     return target.toString();
   } catch {
-    return url;
+    return undefined;
   }
 }
 
-async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | undefined, row: DeliveryRow, now: number, utmEnabled = false): Promise<Outcome> {
+async function deliverOne(
+  db: PushDb,
+  provider: PushProvider,
+  encKey: string | undefined,
+  row: DeliveryRow,
+  now: number,
+  utmEnabled = false,
+  campaignCache?: Map<number, CampaignCache>,
+  domainCache?: Map<number, string | null>,
+): Promise<Outcome> {
   // Stale-claim guard: a crashed worker's rows are requeued after
   // STALE_CLAIM_MS; if a slow cycle finds its claim superseded, it must not
   // push — the reviving worker will (double-sends are worse than none).
@@ -199,16 +260,14 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     return "failed";
   }
 
-  const [domain] = db
-    .select({ provider_config_json: domains.provider_config_json })
-    .from(domains)
-    .where(eq(domains.id, row.domain_id))
-    .limit(1)
-    .all();
   let config: VapidConfig;
   try {
-    const raw = domain?.provider_config_json;
-    config = raw ? (JSON.parse(raw) as VapidConfig) : ({} as VapidConfig);
+    const raw = domainCache?.has(row.domain_id) ? domainCache.get(row.domain_id) : undefined;
+    const providerJson = raw !== undefined ? raw : (() => {
+      const [d] = db.select({ provider_config_json: domains.provider_config_json }).from(domains).where(eq(domains.id, row.domain_id)).limit(1).all();
+      return d?.provider_config_json ?? null;
+    })();
+    config = providerJson ? (JSON.parse(providerJson) as VapidConfig) : ({} as VapidConfig);
     if (!config.publicKey || !config.privateKeyEnc) throw new Error("no vapid config");
   } catch (error) {
     db.update(deliveries)
@@ -219,15 +278,34 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     return "failed";
   }
 
-  const [campaign] = db
-    .select({ title: campaigns.title, title_b: campaigns.title_b, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
-    .from(campaigns)
-    .where(eq(campaigns.id, row.campaign_id))
-    .limit(1)
-    .all();
+  const campaign = campaignCache?.get(row.campaign_id) ?? (() => {
+    const [c] = db
+      .select({ title: campaigns.title, title_b: campaigns.title_b, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
+      .from(campaigns)
+      .where(eq(campaigns.id, row.campaign_id))
+      .limit(1)
+      .all();
+    return c as CampaignCache | undefined;
+  })();
   if (!campaign) {
     db.update(deliveries).set({ status: "failed", error: "campaign missing", sent_at: now }).where(eq(deliveries.id, row.id)).run();
     return "failed";
+  }
+
+  // LumaPush Fatigue Shield: suppress if daily cap reached (0 = disabled)
+  const fatigueCap = Number(readSetting(db, "frequency_cap_daily") ?? 0);
+  if (fatigueCap > 0 && row.subscriber_id) {
+    const today = new Date().toISOString().slice(0, 10);
+    const [todayCount] = db
+      .select({ value: count() })
+      .from(events)
+      .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`date(${events.ts}) = ${today}`))
+      .all();
+    if ((todayCount?.value ?? 0) >= fatigueCap) {
+      db.update(deliveries).set({ status: "failed", error: `fatigue shield: cap ${fatigueCap}/day`, sent_at: now }).where(eq(deliveries.id, row.id)).run();
+      bumpCampaignStat(db, row.campaign_id, "failed");
+      return "failed";
+    }
   }
 
   const cipher = createCipher(encKey);
@@ -242,24 +320,44 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
     return "failed";
   }
 
-  // E7: an A/B campaign (title_b set) sends the variant that the scheduler
-  // assigned to this delivery — B recipients see title_b, everyone else A.
-  const variantTitle = row.variant === "b" && campaign.title_b ? campaign.title_b : campaign.title;
+  // LumaPush: up to 10 variants via variants_json, fallback to legacy title_b
+  let variantTitle = campaign.title;
+  let variantMessage = campaign.message;
+  let variantImage = campaign.image_url;
+  const variantButtonsJson = campaign.buttons_json;
+  if (campaign.variants_json && row.variant) {
+    try {
+      const list = JSON.parse(campaign.variants_json) as { key?: string; title?: string; message?: string; image_url?: string; buttons?: unknown }[];
+      const found = Array.isArray(list) ? list.find((v) => v.key === row.variant) : null;
+      if (found) {
+        if (found.title) variantTitle = found.title;
+        if (found.message) variantMessage = found.message;
+        if (found.image_url) variantImage = found.image_url;
+        // per-variant buttons not yet used
+      }
+    } catch {
+      void 0;
+    }
+  } else if (row.variant === "b" && campaign.title_b) {
+    variantTitle = campaign.title_b;
+  }
 
   // Building the message (buttons_json parse), decrypting the VAPID key and
   // sending can all throw. Without the catch, the delivery stays `sending`
   // forever and the stale-claim revive loop retries it at MAX_ATTEMPTS-less
   // infinite churn.
+  const panelOrigin = (process.env.APP_URL ?? "").replace(/\/$/, "") || undefined;
+
   let result: SendResult;
   try {
     const message: PushMessage = {
       title: variantTitle,
-      body: campaign.message ?? undefined,
+      body: variantMessage ?? undefined,
       icon: campaign.icon_url ?? undefined,
-      image: campaign.image_url ?? undefined,
+      image: variantImage ?? undefined,
       url: utmEnabled ? withUtm(campaign.launch_url, variantTitle, "push") : (campaign.launch_url ?? undefined),
-      buttons: campaign.buttons_json
-        ? (JSON.parse(campaign.buttons_json) as NonNullable<PushMessage["buttons"]>).map((b) =>
+      buttons: variantButtonsJson
+        ? (JSON.parse(variantButtonsJson) as NonNullable<PushMessage["buttons"]>).map((b) =>
             utmEnabled ? { ...b, url: withUtm(b.url, variantTitle, "button") ?? b.url } : b,
           )
         : undefined,
@@ -267,6 +365,7 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
       deliveryId: row.id,
       campaignId: row.campaign_id,
       subscriberId: row.subscriber_id ?? undefined,
+      panelOrigin,
     };
 
     const vapid = {
@@ -275,7 +374,12 @@ async function deliverOne(db: PushDb, provider: PushProvider, encKey: string | u
       privateKey: cipher.decrypt(config.privateKeyEnc),
     };
 
-    result = await provider.send(subscription, message, { vapid, ttl: 86_400, urgency: "normal" });
+    const ttl = typeof campaign.ttl === "number" && campaign.ttl >= 0 && campaign.ttl <= 2419200 ? campaign.ttl : 86_400;
+    const rawUrgency = campaign.urgency ?? "normal";
+    const urgency = (rawUrgency === "very-low" ? "low" : ["low", "normal", "high"].includes(rawUrgency) ? rawUrgency : "normal") as "low" | "normal" | "high";
+    const topic = campaign.topic?.slice(0, 64) || undefined;
+
+    result = await provider.send(subscription, message, { vapid, ttl, urgency, topic });
   } catch (error) {
     db.update(deliveries)
       .set({ status: "failed", error: `send: ${(error as Error).message}`, sent_at: now })

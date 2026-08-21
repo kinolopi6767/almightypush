@@ -31,6 +31,23 @@ const FIELDS: { value: string; label: string; ops: { value: string; label: strin
     ],
   },
   {
+    value: "city",
+    label: "City (hyper-precision)",
+    ops: [
+      { value: "equals", label: "is" },
+      { value: "in", label: "in list" },
+    ],
+  },
+  {
+    value: "tag",
+    label: "Custom Tag (unlimited)",
+    ops: [
+      { value: "equals", label: "is" },
+      { value: "in", label: "in list" },
+      { value: "contains", label: "contains" },
+    ],
+  },
+  {
     value: "device",
     label: "Device",
     ops: [

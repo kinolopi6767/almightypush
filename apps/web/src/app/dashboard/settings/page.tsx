@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { auditLog, backups, settings } from "@pushpanel/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
-import { SettingsForm } from "./settings-form";
+import { SettingsForm, SecretsForm, GDriveForm } from "./settings-form";
 import { BackupsPanel } from "./settings-form";
 
 export const metadata = { title: "Settings" };
@@ -16,6 +16,19 @@ const SETTING_KEYS = [
   "api_access_enabled",
   "backup_auto_interval",
   "backup_retention",
+  "white_label",
+  "cdn_url",
+  "frequency_cap_daily",
+  "suppression_enabled",
+  "gdrive_enabled",
+  "gdrive_folder_id",
+  "secret:ai_api_key",
+  "secret:ai_model",
+  "secret:ai_base_url",
+  "secret:mail_provider",
+  "secret:mail_api_key",
+  "secret:mail_from",
+  "secret:gdrive_service_json",
 ] as const;
 
 export default async function SettingsPage() {
@@ -70,6 +83,25 @@ export default async function SettingsPage() {
         apiAccess={valueOf("api_access_enabled") !== "0"}
         backupInterval={valueOf("backup_auto_interval") ?? "off"}
         backupRetention={valueOf("backup_retention") ?? "10"}
+        whiteLabel={valueOf("white_label") === "1"}
+        cdnUrl={valueOf("cdn_url") ?? ""}
+        frequencyCapDaily={valueOf("frequency_cap_daily") ?? "3"}
+        suppressionEnabled={valueOf("suppression_enabled") !== "0"}
+      />
+
+      <SecretsForm
+        hasAiKey={!!valueOf("secret:ai_api_key")}
+        aiModel={valueOf("secret:ai_model") ?? "gpt-4o-mini"}
+        aiBaseUrl={valueOf("secret:ai_base_url") ?? "https://api.openai.com/v1"}
+        mailProvider={valueOf("secret:mail_provider") ?? "resend"}
+        hasMailKey={!!valueOf("secret:mail_api_key")}
+        mailFrom={valueOf("secret:mail_from") ?? ""}
+      />
+
+      <GDriveForm
+        enabled={valueOf("gdrive_enabled") === "1"}
+        folderId={valueOf("gdrive_folder_id") ?? ""}
+        hasServiceJson={!!valueOf("secret:gdrive_service_json")}
       />
 
       <BackupsPanel rows={backupList} />

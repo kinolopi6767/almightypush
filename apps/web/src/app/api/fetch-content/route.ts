@@ -5,7 +5,7 @@ import { extractOpenGraph } from "@/lib/fetch-content";
 
 export const dynamic = "force-dynamic";
 
-const MAX_BYTES = 2_000_000;
+const MAX_BYTES = 10_000_000; // personal: unlocked from 2M
 const TIMEOUT_MS = 8_000;
 const MAX_REDIRECTS = 3;
 

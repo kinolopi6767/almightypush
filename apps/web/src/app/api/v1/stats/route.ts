@@ -58,15 +58,26 @@ export async function GET(req: Request) {
 
   const wsDomainIds = wsDomains.map((d) => d.id);
 
+  // Empty workspace (no domains yet) -> IN () is invalid SQL; short-circuit to zero rows.
+  if (wsDomainIds.length === 0 && domainId === null) {
+    return NextResponse.json({
+      ok: true,
+      generated_at: new Date().toISOString(),
+      query: { from: from ?? null, to: to ?? null, domain_id: domainId },
+      totals: { subscribers: 0, active: 0, unsubscribed: 0, delivered: 0, clicked: 0, campaigns: 0, domains: 0 },
+      domains: wsDomains,
+      series: { growth: [], activity: [] },
+      campaigns: [],
+    });
+  }
+
+  const effectiveIds = domainId !== null ? [domainId] : wsDomainIds;
+
   const subDate = (col: typeof subscribers) =>
-    sql`${col.domain_id} IN (${sql.join(wsDomainIds.map((id) => sql`${id}`), sql`, `)})${
-      domainId !== null ? sql` AND ${col.domain_id} = ${domainId}` : sql``
-    }${from ? sql` AND date(${col.subscribe_at}) >= ${from}` : sql``}${to ? sql` AND date(${col.subscribe_at}) <= ${to}` : sql``}`;
+    sql`${col.domain_id} IN (${sql.join(effectiveIds.map((id) => sql`${id}`), sql`, `)})${from ? sql` AND date(${col.subscribe_at}) >= ${from}` : sql``}${to ? sql` AND date(${col.subscribe_at}) <= ${to}` : sql``}`;
 
   const evtDate = (type: string) =>
-    sql`${events.domain_id} IN (${sql.join(wsDomainIds.map((id) => sql`${id}`), sql`, `)}) AND ${events.type} = ${type}${
-      domainId !== null ? sql` AND ${events.domain_id} = ${domainId}` : sql``
-    }${from ? sql` AND date(${events.ts}) >= ${from}` : sql``}${to ? sql` AND date(${events.ts}) <= ${to}` : sql``}`;
+    sql`${events.domain_id} IN (${sql.join(effectiveIds.map((id) => sql`${id}`), sql`, `)}) AND ${events.type} = ${type}${from ? sql` AND date(${events.ts}) >= ${from}` : sql``}${to ? sql` AND date(${events.ts}) <= ${to}` : sql``}`;
 
   const [subs] = db.select({ value: count() }).from(subscribers).where(subDate(subscribers)).all();
   const [active] = db
@@ -90,9 +101,7 @@ export async function GET(req: Request) {
     })
     .from(events)
     .where(
-      sql`${events.domain_id} IN (${sql.join(wsDomainIds.map((id) => sql`${id}`), sql`, `)}) AND ${events.type} IN ('delivered','clicked')${
-        domainId !== null ? sql` AND ${events.domain_id} = ${domainId}` : sql``
-      }${from ? sql` AND date(${events.ts}) >= ${from}` : sql``}${to ? sql` AND date(${events.ts}) <= ${to}` : sql``} AND date(${events.ts}) >= date('now','-29 days')`,
+      sql`${events.domain_id} IN (${sql.join(effectiveIds.map((id) => sql`${id}`), sql`, `)}) AND ${events.type} IN ('delivered','clicked')${from ? sql` AND date(${events.ts}) >= ${from}` : sql``}${to ? sql` AND date(${events.ts}) <= ${to}` : sql``} AND date(${events.ts}) >= date('now','-29 days')`,
     )
     .groupBy(sql`date(${events.ts})`)
     .orderBy(sql`date(${events.ts})`)

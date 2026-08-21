@@ -8,7 +8,9 @@ import { runSendCycle } from "./sender";
 import { runScheduler } from "./scheduler";
 import { runAutomations } from "./automation";
 import { runBackupScheduler } from "./backup";
-import { readSetting, runCleanup } from "./cleanup";
+import { runJourneys } from "./journey";
+import { runEmailCampaigns } from "./email";
+import { readSetting, runCleanup, runRetentionPruning } from "./cleanup";
 import { nextPollMs } from "./poll";
 
 const WORK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
@@ -47,6 +49,14 @@ function main() {
       if (auto.ran > 0) {
         logger.info({ ...auto }, "automations ran");
       }
+      const journey = await runJourneys(db);
+      if (journey.ran > 0) {
+        logger.info({ ...journey }, "journeys ran");
+      }
+      const email = runEmailCampaigns(db);
+      if (email.started > 0) {
+        logger.info({ ...email }, "email campaigns ran");
+      }
       const stats = await runSendCycle(db, env.APP_ENC_KEY);
       if (stats.claimed > 0) {
         logger.info({ ...stats }, "send cycle complete");
@@ -62,7 +72,9 @@ function main() {
       }
       const backupMade = runBackupScheduler(db, path);
       if (backupMade) logger.info({ interval: readSetting(db, "backup_auto_interval") }, "auto backup snapshot created");
-      traceActive = sched.campaignsStarted > 0 || auto.ran > 0 || stats.claimed > 0 || cleaned > 0;
+      const pruned = runRetentionPruning(db);
+      if (pruned.deliveries > 0 || pruned.events > 0) logger.info(pruned, "retention pruning");
+      traceActive = sched.campaignsStarted > 0 || auto.ran > 0 || journey.ran > 0 || stats.claimed > 0 || cleaned > 0 || pruned.deliveries > 0;
     } catch (error) {
       logger.error({ err: error }, "tick failed");
     } finally {
