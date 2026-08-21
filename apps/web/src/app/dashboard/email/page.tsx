@@ -17,29 +17,43 @@ export default async function EmailPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Email Marketing</h1>
-        <p className="text-sm text-muted-foreground">LumaPush parity: drag-drop builder, SPF/DKIM/DMARC, CSV import, automation.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Email Marketing</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Drag-drop builder, SPF/DKIM/DMARC, CSV import, automation — personal unlimited.</p>
+        </div>
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
+          <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">{campaigns.length} campaigns</span>
+          <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">{contacts.length} contacts</span>
+        </div>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border p-4">
-          <p className="text-xs text-muted-foreground">Campaigns</p>
-          <p className="text-2xl font-bold">{campaigns.length}</p>
+        <div className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+          <p className="kicker text-muted-foreground">Campaigns</p>
+          <p className="tabular mt-2 text-3xl font-semibold tracking-tight">{campaigns.length}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Scheduled / sending / done</p>
         </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-xs text-muted-foreground">Contacts</p>
-          <p className="text-2xl font-bold">{contacts.length}</p>
+        <div className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+          <p className="kicker text-muted-foreground">Contacts</p>
+          <p className="tabular mt-2 text-3xl font-semibold tracking-tight">{contacts.length}</p>
+          <p className="mt-1 text-xs text-muted-foreground">All imported + verified</p>
         </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-xs text-muted-foreground">Sending domains</p>
-          <p className="text-2xl font-bold">{domains.length}</p>
-          <p className="text-xs">{domains.map((d) => `${d.domain} (${d.status})`).join(", ") || "none"}</p>
+        <div className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+          <p className="kicker text-muted-foreground">Sending domains</p>
+          <p className="tabular mt-2 text-3xl font-semibold tracking-tight">{domains.length}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground" title={domains.map((d) => `${d.domain} (${d.status})`).join(", ") || "none — add one to send"}>
+            {domains.map((d) => `${d.domain} (${d.status})`).join(", ") || "none — add one to send"}
+          </p>
         </div>
       </div>
-      <div className="rounded-lg border p-6">
-        <h2 className="font-medium">Visual Builder</h2>
-        <p className="text-sm text-muted-foreground">Blocks: hero, text, button, divider, social, product. Saved in <code>blocks_json</code> → rendered via <code>renderBlocksToHtml()</code>. Use CSV import at <code>/api/v1/email/import</code> (LumaPush 25k → 500k).</p>
-        <pre className="mt-3 overflow-auto rounded bg-muted p-3 text-xs">{JSON.stringify(campaigns.slice(0, 2), null, 2)}</pre>
+      <div className="rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">Visual Builder</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Blocks: hero, text, button, divider, social, product. Saved in <code className="rounded bg-muted px-1 font-mono text-xs">blocks_json</code> → rendered via <code className="rounded bg-muted px-1 font-mono text-xs">renderBlocksToHtml()</code>. Import CSV at <code className="rounded bg-muted px-1 font-mono text-xs">/dashboard/email</code> → contacts. All unlimited for personal use.</p>
+        {campaigns.length === 0 ? (
+          <p className="mt-4 rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">No email campaigns yet — create one from the panel or via API.</p>
+        ) : (
+          <pre className="mt-3 max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs leading-relaxed">{JSON.stringify(campaigns.slice(0, 2), null, 2)}</pre>
+        )}
       </div>
     </div>
   );

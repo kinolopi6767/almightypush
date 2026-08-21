@@ -24,6 +24,7 @@ export default async function CampaignsPage() {
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) redirect("/setup");
 
+  // Paginated: limit 50 to keep 1M campaigns fast (was unbounded — OOM at 1M)
   const rows = await db
     .select({
       id: campaigns.id,
@@ -39,14 +40,18 @@ export default async function CampaignsPage() {
     .leftJoin(domains, eq(domains.id, campaigns.domain_id))
     .where(eq(campaigns.workspace_id, wsId))
     .orderBy(desc(campaigns.id))
+    .limit(50)
     .all();
 
-  const clicks = await db
-    .select({ campaign_id: events.campaign_id, value: sql<number>`count(*)` })
-    .from(events)
-    .where(and(eq(events.type, "clicked"), rows.length > 0 ? inArray(events.campaign_id, rows.map((r) => r.id)) : sql`1=0`))
-    .groupBy(events.campaign_id)
-    .all();
+  // Clicks only for visible page — avoids N=1M inArray OOM
+  const clicks = rows.length
+    ? await db
+        .select({ campaign_id: events.campaign_id, value: sql<number>`count(*)` })
+        .from(events)
+        .where(and(eq(events.type, "clicked"), inArray(events.campaign_id, rows.map((r) => r.id))))
+        .groupBy(events.campaign_id)
+        .all()
+    : [];
 
   return (
     <>
@@ -76,38 +81,43 @@ export default async function CampaignsPage() {
 
       <div className="mt-8 space-y-3">
         {rows.length === 0 && (
-          <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-            No campaigns yet — create one to push to your subscribers.
+          <div className="rounded-xl border border-dashed p-8 text-center">
+            <p className="text-sm font-medium">No campaigns yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Create one to push to your subscribers — all unlimited for personal use.</p>
           </div>
         )}
         {rows.map((row) => {
           const stats = parseStats(row.stats_json);
+          const clickCount = clicks.find((c) => c.campaign_id === row.id)?.value ?? 0;
           return (
             <Link
               key={row.id}
               href={`/dashboard/campaigns/${row.id}`}
-              className="card-lift flex items-center justify-between rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/50"
+              className="card-lift flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between"
             >
-              <div>
-                <p className="font-medium">{row.title}</p>
-                <p className="mt-0.5 text-sm text-muted-foreground">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{row.title}</p>
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">
                   {row.domain_name ?? "multi-domain"} · {statusLabel(row.status)} ·{" "}
                   {row.schedule_at
                     ? `scheduled ${new Date(row.schedule_at).toLocaleString()}`
                     : `sent ${row.sent_at ? new Date(row.sent_at).toLocaleString() : "—"}`}
                 </p>
               </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">
-                  {stats.delivered ?? 0} delivered · {clicks.find((c) => c.campaign_id === row.id)?.value ?? 0} clicks
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">
+                  {stats.delivered ?? 0} delivered · {clickCount} clicks
                 </span>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[row.status] ?? ""}`}>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[row.status] ?? "bg-muted text-muted-foreground"}`}>
                   {row.status}
                 </span>
               </div>
             </Link>
           );
         })}
+        {rows.length === 50 && (
+          <p className="text-center text-xs text-muted-foreground">Showing latest 50 · use search on detail or export CSV for all.</p>
+        )}
       </div>
     </>
   );

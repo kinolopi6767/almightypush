@@ -66,23 +66,23 @@ export default async function DomainsPage() {
             <Link
               key={row.id}
               href={`/dashboard/domains/${row.id}`}
-              className="card-lift flex items-center justify-between rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/50"
+              className="card-lift flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between"
             >
-              <div>
-                <p className="font-medium">{row.name}</p>
-                <p className="mt-0.5 text-sm text-muted-foreground">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{row.name}</p>
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">
                   {row.provider} · created {new Date(row.created_at).toLocaleDateString()}
                 </p>
               </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">{countByDomain.get(row.id) ?? 0} subscribers</span>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{(countByDomain.get(row.id) ?? 0).toLocaleString()} subscribers</span>
                 {hasVapidKeys(row.provider_config_json) ? (
-                  <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                     {row.status}
                   </span>
                 ) : (
                   <span
-                    className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                    className="shrink-0 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
                     title="Add VAPID keys to send pushes"
                   >
                     VAPID keys missing

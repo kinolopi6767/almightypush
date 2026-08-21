@@ -164,7 +164,12 @@ export async function GET(req: Request) {
       activity: series.map((s) => ({ date: s.date, delivered: s.delivered, clicked: s.clicked })),
     },
     campaigns: perCampaign.map((c) => {
-      const stats = c.stats_json ? (JSON.parse(c.stats_json) as Record<string, unknown>) : {};
+      let stats: Record<string, unknown> = {};
+      try {
+        stats = c.stats_json ? (JSON.parse(c.stats_json) as Record<string, unknown>) : {};
+      } catch {
+        stats = {};
+      }
       return {
         id: c.id,
         title: c.title,

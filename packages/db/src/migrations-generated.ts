@@ -52,5 +52,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0008_lumapush_city_topic_variants",
     "idx": 8,
     "sql": "ALTER TABLE `subscribers` ADD `city` text;--> statement-breakpoint\nALTER TABLE `subscribers` ADD `timezone` text;--> statement-breakpoint\nALTER TABLE `subscribers` ADD `locale` text;--> statement-breakpoint\nALTER TABLE `subscribers` ADD `screen_width` integer;--> statement-breakpoint\nALTER TABLE `subscribers` ADD `screen_height` integer;--> statement-breakpoint\nCREATE INDEX `idx_subs_domain_city` ON `subscribers` (`domain_id`,`city`);--> statement-breakpoint\nALTER TABLE `campaigns` ADD `channel` text DEFAULT 'push' NOT NULL;--> statement-breakpoint\nALTER TABLE `campaigns` ADD `variants_json` text;--> statement-breakpoint\nALTER TABLE `campaigns` ADD `topic` text;--> statement-breakpoint\nALTER TABLE `campaigns` ADD `ttl` integer DEFAULT 86400 NOT NULL;--> statement-breakpoint\nALTER TABLE `campaigns` ADD `urgency` text DEFAULT 'normal' NOT NULL;--> statement-breakpoint\nCREATE INDEX `idx_campaigns_channel` ON `campaigns` (`channel`);\n"
+  },
+  {
+    "tag": "0009_perf_indexes",
+    "idx": 9,
+    "sql": "CREATE INDEX IF NOT EXISTS `idx_deliveries_status_next` ON `deliveries` (`status`, `next_attempt_at`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_events_subscriber_type` ON `events` (`subscriber_id`, `type`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_events_type_ts` ON `events` (`type`, `ts`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_subscribers_timezone` ON `subscribers` (`timezone`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_email_contacts_status` ON `email_contacts` (`status`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_journeys_next` ON `journeys` (`status`, `next_run_at`);--> statement-breakpoint\n"
   }
 ];

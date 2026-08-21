@@ -26,6 +26,14 @@ export function CampaignForm({
   const [buttons, setButtons] = useState<{ label: string; url: string }[]>([{ label: "", url: "" }]);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  // Advanced delivery controls (LumaPush parity: topic/TTL/urgency/channel/variants)
+  const [channel, setChannel] = useState<"push" | "email">("push");
+  const [topic, setTopic] = useState("");
+  const [ttl, setTtl] = useState("86400");
+  const [urgency, setUrgency] = useState<"very-low" | "low" | "normal" | "high">("normal");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [variants, setVariants] = useState<{ title: string; message?: string; weight: number }[]>([]);
+  const [showVariants, setShowVariants] = useState(false);
 
   /** B2: og-scrape the click URL and prefill title/message/icon. */
   async function fetchContent() {
@@ -68,7 +76,7 @@ export function CampaignForm({
   };
 
   const updateButton = (index: number, field: "label" | "url", value: string) => {
-    setButtons((prev) => prev.map((b, i) => (i === index ? { ...b, [field]: value } : b)));
+    setButtons((prev) => prev.map((b, i) => (i === index ? { ...b, [field]: value.slice(0, field === "label" ? 24 : 500) } : b)));
   };
 
   const removeButton = (index: number) => setButtons((prev) => prev.filter((_, i) => i !== index));
@@ -77,8 +85,20 @@ export function CampaignForm({
 
   const filledButtons = buttons.filter((b) => b.label.trim() || b.url.trim());
 
+  const updateVariant = (i: number, patch: Partial<(typeof variants)[number]>) =>
+    setVariants((prev) => prev.map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
+  const removeVariant = (i: number) => setVariants((prev) => prev.filter((_, idx) => idx !== i));
+  const addVariant = () =>
+    setVariants((prev) => (prev.length >= 20 ? prev : [...prev, { title: "", weight: 10 }]));
+
   return (
     <form action={formAction} className="rounded-xl border bg-card p-5">
+      {/* Hidden fields for advanced variant/ delivery plumbing */}
+      <input type="hidden" name="channel" value={channel} />
+      <input type="hidden" name="topic" value={topic} />
+      <input type="hidden" name="ttl" value={ttl} />
+      <input type="hidden" name="urgency" value={urgency} />
+      {variants.length > 0 && <input type="hidden" name="variantsJson" value={JSON.stringify(variants)} />}
       <h2 className="font-semibold">New campaign</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         The worker starts the campaign the moment it is due and queues a delivery for every active subscriber.
@@ -105,23 +125,40 @@ export function CampaignForm({
             {templateId !== "" && <input type="hidden" name="templateId" value={templateId} />}
           </div>
         )}
-        <div>
-          <label htmlFor="domainId" className="text-sm font-medium">
-            Domain
-          </label>
-          <select
-            id="domainId"
-            name="domainId"
-            required
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="">Select a domain…</option>
-            {domains.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label htmlFor="domainId" className="text-sm font-medium">
+              Domain
+            </label>
+            <select
+              id="domainId"
+              name="domainId"
+              required
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">Select a domain…</option>
+              {domains.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="channel" className="text-sm font-medium">
+              Channel
+            </label>
+            <select
+              id="channel"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as "push" | "email")}
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="push">Push (VAPID)</option>
+              <option value="email">Email</option>
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">Push uses VAPID; email uses verified sending domain.</p>
+          </div>
         </div>
         <div>
           <label htmlFor="title" className="text-sm font-medium">
@@ -140,7 +177,7 @@ export function CampaignForm({
         </div>
         <div>
           <label htmlFor="titleB" className="text-sm font-medium">
-            B title <span className="font-normal text-muted-foreground">(optional — 50/50 A/B test, E7)</span>
+            B title <span className="font-normal text-muted-foreground">(quick 50/50 — or use Variants below for up to 20)</span>
           </label>
           <input
             id="titleB"
@@ -151,8 +188,64 @@ export function CampaignForm({
             className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            Half of your audience gets the original title, half gets this one. Clicks are attributed per variant and a winner is suggested on the campaign page.
+            Half gets original, half gets B. For weighted multi-variant (up to 20), use the Variants builder below.
           </p>
+        </div>
+
+        <div className="rounded-lg border p-3">
+          <button
+            type="button"
+            onClick={() => setShowVariants((v) => !v)}
+            className="flex w-full items-center justify-between text-sm font-medium"
+          >
+            <span>A/B Variants (up to 20, weighted) — LumaPush / OneSignal parity</span>
+            <span className="text-muted-foreground">{showVariants ? "Hide" : `Show ${variants.length ? `(${variants.length})` : ""}`}</span>
+          </button>
+          {showVariants && (
+            <div className="mt-3 space-y-2">
+              {variants.map((v, i) => (
+                <div key={i} className="grid grid-cols-[1fr_1fr_80px_auto] gap-2">
+                  <input
+                    placeholder="Title"
+                    value={v.title}
+                    onChange={(e) => updateVariant(i, { title: e.target.value })}
+                    maxLength={120}
+                    className="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <input
+                    placeholder="Message (optional)"
+                    value={v.message ?? ""}
+                    onChange={(e) => updateVariant(i, { message: e.target.value })}
+                    maxLength={500}
+                    className="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={v.weight}
+                    onChange={(e) => updateVariant(i, { weight: Math.max(1, Math.min(100, Number(e.target.value) || 10)) })}
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    title="Weight 1-100"
+                  />
+                  <button type="button" onClick={() => removeVariant(i)} className="rounded-md border px-3 text-sm hover:bg-muted">
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <button type="button" onClick={addVariant} disabled={variants.length >= 20} className="rounded-md border border-dashed px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
+                  + Add variant
+                </button>
+                {variants.length > 0 && (
+                  <span className="text-xs text-muted-foreground self-center">Total weight: {variants.reduce((s, x) => s + x.weight, 0)} · deterministic LCG per subscriber</span>
+                )}
+              </div>
+              {variants.length > 0 && variants.length < 2 && (
+                <p className="text-xs text-amber-600">Need at least 2 variants to activate A/B.</p>
+              )}
+            </div>
+          )}
         </div>
         <div>
           <label htmlFor="message" className="text-sm font-medium">
@@ -282,7 +375,66 @@ export function CampaignForm({
             type="datetime-local"
             className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          <p className="mt-1 text-xs text-muted-foreground">Leave empty to send immediately.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Leave empty to send immediately — interpreted in panel timezone.</p>
+        </div>
+
+        <div className="rounded-lg border p-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="flex w-full items-center justify-between text-sm font-medium"
+          >
+            <span>Delivery options — topic / TTL / urgency (LumaPush)</span>
+            <span className="text-muted-foreground">{showAdvanced ? "Hide" : "Show"}</span>
+          </button>
+          {showAdvanced && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div>
+                <label htmlFor="topic" className="text-sm font-medium">
+                  Topic (collapse, 64ch)
+                </label>
+                <input
+                  id="topic"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value.slice(0, 64))}
+                  placeholder="sale-2026-09"
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Notifications with same topic collapse.</p>
+              </div>
+              <div>
+                <label htmlFor="ttl" className="text-sm font-medium">
+                  TTL (seconds)
+                </label>
+                <input
+                  id="ttl"
+                  type="number"
+                  min={0}
+                  max={2419200}
+                  value={ttl}
+                  onChange={(e) => setTtl(e.target.value)}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">0 = drop if offline, 86400 = 1 day.</p>
+              </div>
+              <div>
+                <label htmlFor="urgency" className="text-sm font-medium">
+                  Urgency
+                </label>
+                <select
+                  id="urgency"
+                  value={urgency}
+                  onChange={(e) => setUrgency(e.target.value as typeof urgency)}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="very-low">very-low</option>
+                  <option value="low">low</option>
+                  <option value="normal">normal</option>
+                  <option value="high">high</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <span className="text-sm font-medium">Audience</span>

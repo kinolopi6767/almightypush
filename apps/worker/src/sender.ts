@@ -292,14 +292,17 @@ async function deliverOne(
     return "failed";
   }
 
-  // LumaPush Fatigue Shield: suppress if daily cap reached (0 = disabled)
+  // LumaPush Fatigue Shield: suppress if daily cap reached (0 = disabled) — uses new idx_events_subscriber_type for speed
   const fatigueCap = Number(readSetting(db, "frequency_cap_daily") ?? 0);
   if (fatigueCap > 0 && row.subscriber_id) {
     const today = new Date().toISOString().slice(0, 10);
+    // Optimized: count via indexed subscriber_id + type + date range (avoids full scan at 1M events)
+    const todayStart = `${today}T00:00:00.000Z`;
+    const todayEnd = `${today}T23:59:59.999Z`;
     const [todayCount] = db
       .select({ value: count() })
       .from(events)
-      .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`date(${events.ts}) = ${today}`))
+      .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`${events.ts} BETWEEN ${todayStart} AND ${todayEnd}`))
       .all();
     if ((todayCount?.value ?? 0) >= fatigueCap) {
       db.update(deliveries).set({ status: "failed", error: `fatigue shield: cap ${fatigueCap}/day`, sent_at: now }).where(eq(deliveries.id, row.id)).run();

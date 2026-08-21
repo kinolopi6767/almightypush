@@ -26,6 +26,11 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
+  // Rate-limit OG scraping: 30/min per user + global 120/min (prevent SSRF abuse at scale)
+  const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
+  const rl = rateLimitWithHeaders(`fetch-content:${session.user.id ?? clientIp(req.headers)}`, 30, 60_000);
+  if (!rl.allowed) return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
+
   const url = new URL(req.url);
   const raw = url.searchParams.get("url");
   if (!raw) return NextResponse.json({ ok: false, error: "url parameter required" }, { status: 400 });

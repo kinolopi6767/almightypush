@@ -57,39 +57,42 @@ export default async function AutomationsPage() {
 
       <div className="mt-8 space-y-3">
         {rows.length === 0 && (
-          <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-            No automations yet — create one to push automatically.
+          <div className="rounded-xl border border-dashed p-8 text-center">
+            <p className="text-sm font-medium">No automations yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Create one to push automatically — welcome, publish hook, AutoMagic, or drip.</p>
           </div>
         )}
         {rows.map((row) => (
-          <div key={row.id} className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
-            <div className="flex flex-wrap items-center gap-3">
+          <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{row.name}</span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate font-medium">{row.name}</span>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                     {AUTOMATION_TYPE_LABEL[row.type as keyof typeof AUTOMATION_TYPE_LABEL] ?? row.type}
                   </span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{row.domain_name ?? "—"}</span>
+                  <span className="shrink-0 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground max-w-[140px]">{row.domain_name ?? "—"}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                      row.status === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {row.status}
+                  </span>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  last run {row.last_run_at ?? "never"} · next run {row.next_run_at ?? "on demand"}
-                  {row.error && <span className="ml-2 text-destructive">· {row.error}</span>}
+                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span>last {row.last_run_at ? new Date(row.last_run_at).toLocaleString() : "never"}</span>
+                  <span>·</span>
+                  <span>next {row.next_run_at ? new Date(row.next_run_at).toLocaleString() : "on demand"}</span>
+                  {row.error && <span className="break-all text-destructive">· {row.error.slice(0, 120)}</span>}
                 </div>
                 {row.type === "push_on_publish" && !parseSecret(row.config_json) && (
-                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  <p className="mt-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
                     No webhook secret — recreate it so external publishers can trigger this automation.
                   </p>
                 )}
               </div>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs ${
-                  row.status === "active" ? "bg-emerald-500/15 text-emerald-700" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {row.status}
-              </span>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
                 <AutomationRow
                   id={row.id}
                   status={row.status}

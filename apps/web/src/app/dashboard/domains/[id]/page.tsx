@@ -73,31 +73,31 @@ export default async function DomainDetailPage({ params }: Props) {
 
   return (
     <>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Link href="/dashboard/domains" className="text-sm text-muted-foreground hover:text-foreground">
           ← Domains
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">{domain.name}</h1>
-        <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+        <h1 className="truncate text-2xl font-semibold tracking-tight">{domain.name}</h1>
+        <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
           {domain.status}
         </span>
         <Link
           href={`/dashboard/domains/${domainId}/subscribers`}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="ml-auto inline-flex shrink-0 items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          Subscribers
+          Subscribers →
         </Link>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         {[
-          ["Active subscribers", activeSubs],
-          ["Clicks", clicksRow?.value ?? 0],
+          ["Active subscribers", activeSubs.toLocaleString()],
+          ["Clicks", (clicksRow?.value ?? 0).toLocaleString()],
           ["Recent deliveries", recentDeliveries.length],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-xl border bg-card p-5">
-            <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="mt-2 text-3xl font-semibold">{value}</p>
+          <div key={label} className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+            <p className="kicker text-muted-foreground">{label}</p>
+            <p className="tabular mt-2 text-3xl font-semibold tracking-tight">{value}</p>
           </div>
         ))}
       </div>
@@ -107,9 +107,10 @@ export default async function DomainDetailPage({ params }: Props) {
             <h2 className="font-semibold">VAPID public key</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               The public half of this domain&apos;s keypair — embed it in your site. The private half is stored
-              encrypted at rest.
+              encrypted at rest via <code className="rounded bg-muted px-1 font-mono text-xs">APP_ENC_KEY</code>.
             </p>
-            <code className="mt-3 block break-all rounded-md bg-background p-3 text-xs">{config.publicKey}</code>
+            <code className="mt-3 block break-all rounded-md bg-muted p-3 text-xs leading-relaxed">{config.publicKey || "(generating…)"}</code>
+            <p className="mt-2 text-xs text-muted-foreground">Needs rotation? Re-create the domain — VAPID keys are per-domain and immutable for deliverability.</p>
           </div>
 
           <div className="rounded-xl border bg-card p-5">

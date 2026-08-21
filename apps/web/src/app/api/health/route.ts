@@ -3,10 +3,18 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return NextResponse.json({
-    ok: true,
-    service: "pushpanel",
-    version: "0.1.0",
-    time: new Date().toISOString(),
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      service: "pushpanel",
+      version: "0.1.0",
+      time: new Date().toISOString(),
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    },
+  );
 }

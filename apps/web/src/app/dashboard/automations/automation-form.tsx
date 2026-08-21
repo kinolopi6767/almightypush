@@ -72,14 +72,16 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {open ? "Cancel" : "New automation"}
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={() => setOpen(false)}>
-          <div className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="New automation">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" onClick={() => setOpen(false)}>
+          <div className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="New automation">
             <h2 className="text-lg font-semibold">New automation</h2>
             <p className="mt-1 text-sm text-muted-foreground">Run one or more sub-types below.</p>
 

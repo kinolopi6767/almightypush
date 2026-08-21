@@ -35,15 +35,23 @@ export function SubscribersTools({ domainId }: { domainId: number }) {
   const [cleanState, cleanAction, cleaning] = useActionState(() => cleanUnsubscribedAction(domainId), undefined);
 
   const download = async () => {
-    const result = await exportSubscribersAction(domainId);
-    if (result?.csv) {
-      const blob = new Blob([result.csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = result.filename ?? "subscribers.csv";
-      a.click();
-      URL.revokeObjectURL(url);
+    try {
+      const result = await exportSubscribersAction(domainId);
+      if (result?.csv) {
+        const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = result.filename ?? "subscribers.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else if (result?.error) {
+        alert(result.error);
+      }
+    } catch {
+      alert("Export failed — try again");
     }
   };
 
@@ -62,14 +70,16 @@ export function SubscribersTools({ domainId }: { domainId: number }) {
             name="file"
             accept=".csv,.jsonl,.json,text/csv,application/json"
             required
-            className="block w-64 text-sm text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
+            aria-label="Import file"
+            className="block w-64 text-sm text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button
             type="submit"
             disabled={importing}
+            aria-busy={importing}
             className="inline-flex h-9 items-center rounded-md bg-secondary px-4 text-sm font-medium transition-colors hover:bg-secondary/80 disabled:opacity-50"
           >
-            Import
+            {importing ? "Importing…" : "Import"}
           </button>
         </form>
 

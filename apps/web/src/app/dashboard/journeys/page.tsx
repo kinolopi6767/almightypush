@@ -15,14 +15,37 @@ export default async function JourneysPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Journeys</h1>
-        <p className="text-sm text-muted-foreground">LumaPush + OneSignal Journeys + Braze Canvas parity: visual trigger → filter → wait → push/email branches.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Journeys</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Visual canvas: trigger → filter → wait → push/email branches — OneSignal Journeys + Braze Canvas parity.</p>
       </div>
-      <div className="rounded-lg border p-4">
-        <p className="text-sm">Canvas JSON (nodes/edges) stored in <code>canvas_json</code>. Trigger types: subscribe, rss, event, api, inactivity. Worker <code>runJourneys()</code> ticks every 60s.</p>
-        <pre className="mt-3 max-h-96 overflow-auto rounded bg-muted p-3 text-xs">{JSON.stringify(rows.slice(0, 3), null, 2) || "no journeys yet"}</pre>
-      </div>
-      <p className="text-xs text-muted-foreground">Create via API <code>POST /api/v1/journeys</code> (LumaPush AI Command Studio will auto-generate).</p>
+      {rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-8 text-center">
+          <p className="text-sm font-medium">No journeys yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Create via API <code className="rounded bg-muted px-1 font-mono text-xs">POST /api/v1/journeys</code> or AI Studio. Worker checks <code className="rounded bg-muted px-1 font-mono text-xs">next_run_at</code> every 60s.</p>
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {rows.map((r) => (
+            <div key={r.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{r.name}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground break-words">
+                    Trigger: <span className="font-mono text-xs">{r.trigger_type}</span> · Status: <span className={r.status === "active" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}>{r.status}</span>
+                    {r.next_run_at ? ` · next ${new Date(r.next_run_at).toLocaleString()}` : " · on demand"}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">{r.status}</span>
+              </div>
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">View canvas JSON</summary>
+                <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs leading-relaxed break-words whitespace-pre-wrap">{JSON.stringify(JSON.parse(r.canvas_json || "{}"), null, 2)}</pre>
+              </details>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">Canvas stored in <code className="rounded bg-muted px-1 font-mono text-xs">canvas_json {`{nodes, edges}`}</code> · AI Command Studio can auto-generate journeys.</p>
     </div>
   );
 }

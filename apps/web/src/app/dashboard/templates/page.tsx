@@ -41,28 +41,28 @@ export default async function TemplatesPage() {
             </div>
           )}
           {rows.map((row) => (
-            <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
-              <div className="flex items-start justify-between">
-                <div className="min-w-0">
-                  <p className="font-medium">{row.name}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {row.title}
-                    {row.message ? ` — ${row.message.slice(0, 60)}` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <Link href={`/dashboard/templates/${row.id}`} className="text-sm text-primary hover:underline">
-                    Edit
-                  </Link>
-                  <form action={deleteTemplateAction.bind(null, row.id)}>
-                    <button
-                      type="submit"
-                      className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    >
-                      Delete
-                    </button>
-                  </form>
-                </div>
+            <div key={row.id} className="card-lift flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{row.name}</p>
+                <p className="mt-0.5 line-clamp-2 break-words text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{row.title}</span>
+                  {row.message ? ` — ${row.message.slice(0, 80)}` : ""}
+                </p>
+                {row.launch_url && <p className="mt-1 truncate text-xs text-muted-foreground">{row.launch_url}</p>}
+              </div>
+              <div className="flex shrink-0 items-center gap-2 sm:ml-4">
+                <Link href={`/dashboard/templates/${row.id}`} className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium hover:bg-accent" aria-label={`Edit template ${row.name}`}>
+                  Edit
+                </Link>
+                <form action={deleteTemplateAction.bind(null, row.id)}>
+                  <button
+                    type="submit"
+                    aria-label={`Delete template ${row.name}`}
+                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    Delete
+                  </button>
+                </form>
               </div>
             </div>
           ))}

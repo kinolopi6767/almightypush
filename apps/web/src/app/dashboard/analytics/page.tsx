@@ -41,6 +41,7 @@ export default async function AnalyticsPage({
     .orderBy(domains.name)
     .all();
 
+  // Batch queries: keep each fast with proper indexes; growth/heat use new idx_events_subscriber_type etc.
   const [totalRow, activeRow, growthRows, heatRows] = [
     db.select({ value: count() }).from(subscribers).where(andConds).get(),
     db
@@ -51,7 +52,7 @@ export default async function AnalyticsPage({
     db
       .select({ date: sql<string>`date(${subscribers.subscribe_at})`, value: sql<number>`count(*)` })
       .from(subscribers)
-      .where(andConds)
+      .where(sql`${andConds} AND ${subscribers.subscribe_at} IS NOT NULL`)
       .groupBy(sql`date(${subscribers.subscribe_at})`)
       .orderBy(sql`date(${subscribers.subscribe_at}) DESC`)
       .limit(30)

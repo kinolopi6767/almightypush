@@ -274,7 +274,24 @@ ${customCss != null ? customCss : ""}
       bell.className = `pp-sdk pp-sdk-bell ${positionClass(pos)}`;
       bell.setAttribute("aria-label", (_a2 = texts.bellLabel) != null ? _a2 : "Enable push notifications");
       bell.title = (_b2 = texts.bellLabel) != null ? _b2 : "Enable push notifications";
-      bell.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+      const svgNS = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor");
+      svg.setAttribute("stroke-width", "2");
+      svg.setAttribute("stroke-linecap", "round");
+      svg.setAttribute("stroke-linejoin", "round");
+      svg.setAttribute("aria-hidden", "true");
+      const p1 = document.createElementNS(svgNS, "path");
+      p1.setAttribute("d", "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9");
+      const p2 = document.createElementNS(svgNS, "path");
+      p2.setAttribute("d", "M13.73 21a2 2 0 0 1-3.46 0");
+      svg.append(p1, p2);
+      svg.style.width = "26px";
+      svg.style.height = "26px";
+      svg.style.display = "block";
+      bell.append(svg);
       bell.addEventListener("click", () => {
         if (alreadySubscribed()) {
           bell.remove();

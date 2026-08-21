@@ -48,16 +48,18 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
 export default async function StatusPage() {
   const host = (await headers()).get("host") ?? "localhost:3100";
   const proto = process.env.NODE_ENV === "production" && !host.startsWith("127.0.0.1") ? "https" : "http";
-  const res = await fetch(`${proto}://${host}/api/metrics`, { cache: "no-store" }).catch(() => null);
+  const [res, readiness] = await Promise.all([
+    fetch(`${proto}://${host}/api/metrics`, { cache: "no-store" }).catch(() => null),
+    fetch(`${proto}://${host}/api/health/ready`, { cache: "no-store" }).catch(() => null),
+  ]);
   const metrics: Metrics | null = res?.ok ? ((await res.json()) as Metrics) : null;
-
-  const readiness = await fetch(`${proto}://${host}/api/health/ready`, { cache: "no-store" }).catch(() => null);
 
   if (!metrics) {
     return (
       <>
         <h1 className="text-2xl font-semibold tracking-tight">Server status</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Metrics endpoint unreachable.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Metrics endpoint unreachable — is the web process running? Check <code className="rounded bg-muted px-1 font-mono text-xs">/api/health</code> and <code className="rounded bg-muted px-1 font-mono text-xs">/api/health/ready</code>.</p>
+        <p className="mt-3 text-xs text-muted-foreground">Worker readiness: {readiness?.ok ? "ready" : "unknown (metrics down)"} · Retry in a few seconds.</p>
       </>
     );
   }

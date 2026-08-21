@@ -60,25 +60,25 @@ export default async function SegmentsPage() {
             }
             return (
               <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="font-medium">{row.name}</p>
-                    <p className="mt-0.5 text-sm text-muted-foreground">{domainsLabel}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{row.name}</p>
+                    <p className="mt-0.5 truncate text-sm text-muted-foreground">{domainsLabel}</p>
                   </div>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                  <span className="shrink-0 whitespace-nowrap rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium tabular-nums text-primary">
                     ~{row.estimate_count?.toLocaleString() ?? "…"} subs
                   </span>
                 </div>
-                <div className="mt-3 flex items-center gap-3 text-sm text-muted-foreground">
-                  <Link href={`/dashboard/segments/${row.id}`} className="text-primary hover:underline">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                  <Link href={`/dashboard/segments/${row.id}`} className="inline-flex h-7 items-center rounded-md border px-2.5 text-xs hover:bg-accent" aria-label={`Edit segment ${row.name}`}>
                     Edit
                   </Link>
                   <form action={deleteSegmentAction.bind(null, row.id)}>
-                    <button type="submit" className="text-muted-foreground hover:text-destructive">
+                    <button type="submit" aria-label={`Delete segment ${row.name}`} className="inline-flex h-7 items-center rounded-md border border-destructive/20 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                       Delete
                     </button>
                   </form>
-                  <span className="text-xs">
+                  <span className="ml-auto text-xs text-muted-foreground">
                     {row.estimate_at ? `estimated ${new Date(row.estimate_at).toLocaleString()}` : "not estimated yet"}
                   </span>
                 </div>

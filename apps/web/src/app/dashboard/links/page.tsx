@@ -53,18 +53,19 @@ export default async function LinksPage() {
           )}
           {rows.map((row) => (
             <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
                   <p className="break-all text-sm font-medium">{row.target_url}</p>
-                  <a href={shortUrl(row.code)} className="mt-0.5 break-all text-sm text-primary hover:underline">
+                  <a href={shortUrl(row.code)} className="mt-0.5 inline-block break-all text-sm text-primary hover:underline">
                     {shortUrl(row.code)}
                   </a>
+                  {row.prompt_text && <p className="mt-1 truncate text-xs text-muted-foreground">Prompt: {row.prompt_text}</p>}
                 </div>
-                <div className="flex shrink-0 items-center gap-3 text-sm text-muted-foreground">
-                  <span>{row.clicks_count} clicks</span>
-                  <span>{row.subscribers_count} subs</span>
+                <div className="flex shrink-0 items-center gap-3 text-sm tabular-nums text-muted-foreground">
+                  <span className="whitespace-nowrap">{row.clicks_count.toLocaleString()} clicks</span>
+                  <span className="whitespace-nowrap">{row.subscribers_count.toLocaleString()} subs</span>
                   <form action={deleteLinkAction.bind(null, row.id)}>
-                    <button type="submit" className="text-muted-foreground hover:text-destructive">
+                    <button type="submit" aria-label={`Delete link ${row.code}`} className="rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive">
                       Delete
                     </button>
                   </form>

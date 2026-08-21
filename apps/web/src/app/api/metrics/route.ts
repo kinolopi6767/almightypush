@@ -47,29 +47,37 @@ export async function GET() {
     .limit(1)
     .all();
 
-  return NextResponse.json({
-    ok: true,
-    service: "pushpanel",
-    version: "0.1.0",
-    uptimeSec: Math.round(process.uptime()),
-    time: new Date().toISOString(),
-    node: process.version,
-    platform: process.platform,
-    load,
-    memory: {
-      rss: mem.rss,
-      heapUsed: mem.heapUsed,
-      heapTotal: mem.heapTotal,
+  return NextResponse.json(
+    {
+      ok: true,
+      service: "pushpanel",
+      version: "0.1.0",
+      uptimeSec: Math.round(process.uptime()),
+      time: new Date().toISOString(),
+      node: process.version,
+      platform: process.platform,
+      load,
+      memory: {
+        rss: mem.rss,
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+      },
+      db: {
+        path: process.env.DATABASE_PATH ? resolveDbPath(process.env.DATABASE_PATH) : null,
+        sizeBytes: dbSizeBytes,
+      },
+      queue: {
+        queued: queue?.queued ?? 0,
+        sending: queue?.sending ?? 0,
+      },
+      deliveriesFailed: failed?.n ?? 0,
+      lastAutomationError: lastError[0]?.error ?? null,
     },
-    db: {
-      path: process.env.DATABASE_PATH ? resolveDbPath(process.env.DATABASE_PATH) : null,
-      sizeBytes: dbSizeBytes,
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+        "X-Content-Type-Options": "nosniff",
+      },
     },
-    queue: {
-      queued: queue?.queued ?? 0,
-      sending: queue?.sending ?? 0,
-    },
-    deliveriesFailed: failed?.n ?? 0,
-    lastAutomationError: lastError[0]?.error ?? null,
-  });
+  );
 }
