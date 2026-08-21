@@ -39,8 +39,13 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 # Worker: bundled ESM (native deps resolved from the traced node_modules).
 COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
 
-# Native deps are already traced into standalone/node_modules when build scripts are allowed.
-# No manual copy of pnpm symlinked paths (fails on BuildKit checksum).
+# FIX: Next standalone trace misses native binaries with pnpm isolated store.
+# Overlay full deps node_modules (with built .node files) on top of standalone's pruned one.
+# This ensures @node-rs/argon2 + better-sqlite3 are present at runtime regardless of tracing.
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
+COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 
 # Shared data volume (SQLite + WAL + backups).
 VOLUME ["/app/data"]
