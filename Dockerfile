@@ -13,6 +13,9 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY . .
 RUN pnpm install --frozen-lockfile
+# pnpm 10 blocks build scripts by default (better-sqlite3 / argon2 native bindings) — rebuild them
+RUN pnpm approve-builds 2>/dev/null || true
+RUN pnpm rebuild better-sqlite3 @node-rs/argon2 2>/dev/null || npm rebuild better-sqlite3 @node-rs/argon2 2>/dev/null || true
 
 # ---------- build ----------
 FROM deps AS build
@@ -36,12 +39,8 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 # Worker: bundled ESM (native deps resolved from the traced node_modules).
 COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
 
-# FIX: standalone trace misses native argon2/better-sqlite3 platform binaries — copy from deps
-COPY --from=deps /app/node_modules/@node-rs ./node_modules/@node-rs
-COPY --from=deps /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
-COPY --from=deps /app/node_modules/.pnpm ./node_modules/.pnpm
-# Ensure drizzle-orm is present for runtime (externalized)
-COPY --from=deps /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+# Native deps are already traced into standalone/node_modules when build scripts are allowed.
+# No manual copy of pnpm symlinked paths (fails on BuildKit checksum).
 
 # Shared data volume (SQLite + WAL + backups).
 VOLUME ["/app/data"]
