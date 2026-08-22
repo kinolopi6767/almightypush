@@ -18,8 +18,12 @@ RUN pnpm install --frozen-lockfile
 # ---------- build ----------
 FROM deps AS build
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
 COPY . .
-RUN pnpm turbo run build --filter=@pushpanel/web --filter=@pushpanel/worker
+# --concurrency=1 serializes builds: ~2x slower but peak RAM is far lower.
+# Prevents OOM-kill of the build container on small VPS (next build + tsup dts
+# running in parallel can spike past 1.5GB).
+RUN pnpm turbo run build --filter=@pushpanel/web --filter=@pushpanel/worker --concurrency=1
 
 # ---------- runtime ----------
 FROM node:22-alpine AS runtime
