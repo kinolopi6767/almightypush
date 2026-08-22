@@ -7,7 +7,7 @@
 FROM node:22-alpine AS deps
 RUN corepack enable
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml turbo.json tsconfig.json .npmrc ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.json .npmrc ./
 COPY packages/tsconfig ./packages/tsconfig
 COPY apps/web/package.json ./apps/web/
 COPY apps/worker/package.json ./apps/worker/
