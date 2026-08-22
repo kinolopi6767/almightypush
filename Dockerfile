@@ -38,8 +38,8 @@ COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/public ./apps/web/public
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 
-# Worker: bundled ESM (native deps resolved from traced node_modules)
-COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
+# Worker: bundled CJS (native deps resolved from traced node_modules)
+COPY --from=build /app/apps/worker/dist/index.cjs ./worker/index.cjs
 
 # Definitive fix: copy the FULL hoisted node_modules into the runtime image.
 # The worker bundle keeps dotenv/drizzle-orm/better-sqlite3 as externals and the

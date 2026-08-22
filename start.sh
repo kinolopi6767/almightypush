@@ -3,7 +3,7 @@
 set -e
 
 while true; do
-  node ./worker/index.mjs
+  node ./worker/index.cjs
   echo "worker exited ($?), restarting in 3s..."
   sleep 3
 done &
