@@ -12,6 +12,20 @@ export type DomainFormState = { error?: string; ok?: boolean; id?: number; count
 
 const HOSTNAME_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 
+/**
+ * Users paste full URLs ("https://site.online/path") into the hostname field.
+ * Strip scheme, credentials, port, path — keep only the hostname.
+ */
+function sanitizeHostname(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "") // https://, http://, etc.
+    .replace(/^[^/@]*@/, "") // user@host
+    .split(/[/?#]/)[0] ?? "" // path/query/hash
+    .replace(/:\d{1,5}$/, ""); // :port
+}
+
 const createDomainSchema = z.object({
   name: z.string().trim().toLowerCase().regex(HOSTNAME_RE, "Enter a valid hostname, e.g. app.example.com"),
   url: z.string().trim().url().optional().or(z.literal("")),
@@ -27,10 +41,16 @@ export async function createDomainAction(
   if (!workspaceId) return { error: "No workspace — run setup first" };
 
   const parsed = createDomainSchema.safeParse({
-    name: formData.get("name"),
+    name: sanitizeHostname(String(formData.get("name") ?? "")),
     url: formData.get("url"),
   });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  if (!parsed.success) {
+    const raw = String(formData.get("name") ?? "");
+    const hint = /[/:@\s]/.test(raw.trim())
+      ? " — paste only the hostname, without https:// or paths"
+      : "";
+    return { error: (parsed.error.issues[0]?.message ?? "Invalid input") + hint };
+  }
 
   const existing = db
     .select({ id: domains.id })

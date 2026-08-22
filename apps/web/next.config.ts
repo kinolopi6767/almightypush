@@ -3,6 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: [],
+  // Cache dynamic (auth-gated) RSC payloads client-side so sidebar navigation
+  // between already-visited pages is instant instead of a server roundtrip.
+  experimental: {
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   serverExternalPackages: [
     "@pushpanel/db",
     "@pushpanel/core",
