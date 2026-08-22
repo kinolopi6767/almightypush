@@ -269,3 +269,70 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
   logAudit(db, { workspaceId, action: "campaign.duplicate", entityType: "campaign", entityId: Number(insert.lastInsertRowid), meta: { from: campaignId } });
   return { ok: true, id: Number(insert.lastInsertRowid) };
 }
+
+/**
+ * Resend this campaign to everyone who received it but never clicked
+ * (audience kind `non_clickers`, resolved by the worker at send time).
+ */
+export async function resendToNonClickersAction(campaignId: number): Promise<CampaignFormState> {
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in" };
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!workspaceId) return { error: "No workspace" };
+
+  const [source] = db
+    .select({
+      id: campaigns.id,
+      title: campaigns.title,
+      title_b: campaigns.title_b,
+      variants_json: campaigns.variants_json,
+      message: campaigns.message,
+      icon_url: campaigns.icon_url,
+      image_url: campaigns.image_url,
+      launch_url: campaigns.launch_url,
+      buttons_json: campaigns.buttons_json,
+      domain_id: campaigns.domain_id,
+      channel: campaigns.channel,
+      topic: campaigns.topic,
+      ttl: campaigns.ttl,
+      urgency: campaigns.urgency,
+      status: campaigns.status,
+      sent_at: campaigns.sent_at,
+    })
+    .from(campaigns)
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.workspace_id, workspaceId)))
+    .limit(1)
+    .all();
+  if (!source) return { error: "Campaign not found" };
+  // Retargeting only makes sense for a finished send with deliveries.
+  if (source.status !== "done" || !source.sent_at) {
+    return { error: "Only completed campaigns can be resent to non-clickers" };
+  }
+
+  const insert = db
+    .insert(campaigns)
+    .values({
+      workspace_id: workspaceId,
+      domain_id: source.domain_id,
+      channel: source.channel,
+      title: `Re: ${source.title}`.slice(0, 120),
+      variants_json: source.variants_json,
+      message: source.message,
+      icon_url: source.icon_url,
+      image_url: source.image_url,
+      launch_url: source.launch_url,
+      buttons_json: source.buttons_json,
+      audience_json: JSON.stringify({ kind: "non_clickers", source_campaign_id: source.id }),
+      topic: source.topic ? `${source.topic}-r2`.slice(0, 64) : null,
+      ttl: source.ttl,
+      urgency: source.urgency,
+      schedule_at: new Date().toISOString(),
+      scheduled: 1,
+      status: "scheduled",
+      source: "panel",
+    })
+    .run();
+  if (!insert.lastInsertRowid) return { error: "Failed to create resend" };
+  logAudit(db, { workspaceId, action: "campaign.duplicate", entityType: "campaign", entityId: Number(insert.lastInsertRowid), meta: { from: campaignId, retarget: "non_clickers" } });
+  return { ok: true, id: Number(insert.lastInsertRowid) };
+}

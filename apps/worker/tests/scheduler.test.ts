@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createMemoryDb } from "@pushpanel/db";
-import { campaigns, deliveries, domains, segments, subscribers, workspaces } from "@pushpanel/db/schema";
+import { campaigns, deliveries, domains, events, segments, subscribers, workspaces } from "@pushpanel/db/schema";
 import { runScheduler } from "../src/scheduler.js";
 
 type Db = ReturnType<typeof createMemoryDb>["db"];
@@ -144,5 +144,37 @@ describe("runScheduler", () => {
 
     runScheduler(db);
     expect(campaignStatus(db, id)).toBe("failed");
+  });
+  it("non_clickers audience targets sent-but-never-clicked recipients only", () => {
+    const { db, s1, s2, s3, insertCampaign } = setup();
+    // source campaign: delivered to all three (s3 unsubscribed later)
+    const sourceId = insertCampaign({ kind: "all" });
+    runScheduler(db);
+    db.update(campaigns).set({ status: "done", sent_at: new Date().toISOString() }).where(eq(campaigns.id, sourceId)).run();
+
+    // s1 clicked; s2 never did; s3 unsubscribed after receiving → excluded
+    const dRows = db.select({ id: deliveries.id, subscriber_id: deliveries.subscriber_id }).from(deliveries).where(eq(deliveries.campaign_id, sourceId)).all();
+    const bySub = new Map(dRows.map((r) => [r.subscriber_id, r.id]));
+    db.insert(events).values({ domain_id: 1, campaign_id: sourceId, subscriber_id: s1.id, delivery_id: bySub.get(s1.id)!, type: "clicked", ts: new Date().toISOString() }).run();
+    db.update(subscribers).set({ unsubscribed_at: new Date().toISOString() }).where(eq(subscribers.id, s3.id)).run();
+    void s2;
+
+    // simulate completed delivery (the send cycle marks rows sent)
+    db.update(deliveries).set({ status: "sent", sent_at: Date.now() }).where(eq(deliveries.campaign_id, sourceId)).run();
+
+    const resendId = insertCampaign({ kind: "non_clickers", source_campaign_id: sourceId });
+    runScheduler(db);
+    const rows = deliveriesOf(db, resendId);
+    expect(rows.map((r) => r.subscriber_id)).toEqual([s2.id]);
+  });
+
+  it("an unknown-segment campaign finishes immediately and does not stall the queue", () => {
+    const { db, insertCampaign } = setup();
+    const unknownSegment = insertCampaign({ kind: "segment", segment_id: 424242 });
+    const good = insertCampaign({ kind: "all" });
+
+    runScheduler(db);
+    expect(campaignStatus(db, unknownSegment)).toBe("done"); // empty audience → done, not stuck
+    expect(campaignStatus(db, good)).toBe("sending");
   });
 });

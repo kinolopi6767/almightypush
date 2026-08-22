@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { corsJson, handlePublicOptions } from "@/lib/cors";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -18,23 +18,23 @@ export async function POST(req: Request) {
   const ip = clientIp(req.headers);
   const rlIp = rateLimitWithHeaders(`unsub:${ip}`, 30, 60_000);
   if (!rlIp.allowed) {
-    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 30) });
+    return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 30) });
   }
 
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
   if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
+    return corsJson({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
   }
 
   const { domainId, endpoint } = parsed.data;
   const rlDom = rateLimitWithHeaders(`unsub:dom:${domainId}`, 60, 60_000);
   if (!rlDom.allowed) {
-    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 60) });
+    return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 60) });
   }
   const tokenHash = sha256Hex(endpoint);
 
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     .orderBy(sql`${subscribers.id} DESC`)
     .limit(1)
     .all();
-  if (!row) return NextResponse.json({ ok: false, error: "Not subscribed" }, { status: 404 });
+  if (!row) return corsJson({ ok: false, error: "Not subscribed" }, { status: 404 });
 
   const now = new Date().toISOString();
   db.update(subscribers)
@@ -67,5 +67,10 @@ export async function POST(req: Request) {
     .all();
   db.update(domains).set({ subscribers_count: active?.value ?? 0 }).where(eq(domains.id, domainId)).run();
 
-  return NextResponse.json({ ok: true });
+  return corsJson({ ok: true });
+}
+
+/** CORS preflight for cross-origin SDK/API callers. */
+export async function OPTIONS() {
+  return handlePublicOptions();
 }

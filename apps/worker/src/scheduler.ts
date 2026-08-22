@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { campaigns, deliveries, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
+import { campaigns, deliveries, events, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
@@ -141,6 +141,8 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
  *   re-validated against the domain at run time (M4 delayed welcome pushes,
  *   so a delayed welcome never leaks to subscribers it wasn't meant for).
  * - `{ kind: "segment", segment_id }` — segment membership (M5)
+ * - `{ kind: "non_clickers", source_campaign_id }` — recipients of the source
+ *   campaign whose delivery was sent but never clicked (resend flow)
  */
 function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): number[] {
   let kind = "all";
@@ -164,6 +166,36 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
       domainId,
     });
     return match.subscriberIds;
+  }
+  // Retargeting: everyone who RECEIVED the source campaign but never clicked
+  // it — powers one-click "resend to non-clickers" from the campaign page.
+  if (kind === "non_clickers") {
+    let sourceCampaignId: number | undefined;
+    try {
+      const parsed2 = campaign.audience_json ? (JSON.parse(campaign.audience_json) as { source_campaign_id?: number }) : {};
+      if (Number.isInteger(parsed2.source_campaign_id) && (parsed2.source_campaign_id ?? 0) > 0) {
+        sourceCampaignId = parsed2.source_campaign_id;
+      }
+    } catch {
+      void 0;
+    }
+    if (!sourceCampaignId) return [];
+    const rows = db
+      .select({ id: subscribers.id })
+      .from(deliveries)
+      .innerJoin(subscribers, eq(subscribers.id, deliveries.subscriber_id))
+      .leftJoin(events, and(eq(events.delivery_id, deliveries.id), eq(events.type, "clicked")))
+      .where(
+        and(
+          eq(deliveries.campaign_id, sourceCampaignId),
+          eq(deliveries.status, "sent"),
+          isNull(subscribers.unsubscribed_at),
+          eq(subscribers.domain_id, domainId),
+          isNull(events.id),
+        ),
+      )
+      .all();
+    return rows.map((r) => r.id);
   }
   if (kind === "manual") {
     if (!ids || ids.length === 0) return [];

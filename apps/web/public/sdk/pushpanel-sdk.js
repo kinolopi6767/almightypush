@@ -25,6 +25,7 @@ var PushPanel = (() => {
     isInstalledPwa: () => isInstalledPwa
   });
   var PROMPT_STORAGE_KEY = "__pushpanel_prompt_dismissed__";
+  var PENDING_SUB_KEY = "__pushpanel_pending_sub__";
   function urlBase64ToUint8Array(base64String) {
     const padding = "=".repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -32,6 +33,18 @@ var PushPanel = (() => {
     const bytes = new Uint8Array(new ArrayBuffer(raw.length));
     for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
     return bytes;
+  }
+  function sameApplicationServerKey(a, publicKey) {
+    if (!a) return false;
+    try {
+      const b = urlBase64ToUint8Array(publicKey);
+      if (a.byteLength !== b.byteLength) return false;
+      const av = new Uint8Array(a);
+      for (let i = 0; i < av.length; i++) if (av[i] !== b[i]) return false;
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
   function guessDevice() {
     const ua = navigator.userAgent;
@@ -87,6 +100,7 @@ var PushPanel = (() => {
 .pp-sdk-btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
 .pp-sdk-allow{background:var(--pp-sdk-accent,#2563eb);color:#fff}
 .pp-sdk-dismiss{background:rgba(0,0,0,.06)}
+.pp-sdk-error{font-size:12px;color:#dc2626}
 .pp-sdk-bell{position:fixed;z-index:2147483647;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--pp-sdk-accent,#2563eb);color:#fff;box-shadow:0 8px 22px rgba(0,0,0,.25)}
 .pp-sdk-bell.pp-sdk-bottom-left{left:16px;bottom:16px}.pp-sdk-bell.pp-sdk-bottom-right{right:16px;bottom:16px}.pp-sdk-bell.pp-sdk-top-left{left:16px;top:16px}.pp-sdk-bell.pp-sdk-top-right{right:16px;top:16px}
 .pp-sdk-bell svg{width:26px;height:26px;display:block}
@@ -101,6 +115,10 @@ ${customCss != null ? customCss : ""}
   }
   function init(options) {
     var _a, _b, _c, _d, _e;
+    const w = window;
+    if (!w.__pushpanel_instances__) w.__pushpanel_instances__ = /* @__PURE__ */ new Map();
+    const existing = w.__pushpanel_instances__.get(options.domain);
+    if (existing) return existing;
     const baseUrl = ((_a = options.baseUrl) != null ? _a : "").replace(/\/$/, "");
     const swPath = (_b = options.serviceWorkerPath) != null ? _b : "/sw.js";
     const prompt = (_c = options.prompt) != null ? _c : {};
@@ -111,35 +129,72 @@ ${customCss != null ? customCss : ""}
     if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       current = "unsupported";
     }
-    const isPromptDismissed = () => {
+    const storageGet = (key) => {
       try {
-        return (localStorage == null ? void 0 : localStorage.getItem(PROMPT_STORAGE_KEY)) === "1";
+        return localStorage == null ? void 0 : localStorage.getItem(key);
       } catch (e) {
-        return false;
+        return null;
       }
     };
-    const markPromptDismissed = () => {
+    const storageSet = (key, value) => {
       try {
-        localStorage == null ? void 0 : localStorage.setItem(PROMPT_STORAGE_KEY, "1");
+        localStorage == null ? void 0 : localStorage.setItem(key, value);
       } catch (e) {
       }
     };
+    const isPromptDismissed = () => storageGet(PROMPT_STORAGE_KEY) === "1";
+    const markPromptDismissed = () => storageSet(PROMPT_STORAGE_KEY, "1");
     const alreadySubscribed = () => typeof Notification !== "undefined" && Notification.permission === "granted";
+    const teardowns = [];
+    const teardownTriggers = () => {
+      var _a2;
+      while (teardowns.length) (_a2 = teardowns.pop()) == null ? void 0 : _a2();
+    };
+    function queuePendingSubscription(payload) {
+      try {
+        localStorage.setItem(PENDING_SUB_KEY, JSON.stringify(payload));
+      } catch (e) {
+      }
+    }
+    async function flushPendingSubscription() {
+      const raw = storageGet(PENDING_SUB_KEY);
+      if (!raw) return;
+      try {
+        const payload = JSON.parse(raw);
+        const res = await fetch(`${baseUrl}/api/v1/subscribe`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          try {
+            localStorage.removeItem(PENDING_SUB_KEY);
+          } catch (e) {
+          }
+          current = "subscribed";
+        }
+      } catch (e) {
+      }
+    }
     function mountUi() {
       var _a2, _b2;
       if (uiMounted || current === "unsupported" || alreadySubscribed()) return;
+      const type = (_a2 = prompt.type) != null ? _a2 : "auto";
+      if (type !== "none" && type !== "bell") {
+        if (type === "firstVisit" && isPromptDismissed()) return;
+      }
+      if (prompt.noRePromptIfDenied && ("Notification" in window ? Notification.permission === "denied" : true)) return;
       uiMounted = true;
       injectStyles(prompt.customCss);
-      const type = (_a2 = prompt.type) != null ? _a2 : "auto";
+      void flushPendingSubscription();
       if (type === "bell") {
         mountBell();
         return;
       }
       if (type === "none") return;
-      if (type === "firstVisit" && isPromptDismissed()) return;
-      if (prompt.noRePromptIfDenied && ("Notification" in window ? Notification.permission === "denied" : true)) return;
       const show = () => {
-        if (uiMounted && document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen")) return;
+        teardownTriggers();
+        if (document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen")) return;
         mountCard(type);
       };
       const scheduleShow = () => queueMicrotask(() => {
@@ -153,14 +208,16 @@ ${customCss != null ? customCss : ""}
           const depth = (window.scrollY + window.innerHeight) / Math.max(document.documentElement.scrollHeight, 1);
           if (!fired && depth >= ((_a3 = prompt.scrollDepth) != null ? _a3 : 0)) {
             fired = true;
-            window.removeEventListener("scroll", onScroll);
+            teardownTriggers();
             scheduleShow();
           }
         };
         window.addEventListener("scroll", onScroll, { passive: true });
-        setTimeout(() => {
+        teardowns.push(() => window.removeEventListener("scroll", onScroll));
+        const t = setTimeout(() => {
           if (!fired) scheduleShow();
         }, ((_b2 = prompt.delayMs) != null ? _b2 : 1500) + 8e3);
+        teardowns.push(() => clearTimeout(t));
         return;
       }
       if (prompt.idleMs !== void 0 && prompt.idleMs > 0) {
@@ -169,11 +226,30 @@ ${customCss != null ? customCss : ""}
           if (idleTimer) clearTimeout(idleTimer);
           idleTimer = setTimeout(scheduleShow, prompt.idleMs);
         };
-        ["mousemove", "keydown", "scroll", "touchstart"].forEach((e) => window.addEventListener(e, reset, { passive: true }));
+        const events = ["mousemove", "keydown", "scroll", "touchstart"];
+        events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+        teardowns.push(() => {
+          if (idleTimer) clearTimeout(idleTimer);
+          events.forEach((e) => window.removeEventListener(e, reset));
+        });
         reset();
         return;
       }
       scheduleShow();
+    }
+    function showCardError(message) {
+      const el = document.querySelector(".pp-sdk-card .pp-sdk-error, .pp-sdk-fullscreen .pp-sdk-error");
+      if (el) {
+        el.textContent = message;
+        return;
+      }
+      const host = document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen-inner");
+      if (!host) return;
+      const err = document.createElement("div");
+      err.className = "pp-sdk pp-sdk-error";
+      err.setAttribute("role", "alert");
+      err.textContent = message;
+      host.appendChild(err);
     }
     function mountCard(kind = "auto") {
       var _a2, _b2, _c2, _d2, _e2, _f, _g, _h;
@@ -187,6 +263,7 @@ ${customCss != null ? customCss : ""}
           var _a3;
           markPromptDismissed();
           current = "dismissed";
+          teardownTriggers();
           backdrop == null ? void 0 : backdrop.remove();
           (_a3 = document.querySelector(".pp-sdk-card")) == null ? void 0 : _a3.remove();
         });
@@ -213,7 +290,7 @@ ${customCss != null ? customCss : ""}
         allow2.style.cssText = "border-radius:999px;border:0;padding:12px 20px;font-size:15px;font-weight:600;background:#fff;color:#0f172a;cursor:pointer";
         allow2.textContent = (_c2 = texts.allow) != null ? _c2 : "Allow";
         allow2.addEventListener("click", () => {
-          void subscribe().finally(() => {
+          subscribe().catch(() => showCardError("Couldn't enable notifications \u2014 try again.")).finally(() => {
             wrap.remove();
             backdrop == null ? void 0 : backdrop.remove();
           });
@@ -225,6 +302,7 @@ ${customCss != null ? customCss : ""}
         dismiss2.addEventListener("click", () => {
           markPromptDismissed();
           current = "dismissed";
+          teardownTriggers();
           wrap.remove();
           backdrop == null ? void 0 : backdrop.remove();
         });
@@ -250,6 +328,7 @@ ${customCss != null ? customCss : ""}
       dismiss.addEventListener("click", () => {
         markPromptDismissed();
         current = "dismissed";
+        teardownTriggers();
         wrap.remove();
         backdrop == null ? void 0 : backdrop.remove();
       });
@@ -258,7 +337,7 @@ ${customCss != null ? customCss : ""}
       allow.className = "pp-sdk-btn pp-sdk-allow";
       allow.textContent = (_h = texts.allow) != null ? _h : "Allow";
       allow.addEventListener("click", () => {
-        void subscribe().finally(() => {
+        subscribe().catch(() => showCardError("Couldn't enable notifications \u2014 try again.")).finally(() => {
           wrap.remove();
           backdrop == null ? void 0 : backdrop.remove();
         });
@@ -297,11 +376,20 @@ ${customCss != null ? customCss : ""}
           bell.remove();
           return;
         }
-        void subscribe().then((state) => {
+        subscribe().then((state) => {
           if (state === "subscribed" || state === "denied") bell.remove();
-        });
+        }).catch(() => showCardError("Couldn't enable notifications."));
       });
       document.body.appendChild(bell);
+    }
+    async function waitForActive(registration) {
+      const deadline = Date.now() + 1e4;
+      while (!registration.active) {
+        if (Date.now() > deadline) throw new Error("service worker activation timeout");
+        await navigator.serviceWorker.ready;
+        if (registration.active) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
     }
     async function subscribe() {
       if (current === "unsupported") return "unsupported";
@@ -322,17 +410,20 @@ ${customCss != null ? customCss : ""}
         }
         const registration = await navigator.serviceWorker.register(swPath);
         if (!registration.active) {
-          await navigator.serviceWorker.ready;
-          await new Promise((resolve) => {
-            const poll = () => registration.active ? resolve() : setTimeout(poll, 50);
-            poll();
-          });
+          await waitForActive(registration);
         }
         const applicationServerKey = urlBase64ToUint8Array(options.publicKey);
-        let subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey
-        });
+        const prev = await registration.pushManager.getSubscription();
+        let subscription;
+        if (prev && sameApplicationServerKey(prev.options.applicationServerKey, options.publicKey)) {
+          subscription = prev;
+        } else {
+          if (prev) await prev.unsubscribe().catch(() => void 0);
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey
+          });
+        }
         if (options.endpointOverride) {
           subscription = { ...subscription, endpoint: options.endpointOverride };
         }
@@ -342,11 +433,17 @@ ${customCss != null ? customCss : ""}
           ...guessDevice(),
           subscribeUrl: location.href
         };
-        const res = await fetch(`${baseUrl}/api/v1/subscribe`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload)
-        });
+        let res;
+        try {
+          res = await fetch(`${baseUrl}/api/v1/subscribe`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } catch (e) {
+          queuePendingSubscription(payload);
+          throw new Error("panel unreachable \u2014 will retry on next visit");
+        }
         if (!res.ok) throw new Error(`subscribe failed (${res.status})`);
         current = "subscribed";
       } catch (error) {
@@ -358,7 +455,6 @@ ${customCss != null ? customCss : ""}
     async function unsubscribe() {
       if (current === "unsupported") return "unsupported";
       try {
-        if (!navigator.serviceWorker.controller) return "idle";
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
         if (!sub) {
@@ -378,13 +474,37 @@ ${customCss != null ? customCss : ""}
       }
       return current;
     }
+    async function setTags(tags) {
+      if (current === "unsupported") return false;
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const sub = await registration.pushManager.getSubscription();
+        if (!sub) return false;
+        const clean = {};
+        for (const [k, v] of Object.entries(tags)) {
+          if (typeof k !== "string" || !k.trim()) continue;
+          clean[k.trim().slice(0, 64)] = String(v).slice(0, 200);
+        }
+        const res = await fetch(`${baseUrl}/api/v1/tags`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ domainId: options.domain, endpoint: sub.endpoint, tags: clean })
+        });
+        return res.ok;
+      } catch (e) {
+        return false;
+      }
+    }
     queueMicrotask(mountUi);
-    return {
+    const api = {
       state: () => current,
       isInstalledPwa,
       subscribe,
-      unsubscribe
+      unsubscribe,
+      setTags
     };
+    w.__pushpanel_instances__.set(options.domain, api);
+    return api;
   }
   return __toCommonJS(index_exports);
 })();

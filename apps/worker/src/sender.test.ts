@@ -221,3 +221,14 @@ describe("sender send cycle", () => {
     client.close();
   });
 });
+describe("renderTokens", () => {
+  it("substitutes known tokens and blanks unknown ones", async () => {
+    const { renderTokens } = await import("../src/sender.js");
+    const out = renderTokens("Hi {{first_name}} from {{country}}! #{{subscriber_id}}{{nope}}", {
+      first_name: "Ada",
+      country: "DE",
+      subscriber_id: "42",
+    });
+    expect(out).toBe("Hi Ada from DE! #42");
+  });
+});

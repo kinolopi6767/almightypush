@@ -40,6 +40,13 @@ function main() {
   const logger = pino({ level: env.NODE_ENV === "test" ? "silent" : "info" });
   logger.info({ node: process.version, pid: process.pid }, "PushPanel worker starting");
 
+  // Click-attribution beacons embed this origin into every push payload.
+  // Without it, clicks can never be attributed (the SW would have to guess
+  // the panel origin) — refuse to run rather than send unattributable pushes.
+  if (!process.env.APP_URL) {
+    throw new Error("APP_URL is required — push payloads embed it as the click-beacon origin");
+  }
+
   const path = resolveDbPath(env.DATABASE_PATH);
   if (path === ":memory:") {
     throw new Error("Worker cannot run against :memory: database");

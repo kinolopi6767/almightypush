@@ -19,7 +19,7 @@ export interface PushPanelOptions {
   baseUrl?: string;
   /** Service worker path on the site (default /sw.js) */
   serviceWorkerPath?: string;
-  /** Sandbox/dev only: replace the push service endpoint (e.g. a local mock). */
+  /** Sandbox/dev only: replace the push service endpoint (e.g. a local mock). NOT for production use. */
   endpointOverride?: string;
   /** In-page prompt engine behaviour (default: auto card). */
   prompt?: PushPromptConfig;
@@ -65,9 +65,16 @@ export interface PushPanelApi {
   /** iOS PWA support: true when the site runs as an installed web app. */
   isInstalledPwa(): boolean;
   unsubscribe(): Promise<PushPanelState>;
+  /** Attach key-value attributes to this subscriber for segmentation + {{tokens}}. Max 10 tags, values ≤200 chars. */
+  setTags(tags: Record<string, string | number | boolean>): Promise<boolean>;
 }
 
 const PROMPT_STORAGE_KEY = "__pushpanel_prompt_dismissed__";
+const PENDING_SUB_KEY = "__pushpanel_pending_sub__";
+/** Module-level singleton: re-init() with the same domain must not mount duplicate UI. */
+interface PushPanelWindow extends Window {
+  __pushpanel_instances__?: Map<number, PushPanelApi>;
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -76,6 +83,20 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(new ArrayBuffer(raw.length));
   for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
   return bytes;
+}
+
+/** Compare two VAPID applicationServerKeys (ArrayBuffers) without external deps. */
+function sameApplicationServerKey(a: ArrayBuffer | null, publicKey: string): boolean {
+  if (!a) return false;
+  try {
+    const b = urlBase64ToUint8Array(publicKey);
+    if (a.byteLength !== b.byteLength) return false;
+    const av = new Uint8Array(a);
+    for (let i = 0; i < av.length; i++) if (av[i] !== b[i]) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function guessDevice(): { device: string; browser: string; os: string; timezone: string; locale: string; screenWidth: number; screenHeight: number } {
@@ -164,6 +185,7 @@ function injectStyles(customCss?: string): void {
 .pp-sdk-btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
 .pp-sdk-allow{background:var(--pp-sdk-accent,#2563eb);color:#fff}
 .pp-sdk-dismiss{background:rgba(0,0,0,.06)}
+.pp-sdk-error{font-size:12px;color:#dc2626}
 .pp-sdk-bell{position:fixed;z-index:2147483647;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--pp-sdk-accent,#2563eb);color:#fff;box-shadow:0 8px 22px rgba(0,0,0,.25)}
 .pp-sdk-bell.pp-sdk-bottom-left{left:16px;bottom:16px}.pp-sdk-bell.pp-sdk-bottom-right{right:16px;bottom:16px}.pp-sdk-bell.pp-sdk-top-left{left:16px;top:16px}.pp-sdk-bell.pp-sdk-top-right{right:16px;top:16px}
 .pp-sdk-bell svg{width:26px;height:26px;display:block}
@@ -179,6 +201,13 @@ function positionClass(position: NonNullable<PushPromptConfig["position"]>): str
 }
 
 export function init(options: PushPanelOptions): PushPanelApi {
+  // Singleton per domain: landing pages call init() inside click handlers,
+  // host pages sometimes double-init — duplicates stacked prompt cards/bells.
+  const w = window as PushPanelWindow;
+  if (!w.__pushpanel_instances__) w.__pushpanel_instances__ = new Map();
+  const existing = w.__pushpanel_instances__.get(options.domain);
+  if (existing) return existing;
+
   const baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
   const swPath = options.serviceWorkerPath ?? "/sw.js";
   const prompt: PushPromptConfig = options.prompt ?? {};
@@ -191,41 +220,91 @@ export function init(options: PushPanelOptions): PushPanelApi {
     current = "unsupported";
   }
 
-  const isPromptDismissed = (): boolean => {
+  const storageGet = (key: string): string | null => {
     try {
-      return localStorage?.getItem(PROMPT_STORAGE_KEY) === "1";
+      return localStorage?.getItem(key);
     } catch {
-      return false;
+      return null; // private mode
+    }
+  };
+  const storageSet = (key: string, value: string): void => {
+    try {
+      localStorage?.setItem(key, value);
+    } catch {
+      // storage may be unavailable — ignore
     }
   };
 
-  const markPromptDismissed = (): void => {
-    try {
-      localStorage?.setItem(PROMPT_STORAGE_KEY, "1");
-    } catch {
-      // storage may be unavailable (private mode) — ignore
-    }
-  };
+  const isPromptDismissed = (): boolean => storageGet(PROMPT_STORAGE_KEY) === "1";
+  const markPromptDismissed = (): void => storageSet(PROMPT_STORAGE_KEY, "1");
 
   const alreadySubscribed = (): boolean =>
     typeof Notification !== "undefined" && Notification.permission === "granted";
 
+  /** Central teardown for prompt triggers (scroll/idle listeners + timers). */
+  const teardowns: (() => void)[] = [];
+  const teardownTriggers = (): void => {
+    while (teardowns.length) teardowns.pop()?.();
+  };
+
+  /** Offline queue: if the panel is unreachable at subscribe time, stash the
+   * payload and flush it on the next init — the browser holds a live push
+   * subscription either way, so losing the DB row would lose the subscriber
+   * forever (permission=granted suppresses every future prompt). */
+  function queuePendingSubscription(payload: unknown): void {
+    try {
+      localStorage.setItem(PENDING_SUB_KEY, JSON.stringify(payload));
+    } catch {
+      void 0;
+    }
+  }
+
+  async function flushPendingSubscription(): Promise<void> {
+    const raw = storageGet(PENDING_SUB_KEY);
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw) as unknown;
+      const res = await fetch(`${baseUrl}/api/v1/subscribe`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        try {
+          localStorage.removeItem(PENDING_SUB_KEY);
+        } catch {
+          void 0;
+        }
+        current = "subscribed";
+      }
+    } catch {
+      // panel still down — retry on the next visit
+    }
+  }
+
   function mountUi(): void {
+    // Denial/dismissal respect applies to ALL prompt types (bell included —
+    // nagging users who said no is how panels get blocked site-wide).
     if (uiMounted || current === "unsupported" || alreadySubscribed()) return;
+    const type = prompt.type ?? "auto";
+    if (type !== "none" && type !== "bell") {
+      if (type === "firstVisit" && isPromptDismissed()) return;
+    }
+    if (prompt.noRePromptIfDenied && ("Notification" in window ? Notification.permission === "denied" : true)) return;
     uiMounted = true;
     injectStyles(prompt.customCss);
 
-    const type = prompt.type ?? "auto";
+    void flushPendingSubscription();
+
     if (type === "bell") {
       mountBell();
       return;
     }
     if (type === "none") return;
-    if (type === "firstVisit" && isPromptDismissed()) return;
-    if (prompt.noRePromptIfDenied && ("Notification" in window ? Notification.permission === "denied" : true)) return;
 
     const show = () => {
-      if (uiMounted && document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen")) return;
+      teardownTriggers();
+      if (document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen")) return;
       mountCard(type);
     };
 
@@ -238,15 +317,17 @@ export function init(options: PushPanelOptions): PushPanelApi {
         const depth = (window.scrollY + window.innerHeight) / Math.max(document.documentElement.scrollHeight, 1);
         if (!fired && depth >= (prompt.scrollDepth ?? 0)) {
           fired = true;
-          window.removeEventListener("scroll", onScroll);
+          teardownTriggers();
           scheduleShow();
         }
       };
       window.addEventListener("scroll", onScroll, { passive: true });
+      teardowns.push(() => window.removeEventListener("scroll", onScroll));
       // fallback delay if user never scrolls
-      setTimeout(() => {
+      const t = setTimeout(() => {
         if (!fired) scheduleShow();
       }, (prompt.delayMs ?? 1500) + 8000);
+      teardowns.push(() => clearTimeout(t));
       return;
     }
     if (prompt.idleMs !== undefined && prompt.idleMs > 0) {
@@ -255,12 +336,33 @@ export function init(options: PushPanelOptions): PushPanelApi {
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(scheduleShow, prompt.idleMs);
       };
-      ["mousemove", "keydown", "scroll", "touchstart"].forEach((e) => window.addEventListener(e, reset, { passive: true }));
+      const events = ["mousemove", "keydown", "scroll", "touchstart"] as const;
+      events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+      teardowns.push(() => {
+        if (idleTimer) clearTimeout(idleTimer);
+        events.forEach((e) => window.removeEventListener(e, reset));
+      });
       reset();
       return;
     }
 
     scheduleShow();
+  }
+
+  /** Inline error text on the prompt so failures aren't silent. */
+  function showCardError(message: string): void {
+    const el = document.querySelector<HTMLElement>(".pp-sdk-card .pp-sdk-error, .pp-sdk-fullscreen .pp-sdk-error");
+    if (el) {
+      el.textContent = message;
+      return;
+    }
+    const host = document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen-inner");
+    if (!host) return;
+    const err = document.createElement("div");
+    err.className = "pp-sdk pp-sdk-error";
+    err.setAttribute("role", "alert");
+    err.textContent = message;
+    host.appendChild(err);
   }
 
   function mountCard(kind: string = "auto"): void {
@@ -274,6 +376,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
       backdrop.addEventListener("click", () => {
         markPromptDismissed();
         current = "dismissed";
+        teardownTriggers();
         backdrop?.remove();
         document.querySelector(".pp-sdk-card")?.remove();
       });
@@ -302,10 +405,12 @@ export function init(options: PushPanelOptions): PushPanelApi {
       allow.style.cssText = "border-radius:999px;border:0;padding:12px 20px;font-size:15px;font-weight:600;background:#fff;color:#0f172a;cursor:pointer";
       allow.textContent = texts.allow ?? "Allow";
       allow.addEventListener("click", () => {
-        void subscribe().finally(() => {
-          wrap.remove();
-          backdrop?.remove();
-        });
+        subscribe()
+          .catch(() => showCardError("Couldn't enable notifications — try again."))
+          .finally(() => {
+            wrap.remove();
+            backdrop?.remove();
+          });
       });
       const dismiss = document.createElement("button");
       dismiss.type = "button";
@@ -314,6 +419,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
       dismiss.addEventListener("click", () => {
         markPromptDismissed();
         current = "dismissed";
+        teardownTriggers();
         wrap.remove();
         backdrop?.remove();
       });
@@ -342,6 +448,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
     dismiss.addEventListener("click", () => {
       markPromptDismissed();
       current = "dismissed";
+      teardownTriggers();
       wrap.remove();
       backdrop?.remove();
     });
@@ -350,10 +457,12 @@ export function init(options: PushPanelOptions): PushPanelApi {
     allow.className = "pp-sdk-btn pp-sdk-allow";
     allow.textContent = texts.allow ?? "Allow";
     allow.addEventListener("click", () => {
-      void subscribe().finally(() => {
-        wrap.remove();
-        backdrop?.remove();
-      });
+      subscribe()
+        .catch(() => showCardError("Couldn't enable notifications — try again."))
+        .finally(() => {
+          wrap.remove();
+          backdrop?.remove();
+        });
     });
 
     row.append(dismiss, allow);
@@ -391,11 +500,24 @@ export function init(options: PushPanelOptions): PushPanelApi {
         bell.remove();
         return;
       }
-      void subscribe().then((state) => {
-        if (state === "subscribed" || state === "denied") bell.remove();
-      });
+      subscribe()
+        .then((state) => {
+          if (state === "subscribed" || state === "denied") bell.remove();
+        })
+        .catch(() => showCardError("Couldn't enable notifications."));
     });
     document.body.appendChild(bell);
+  }
+
+  /** Wait until the SW registration has an active worker (bounded). */
+  async function waitForActive(registration: ServiceWorkerRegistration): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    while (!registration.active) {
+      if (Date.now() > deadline) throw new Error("service worker activation timeout");
+      await navigator.serviceWorker.ready;
+      if (registration.active) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
   }
 
   async function subscribe(): Promise<PushPanelState> {
@@ -419,17 +541,24 @@ export function init(options: PushPanelOptions): PushPanelApi {
       const registration = await navigator.serviceWorker.register(swPath);
       // wait for the worker to be active — pushManager.subscribe requires one
       if (!registration.active) {
-        await navigator.serviceWorker.ready;
-        await new Promise<void>((resolve) => {
-          const poll = () => (registration.active ? resolve() : setTimeout(poll, 50));
-          poll();
-        });
+        await waitForActive(registration);
       }
       const applicationServerKey = urlBase64ToUint8Array(options.publicKey);
-      let subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey,
-      });
+
+      // Endpoint reuse: push services rotate endpoints; blindly subscribing
+      // again creates a SECOND live subscription for the same person (double
+      // notifications + inflated counts). Reuse when the VAPID key matches.
+      const prev = await registration.pushManager.getSubscription();
+      let subscription: PushSubscription;
+      if (prev && sameApplicationServerKey(prev.options.applicationServerKey, options.publicKey)) {
+        subscription = prev;
+      } else {
+        if (prev) await prev.unsubscribe().catch(() => undefined);
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+      }
       if (options.endpointOverride) {
         subscription = { ...subscription, endpoint: options.endpointOverride } as PushSubscription;
       }
@@ -439,11 +568,18 @@ export function init(options: PushPanelOptions): PushPanelApi {
         ...guessDevice(),
         subscribeUrl: location.href,
       };
-      const res = await fetch(`${baseUrl}/api/v1/subscribe`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}/api/v1/subscribe`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } catch {
+        // panel unreachable (deploy/network blip) — queue for next visit
+        queuePendingSubscription(payload);
+        throw new Error("panel unreachable — will retry on next visit");
+      }
       if (!res.ok) throw new Error(`subscribe failed (${res.status})`);
       current = "subscribed";
     } catch (error) {
@@ -456,7 +592,6 @@ export function init(options: PushPanelOptions): PushPanelApi {
   async function unsubscribe(): Promise<PushPanelState> {
     if (current === "unsupported") return "unsupported";
     try {
-      if (!navigator.serviceWorker.controller) return "idle";
       const registration = await navigator.serviceWorker.ready;
       const sub = await registration.pushManager.getSubscription();
       if (!sub) {
@@ -477,12 +612,38 @@ export function init(options: PushPanelOptions): PushPanelApi {
     return current;
   }
 
+  async function setTags(tags: Record<string, string | number | boolean>): Promise<boolean> {
+    if (current === "unsupported") return false;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const sub = await registration.pushManager.getSubscription();
+      if (!sub) return false;
+      // Stringify values (OneSignal-style flat tags), cap count/lengths server-side.
+      const clean: Record<string, string> = {};
+      for (const [k, v] of Object.entries(tags)) {
+        if (typeof k !== "string" || !k.trim()) continue;
+        clean[k.trim().slice(0, 64)] = String(v).slice(0, 200);
+      }
+      const res = await fetch(`${baseUrl}/api/v1/tags`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ domainId: options.domain, endpoint: sub.endpoint, tags: clean }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   queueMicrotask(mountUi);
 
-  return {
+  const api: PushPanelApi = {
     state: () => current,
     isInstalledPwa,
     subscribe,
     unsubscribe,
+    setTags,
   };
+  w.__pushpanel_instances__!.set(options.domain, api);
+  return api;
 }

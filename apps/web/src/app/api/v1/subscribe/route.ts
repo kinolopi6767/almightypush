@@ -1,20 +1,23 @@
-import { NextResponse } from "next/server";
+import { corsJson, handlePublicOptions } from "@/lib/cors";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
-import { createCipher, isValidTimezone, sha256Hex } from "@pushpanel/core";
+import { assertPublicHttpUrl, createCipher, isValidTimezone, parseAutomationConfig, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
 import { enqueueAutomationCampaign } from "@pushpanel/db";
-import { parseAutomationConfig } from "@pushpanel/core";
 
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   domainId: z.coerce.number().int().positive(),
   subscription: z.object({
-    endpoint: z.string().url().max(2048),
+    endpoint: z
+      .string()
+      .url()
+      .max(2048)
+      .refine((u) => u.startsWith("https://"), "endpoint must be https"),
     keys: z.object({ p256dh: z.string().min(1).max(512), auth: z.string().min(1).max(128) }),
   }),
   device: z.string().trim().max(40).optional().or(z.literal("")),
@@ -37,26 +40,32 @@ export async function POST(req: Request) {
   try {
     parsed = bodySchema.safeParse(await req.json());
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
   if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
+    return corsJson({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
   }
 
   const data = parsed.data;
   // LumaPush hyper-precision geo + Smart Send timezone must be valid IANA
   if (data.timezone && !isValidTimezone(data.timezone)) {
-    return NextResponse.json({ ok: false, error: "Invalid timezone" }, { status: 400 });
+    return corsJson({ ok: false, error: "Invalid timezone" }, { status: 400 });
+  }
+  // The endpoint is fetched server-side by the worker on every send — a
+  // private/internal address would turn the panel into an SSRF relay.
+  const endpointCheck = await assertPublicHttpUrl(data.subscription.endpoint);
+  if (!endpointCheck.ok) {
+    return corsJson({ ok: false, error: "Invalid push endpoint" }, { status: 400 });
   }
   const ip = clientIp(req.headers);
   const rl1 = rateLimitWithHeaders(`subscribe:${data.domainId}:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000);
   if (!rl1.allowed) {
-    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl1, 30) });
+    return corsJson({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl1, 30) });
   }
   // Global per-domain window — cannot be rotated away by forged IP headers.
   const rl2 = rateLimitWithHeaders(`subscribe:dom:${data.domainId}`, 120, 60_000);
   if (!rl2.allowed) {
-    return NextResponse.json({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl2, 120) });
+    return corsJson({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl2, 120) });
   }
 
   const [domain] = db
@@ -65,10 +74,10 @@ export async function POST(req: Request) {
     .where(and(eq(domains.id, data.domainId), eq(domains.status, "active")))
     .limit(1)
     .all();
-  if (!domain) return NextResponse.json({ ok: false, error: "Unknown domain" }, { status: 404 });
+  if (!domain) return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
 
   if (!requestOriginAllowed(req, data.subscribeUrl ?? "", domain.name)) {
-    return NextResponse.json({ ok: false, error: "subscribe_url does not match the domain" }, { status: 403 });
+    return corsJson({ ok: false, error: "subscribe_url does not match the domain" }, { status: 403 });
   }
 
   const token = JSON.stringify(data.subscription);
@@ -85,7 +94,7 @@ export async function POST(req: Request) {
 
   if (!existing && activeSubscribers(domain.id) >= maxSubscribersPerDomain()) {
     // Bounded growth: a public endpoint can otherwise be fed forever.
-    return NextResponse.json({ ok: false, error: "This site has reached its subscriber limit" }, { status: 429 });
+    return corsJson({ ok: false, error: "This site has reached its subscriber limit" }, { status: 429 });
   }
 
   let subscriberId: number;
@@ -155,7 +164,7 @@ export async function POST(req: Request) {
         })
         .where(eq(subscribers.id, winner.id))
         .run();
-      return NextResponse.json({ ok: true, id: winner.id });
+      return corsJson({ ok: true, id: winner.id });
     }
     subscriberId = Number(inserted.lastInsertRowid);
   }
@@ -167,7 +176,7 @@ export async function POST(req: Request) {
     fireWelcomeAutomations(domain.id, domain.workspace_id, subscriberId);
   }
 
-  return NextResponse.json({ ok: true, id: subscriberId });
+  return corsJson({ ok: true, id: subscriberId });
 }
 
 /**
@@ -290,4 +299,9 @@ function maxSubscribersPerDomain(): number {
   // Personal use: unlimited by default. Only enforce if env var explicitly set to >0.
   if (!Number.isFinite(raw) || raw <= 0) return Number.POSITIVE_INFINITY;
   return Math.min(Math.floor(raw), 100_000_000);
+}
+
+/** CORS preflight for cross-origin SDK/API callers. */
+export async function OPTIONS() {
+  return handlePublicOptions();
 }

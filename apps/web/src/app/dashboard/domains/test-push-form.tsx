@@ -13,8 +13,8 @@ export function TestPushForm({ domainId }: { domainId: number }) {
     <form action={formAction} className="rounded-xl border bg-card p-5">
       <h2 className="font-semibold">Send test push</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Creates a quick campaign and queues a delivery for every active subscriber. The worker sends them with your
-        VAPID keypair.
+        Queues a quick campaign to the <strong>25 most recent</strong> active subscribers (safety cap — full sends
+        belong in Campaigns). The worker delivers them with your VAPID keypair.
       </p>
       <div className="mt-4 space-y-3">
         <div>

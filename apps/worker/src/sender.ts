@@ -6,6 +6,7 @@ import {
   domains,
   events,
   subscribers,
+  subscriberTags,
   type BetterSQLite3Database,
 } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
@@ -349,6 +350,42 @@ async function deliverOne(
     variantTitle = campaign.title_b;
   }
 
+  // Per-recipient personalization: {{tag_name}} and system tokens
+  // ({{country}}, {{city}}, {{browser}}, {{os}}, {{device}}, {{locale}},
+  // {{subscriber_id}}) resolved from the subscriber's tags. Unknown or empty
+  // tokens render as empty strings — never leak raw {{...}} to users.
+  let tokens: Record<string, string> | null = null;
+  if (/\{\{\s*\w+\s*\}\}/.test(`${variantTitle}|${variantMessage ?? ""}|${campaign.launch_url ?? ""}`)) {
+    tokens = {};
+    if (row.subscriber_id) {
+      const [subMeta] = db
+        .select({ country: subscribers.country, city: subscribers.city, browser: subscribers.browser, os: subscribers.os, device: subscribers.device })
+        .from(subscribers)
+        .where(eq(subscribers.id, row.subscriber_id))
+        .limit(1)
+        .all();
+      if (subMeta) {
+        for (const k of ["country", "city", "browser", "os", "device"] as const) {
+          const v = subMeta[k];
+          if (v) tokens[k] = v;
+        }
+      }
+      try {
+        const tagRows = db
+          .select({ tag: subscriberTags.tag, value: subscriberTags.value })
+          .from(subscriberTags)
+          .where(eq(subscriberTags.subscriber_id, row.subscriber_id))
+          .all();
+        for (const t of tagRows) if (t.value) tokens[t.tag] = t.value;
+      } catch {
+        void 0;
+      }
+    }
+    tokens.subscriber_id = String(row.subscriber_id ?? "");
+    variantTitle = renderTokens(variantTitle, tokens);
+    variantMessage = variantMessage ? renderTokens(variantMessage, tokens) : variantMessage;
+  }
+
   // Building the message (buttons_json parse), decrypting the VAPID key and
   // sending can all throw. Without the catch, the delivery stays `sending`
   // forever and the stale-claim revive loop retries it at MAX_ATTEMPTS-less
@@ -482,6 +519,14 @@ async function deliverOne(
     .run();
   if (requeueWrite.changes === 0) return "requeued";
   return "requeued";
+}
+
+/**
+ * Replace {{token}} placeholders with per-subscriber values. Unknown or
+ * empty tokens render as "" — a raw {{...}} must never reach the user.
+ */
+export function renderTokens(input: string, tokens: Record<string, string>): string {
+  return input.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => tokens[key] ?? "");
 }
 
 function bumpCampaignStat(db: PushDb, campaignId: number, key: "delivered" | "failed") {

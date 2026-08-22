@@ -28,10 +28,15 @@ export default async function LandingPage({ params, searchParams }: { params: Pr
   if (!link) notFound();
 
   // Count the visit — before any redirect. db.run is synchronous; no await needed.
-  db.update(lpLinks)
-    .set({ clicks_count: sql`${lpLinks.clicks_count} + 1` })
-    .where(eq(lpLinks.id, link.id))
-    .run();
+  // Crawlers/link-expanders (Slack/WhatsApp previews, prefetchers) must not
+  // inflate conversion metrics — skip counting for obvious bot UAs.
+  const ua = (await headers()).get("user-agent") ?? "";
+  if (!/bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegrambot|discordapp|headless/i.test(ua)) {
+    db.update(lpLinks)
+      .set({ clicks_count: sql`${lpLinks.clicks_count} + 1` })
+      .where(eq(lpLinks.id, link.id))
+      .run();
+  }
 
   if (link.deleted_at) {
     redirect(link.target_url);

@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { createVapidConfig } from "@pushpanel/core";
 import { campaigns, deliveries, domains, subscribers } from "@pushpanel/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 
@@ -123,10 +123,16 @@ export async function sendTestPushAction(
     .all();
   if (!domain) return { error: "Domain not found" };
 
+  // Safety cap: this form is labeled "test" but historically queued a
+  // delivery for EVERY active subscriber — one misclick on a large list was
+  // a full campaign. Cap to the 25 most recent subscriptions; real sends
+  // belong to the Campaigns composer.
   const audience = db
     .select({ id: subscribers.id })
     .from(subscribers)
     .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+    .orderBy(sql`id DESC`)
+    .limit(25)
     .all();
 
   if (audience.length === 0) return { error: "No active subscribers yet — add the SDK to your site first" };

@@ -240,7 +240,9 @@ export default async function CampaignDetailPage({ params }: Props) {
         </div>
 
         <CancelCampaignForm campaignId={campaign.id} status={campaign.status} />
-        {["done", "failed", "cancelled", "sent"].includes(campaign.status) && <DuplicateCampaignForm campaignId={campaign.id} />}
+        {["done", "failed", "cancelled", "sent"].includes(campaign.status) && (
+          <DuplicateCampaignForm campaignId={campaign.id} canRetarget={campaign.status === "done"} />
+        )}
       </div>
 
       <div className="mt-8 max-w-2xl">
