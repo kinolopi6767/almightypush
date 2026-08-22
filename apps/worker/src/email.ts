@@ -22,7 +22,9 @@ export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStat
   const rows = db
     .select({ id: emailCampaigns.id, workspace_id: emailCampaigns.workspace_id, audience_json: emailCampaigns.audience_json })
     .from(emailCampaigns)
-    .where(and(eq(emailCampaigns.status, "scheduled"), sql`${emailCampaigns.schedule_at} IS NULL OR ${emailCampaigns.schedule_at} <= ${nowIso}`))
+    // NOTE: the raw OR must be parenthesized — drizzle's and() joins fragments
+    // without wrapping each argument, so a bare OR binds over the whole AND.
+    .where(and(eq(emailCampaigns.status, "scheduled"), sql`(${emailCampaigns.schedule_at} IS NULL OR ${emailCampaigns.schedule_at} <= ${nowIso})`))
     .all();
 
   for (const row of rows) {
@@ -60,15 +62,16 @@ function resolveEmailAudience(db: PushDb, workspaceId: number, audienceJson: str
         .all();
       return rows.map((r) => r.id);
     }
-    // "all" → all contacts minus suppressed when on
-    const base = db.select({ id: emailContacts.id }).from(emailContacts).where(eq(emailContacts.workspace_id, workspaceId)).all();
-    if (!suppressionOn) return base.map((r) => r.id);
-    const filtered = db
+    // "all" → all contacts minus suppressed when on (single query)
+    if (!suppressionOn) {
+      return db.select({ id: emailContacts.id }).from(emailContacts).where(eq(emailContacts.workspace_id, workspaceId)).all().map((r) => r.id);
+    }
+    return db
       .select({ id: emailContacts.id })
       .from(emailContacts)
       .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.status} NOT IN ('bounced','unsubscribed')`))
-      .all();
-    return filtered.map((r) => r.id);
+      .all()
+      .map((r) => r.id);
   } catch {
     return [];
   }

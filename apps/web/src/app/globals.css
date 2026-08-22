@@ -174,14 +174,12 @@
   .rise-1 { animation-delay: 40ms; }
   .rise-2 { animation-delay: 80ms; }
   .rise-3 { animation-delay: 120ms; }
-  .rise-4 { animation-delay: 160ms; }
 
   @media (prefers-reduced-motion: reduce) {
     .rise,
     .rise-1,
     .rise-2,
-    .rise-3,
-    .rise-4 {
+    .rise-3 {
       animation: none;
     }
     .card-lift:hover {

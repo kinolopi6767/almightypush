@@ -41,7 +41,12 @@ export const campaigns = sqliteTable(
     sent_at: text("sent_at"),
     ...timestamps(),
   },
-  (t) => [index("idx_campaigns_ws").on(t.workspace_id, t.status, t.sent_at), index("idx_campaigns_channel").on(t.channel)],
+  (t) => [
+    index("idx_campaigns_ws").on(t.workspace_id, t.status, t.sent_at),
+    index("idx_campaigns_channel").on(t.channel),
+    // Worker scheduler polls due campaigns every tick — needs (status, schedule_at).
+    index("idx_campaigns_status_sched").on(t.status, t.schedule_at),
+  ],
 );
 
 export const templates = sqliteTable("templates", {

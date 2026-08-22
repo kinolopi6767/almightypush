@@ -154,12 +154,14 @@ export async function updateSecretsAction(_prev: SettingsFormState, formData: Fo
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  setSecret("ai_api_key", d.ai_api_key || null);
-  setSecret("ai_model", d.ai_model || null);
-  setSecret("ai_base_url", d.ai_base_url || null);
-  setSecret("mail_provider", d.mail_provider || null);
-  setSecret("mail_api_key", d.mail_api_key || null);
-  setSecret("mail_from", d.mail_from || null);
+  // The UI promises "leave blank to keep the existing value" — empty fields
+  // must be skipped, not treated as deletion.
+  if (d.ai_api_key) setSecret("ai_api_key", d.ai_api_key);
+  if (d.ai_model) setSecret("ai_model", d.ai_model);
+  if (d.ai_base_url) setSecret("ai_base_url", d.ai_base_url);
+  if (d.mail_provider) setSecret("mail_provider", d.mail_provider);
+  if (d.mail_api_key) setSecret("mail_api_key", d.mail_api_key);
+  if (d.mail_from) setSecret("mail_from", d.mail_from);
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }

@@ -31,6 +31,10 @@ export class VapidPushProvider implements PushProvider {
           TTL: options.ttl ?? 86_400,
           urgency: options.urgency ?? "normal",
           topic: options.topic,
+          // Hard cap per request — without it one black-holed push endpoint
+          // holds a pool slot indefinitely (Node https has no default timeout),
+          // which can stretch a send cycle past the stale-claim window.
+          timeout: 30_000,
         },
       );
       return { ok: true, statusCode: res.statusCode };

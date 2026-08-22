@@ -114,12 +114,12 @@ export default async function CampaignDetailPage({ params }: Props) {
 
   return (
     <>
-      <div className="flex items-center gap-3">
-        <Link href="/dashboard/campaigns" className="text-sm text-muted-foreground hover:text-foreground">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <Link href="/dashboard/campaigns" className="shrink-0 text-sm text-muted-foreground hover:text-foreground">
           ← Campaigns
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">{campaign.title}</h1>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[campaign.status] ?? ""}`}>
+        <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">{campaign.title}</h1>
+        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[campaign.status] ?? ""}`}>
           {campaign.status}
         </span>
       </div>

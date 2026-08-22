@@ -8,7 +8,7 @@ import type { AddressInfo } from "node:net";
 import type { Page, APIRequestContext } from "@playwright/test";
 
 const WEB_DIR = fileURLToPath(new URL("../..", import.meta.url));
-const WORKER_ENTRY = path.join(WEB_DIR, "..", "worker", "dist", "index.mjs");
+const WORKER_ENTRY = path.join(WEB_DIR, "..", "worker", "dist", "index.cjs");
 
 export const OWNER_EMAIL = "e2e-owner@test.io";
 export const OWNER_PASSWORD = "s3cure-password-123";

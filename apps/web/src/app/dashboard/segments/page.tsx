@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { eq } from "drizzle-orm";
 import { SegmentForm } from "./segment-form";
 import { deleteSegmentAction } from "./actions";
+import { SubmitButton } from "@/components/submit-button";
 
 export const metadata = { title: "Segments" };
 
@@ -74,9 +75,9 @@ export default async function SegmentsPage() {
                     Edit
                   </Link>
                   <form action={deleteSegmentAction.bind(null, row.id)}>
-                    <button type="submit" aria-label={`Delete segment ${row.name}`} className="inline-flex h-7 items-center rounded-md border border-destructive/20 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                    <SubmitButton confirm={`Delete segment "${row.name}"?`} pendingLabel="…" title={`Delete segment ${row.name}`} className="inline-flex h-7 items-center rounded-md border border-destructive/20 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50">
                       Delete
-                    </button>
+                    </SubmitButton>
                   </form>
                   <span className="ml-auto text-xs text-muted-foreground">
                     {row.estimate_at ? `estimated ${new Date(row.estimate_at).toLocaleString()}` : "not estimated yet"}

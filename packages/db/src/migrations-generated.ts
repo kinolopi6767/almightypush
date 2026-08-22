@@ -57,5 +57,15 @@ export const migrations: MigrationEntry[] = [
     "tag": "0009_perf_indexes",
     "idx": 9,
     "sql": "CREATE INDEX IF NOT EXISTS `idx_deliveries_status_next` ON `deliveries` (`status`, `next_attempt_at`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_events_subscriber_type` ON `events` (`subscriber_id`, `type`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_events_type_ts` ON `events` (`type`, `ts`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_subscribers_timezone` ON `subscribers` (`timezone`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_email_contacts_status` ON `email_contacts` (`status`);--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `idx_journeys_next` ON `journeys` (`status`, `next_run_at`);--> statement-breakpoint\n"
+  },
+  {
+    "tag": "0010_final_audit_indexes",
+    "idx": 10,
+    "sql": "-- 0010: final-audit performance + hygiene indexes (idempotent).\n-- Hot-path coverage found missing during the release audit:\n--   * api_keys.token_hash      — auth lookup on EVERY /api/v1 request\n--   * campaigns(status, schedule_at) — polled by the worker every tick\n-- Also drops the duplicate unique index on users.email (drizzle emits\n-- `users_email_unique` from the column constraint; `idx_users_email` was a\n-- second, redundant explicit index).\n\nCREATE INDEX IF NOT EXISTS idx_api_keys_token ON api_keys (token_hash);\nCREATE INDEX IF NOT EXISTS idx_campaigns_status_sched ON campaigns (status, schedule_at);\nDROP INDEX IF EXISTS idx_users_email;\n"
+  },
+  {
+    "tag": "0011_drop_unused_tables",
+    "idx": 11,
+    "sql": "-- 0011: drop never-used tables from the LumaPush feature import.\n-- `campaign_variants`: A/B variants shipped via campaigns.variants_json instead.\n-- `frequency_caps`: fatigue shield ships via indexed events counting instead.\n-- Both had zero application read/write paths (verified by repo-wide grep).\n-- Kept: subscriber_tags (read by the segment compiler's tag conditions).\n\nDROP TABLE IF EXISTS `campaign_variants`;\nDROP TABLE IF EXISTS `frequency_caps`;\n"
   }
 ];

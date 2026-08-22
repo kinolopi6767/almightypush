@@ -1,5 +1,9 @@
 "use client";
 
+/** Stable per-row ids for deletable form rows (React key hygiene). */
+let __rowSeq = 0;
+const nextRid = () => `row-${Date.now().toString(36)}-${++__rowSeq}`;
+
 import { Fragment, useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createCampaignAction, type CampaignFormState } from "./actions";
@@ -23,7 +27,9 @@ export function CampaignForm({
   const [launchUrl, setLaunchUrl] = useState("");
   const [iconUrl, setIconUrl] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [buttons, setButtons] = useState<{ label: string; url: string }[]>([{ label: "", url: "" }]);
+  // Rows carry a stable local id so React keeps input DOM/focus when a
+  // middle row is deleted (index keys would remap controlled inputs).
+  const [buttons, setButtons] = useState<{ rid: string; label: string; url: string }[]>([{ rid: nextRid(), label: "", url: "" }]);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   // Advanced delivery controls (LumaPush parity: topic/TTL/urgency/channel/variants)
@@ -32,7 +38,7 @@ export function CampaignForm({
   const [ttl, setTtl] = useState("86400");
   const [urgency, setUrgency] = useState<"very-low" | "low" | "normal" | "high">("normal");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [variants, setVariants] = useState<{ title: string; message?: string; weight: number }[]>([]);
+  const [variants, setVariants] = useState<{ rid: string; title: string; message?: string; weight: number }[]>([]);
   const [showVariants, setShowVariants] = useState(false);
 
   /** B2: og-scrape the click URL and prefill title/message/icon. */
@@ -81,7 +87,7 @@ export function CampaignForm({
 
   const removeButton = (index: number) => setButtons((prev) => prev.filter((_, i) => i !== index));
 
-  const addButton = () => setButtons((prev) => (prev.length >= 3 ? prev : [...prev, { label: "", url: "" }]));
+  const addButton = () => setButtons((prev) => (prev.length >= 3 ? prev : [...prev, { rid: nextRid(), label: "", url: "" }]));
 
   const filledButtons = buttons.filter((b) => b.label.trim() || b.url.trim());
 
@@ -89,7 +95,7 @@ export function CampaignForm({
     setVariants((prev) => prev.map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
   const removeVariant = (i: number) => setVariants((prev) => prev.filter((_, idx) => idx !== i));
   const addVariant = () =>
-    setVariants((prev) => (prev.length >= 20 ? prev : [...prev, { title: "", weight: 10 }]));
+    setVariants((prev) => (prev.length >= 20 ? prev : [...prev, { rid: nextRid(), title: "", weight: 10 }]));
 
   return (
     <form action={formAction} className="rounded-xl border bg-card p-5">
@@ -98,7 +104,13 @@ export function CampaignForm({
       <input type="hidden" name="topic" value={topic} />
       <input type="hidden" name="ttl" value={ttl} />
       <input type="hidden" name="urgency" value={urgency} />
-      {variants.length > 0 && <input type="hidden" name="variantsJson" value={JSON.stringify(variants)} />}
+      {variants.length > 0 && (
+        <input
+          type="hidden"
+          name="variantsJson"
+          value={JSON.stringify(variants.map(({ rid: _rid, title, message, weight }) => ({ title, message, weight })))}
+        />
+      )}
       <h2 className="font-semibold">New campaign</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         The worker starts the campaign the moment it is due and queues a delivery for every active subscriber.
@@ -204,7 +216,7 @@ export function CampaignForm({
           {showVariants && (
             <div className="mt-3 space-y-2">
               {variants.map((v, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1fr_80px_auto] gap-2">
+                <div key={v.rid} className="grid grid-cols-[1fr_1fr_80px_auto] gap-2">
                   <input
                     placeholder="Title"
                     value={v.title}
@@ -228,7 +240,7 @@ export function CampaignForm({
                     className="rounded-md border bg-background px-3 py-2 text-sm"
                     title="Weight 1-100"
                   />
-                  <button type="button" onClick={() => removeVariant(i)} className="rounded-md border px-3 text-sm hover:bg-muted">
+                  <button type="button" onClick={() => removeVariant(i)} aria-label={`Remove variant ${i + 1}`} className="rounded-md border px-3 text-sm hover:bg-muted">
                     ✕
                   </button>
                 </div>
@@ -322,7 +334,7 @@ export function CampaignForm({
           <span className="text-sm font-medium">Action buttons</span>
           <p className="mt-0.5 text-xs text-muted-foreground">Shown below the notification on desktop. Up to 3.</p>
           {filledButtons.map((b, i) => (
-            <div key={i} className="mt-2 grid grid-cols-[1fr_1.4fr_auto] gap-2">
+            <div key={b.rid} className="mt-2 grid grid-cols-[1fr_1.4fr_auto] gap-2">
               <input
                 aria-label={`Button ${i + 1} label`}
                 value={b.label}
@@ -358,8 +370,8 @@ export function CampaignForm({
               + Add button
             </button>
           )}
-          {buttons.filter((b) => b.label.trim() && b.url.trim()).map((b, i) => (
-            <Fragment key={i}>
+          {buttons.filter((b) => b.label.trim() && b.url.trim()).map((b) => (
+            <Fragment key={b.rid}>
               <input type="hidden" name="buttonLabel" value={b.label} />
               <input type="hidden" name="buttonUrl" value={b.url} />
             </Fragment>

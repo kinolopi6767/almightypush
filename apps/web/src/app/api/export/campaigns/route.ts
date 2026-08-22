@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { campaigns, domains, events } from "@pushpanel/db/schema";
-import { type CampaignAnalyticsRow } from "@pushpanel/core";
+import { csvCell, type CampaignAnalyticsRow } from "@pushpanel/core";
 
 export const dynamic = "force-dynamic";
 
@@ -91,13 +91,13 @@ export async function GET(req: Request) {
         controller.close();
         return;
       }
-      // Reuse csvCell logic inline for speed (avoid full campaignAnalyticsCsv)
+      // Reuse csvCell (formula-injection-safe) for every cell
       const lines = batch
         .map((r) => {
           const clicksPerButton = Object.keys(r.per_button).length > 0 ? JSON.stringify(r.per_button) : "";
           const rate = r.delivered > 0 ? ((r.clicked / r.delivered) * 100).toFixed(2) : "";
           const row = [r.id, r.title, r.domain, r.status, r.sent_at, r.delivered, r.failed, r.clicked, rate, r.buttons.join(" | "), clicksPerButton]
-            .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+            .map((v) => csvCell(v === null || v === undefined ? "" : String(v)))
             .join(",");
           return row;
         })

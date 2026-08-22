@@ -41,7 +41,12 @@ const CRON_PRESETS = [
   { label: "Weekly, Monday 9:00", value: "0 9 * * 1" },
 ];
 
+/** Stable per-row id for deletable step rows (React key hygiene). */
+let __stepSeq = 0;
+const nextStepId = () => `step-${Date.now().toString(36)}-${++__stepSeq}`;
+
 interface DripRow {
+  rid: string;
   delay_days: string;
   title: string;
   message: string;
@@ -53,7 +58,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
   const [state, action, pending] = useActionState(createAutomationAction, undefined as AutomationFormState | undefined);
   const [type, setType] = useState<string>("welcome_push");
   const [cron, setCron] = useState<string>("");
-  const [steps, setSteps] = useState<DripRow[]>([{ delay_days: "0", title: "", message: "", launch_url: "" }]);
+  const [steps, setSteps] = useState<DripRow[]>([{ rid: nextStepId(), delay_days: "0", title: "", message: "", launch_url: "" }]);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -212,7 +217,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
                     <button
                       type="button"
                       disabled={steps.length >= 10}
-                      onClick={() => setSteps([...steps, { delay_days: "1", title: "", message: "", launch_url: "" }])}
+                      onClick={() => setSteps([...steps, { rid: nextStepId(), delay_days: "1", title: "", message: "", launch_url: "" }])}
                       className="text-sm font-medium text-primary disabled:opacity-40"
                     >
                       + Add step
@@ -221,7 +226,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
                   <input type="hidden" name="step_count" value={steps.length} />
                   <div className="mt-2 space-y-3">
                     {steps.map((step, i) => (
-                      <div key={i} className="rounded-lg border p-3">
+                      <div key={step.rid} className="rounded-lg border p-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium text-muted-foreground">Step {i + 1}</span>
                           {steps.length > 1 && (

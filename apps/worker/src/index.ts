@@ -13,10 +13,21 @@ import { runEmailCampaigns } from "./email";
 import { readSetting, runCleanup, runRetentionPruning } from "./cleanup";
 import { nextPollMs } from "./poll";
 
-const WORK_MS = Number(process.env.WORKER_TICK_MS ?? 5_000);
-const IDLE_MS = Number(process.env.WORKER_IDLE_TICK_MS ?? 60_000);
+/** Env-number parse with fallback + clamp — NaN/garbage must not hot-loop. */
+function envMs(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.max(Math.floor(raw), 100);
+}
+
+const WORK_MS = envMs("WORKER_TICK_MS", 5_000);
+const IDLE_MS = envMs("WORKER_IDLE_TICK_MS", 60_000);
+/** Max seconds to wait for an in-flight tick on SIGTERM before force-exit. */
+const GRACE_EXIT_MS = 35_000;
 let running = false;
 let traceActive = false;
+let shuttingDown = false;
+let pendingTick: Promise<void> | null = null;
 
 /**
  * Background worker process: sender engine (M1) + scheduler (M2) + more later.
@@ -72,7 +83,7 @@ function main() {
       }
       const backupMade = runBackupScheduler(db, path);
       if (backupMade) logger.info({ interval: readSetting(db, "backup_auto_interval") }, "auto backup snapshot created");
-      const pruned = runRetentionPruning(db);
+      const pruned = runRetentionPruning(db, new Date(), logger);
       if (pruned.deliveries > 0 || pruned.events > 0) logger.info(pruned, "retention pruning");
       traceActive = sched.campaignsStarted > 0 || auto.ran > 0 || journey.ran > 0 || stats.claimed > 0 || cleaned > 0 || pruned.deliveries > 0;
     } catch (error) {
@@ -82,12 +93,28 @@ function main() {
     }
   };
 
-  const loop = () => setTimeout(() => void tick().then(loop), nextPollMs(traceActive, WORK_MS, IDLE_MS));
-  void tick().then(loop);
+  const loop = () => {
+    if (shuttingDown) return;
+    const timer = setTimeout(() => {
+      pendingTick = tick()
+        .catch(() => undefined) // tick already logs its own errors; never let the chain die
+        .finally(loop);
+    }, nextPollMs(traceActive, WORK_MS, IDLE_MS));
+    timer.unref?.();
+  };
+  pendingTick = tick().finally(loop);
 
+  // Graceful shutdown: stop scheduling new ticks and let the in-flight tick
+  // finish (bounded — sends have a 30s provider timeout) instead of killing
+  // mid-request. Killed in-flight sends would otherwise sit `sending` for the
+  // full stale-claim window (10 min) after every deploy/restart.
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info("worker shutting down");
-    process.exit(0);
+    const force = setTimeout(() => process.exit(0), GRACE_EXIT_MS);
+    force.unref?.();
+    void (pendingTick ?? Promise.resolve()).finally(() => process.exit(0));
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);

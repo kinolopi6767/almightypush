@@ -54,10 +54,27 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
     .all();
 
   for (const row of rows) {
-    const outcome = startCampaign(db, row, nowIso);
-    stats.campaignsStarted++;
-    stats.deliveriesQueued += outcome.queued;
-    stats.skipped += outcome.skipped;
+    // Per-campaign isolation: a poison-pill campaign (bad audience, oversized
+    // id list, corrupt config…) must be marked failed here instead of throwing
+    // past the loop — otherwise it stays `scheduled`, rethrows every tick and
+    // permanently stalls the whole send pipeline.
+    try {
+      const outcome = startCampaign(db, row, nowIso);
+      stats.campaignsStarted++;
+      stats.deliveriesQueued += outcome.queued;
+      stats.skipped += outcome.skipped;
+    } catch {
+      stats.skipped++;
+      try {
+        // Mark failed so it never re-matches the due-campaigns query.
+        db.update(campaigns)
+          .set({ status: "failed" })
+          .where(and(eq(campaigns.id, row.id), eq(campaigns.status, "scheduled")))
+          .run();
+      } catch {
+        void 0;
+      }
+    }
   }
   return stats;
 }
@@ -150,11 +167,21 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
   }
   if (kind === "manual") {
     if (!ids || ids.length === 0) return [];
-    const rows = db
-      .select({ id: subscribers.id })
-      .from(subscribers)
-      .where(and(inArray(subscribers.id, ids), eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
-      .all();
+    // Chunk the id list: SQLite's host-parameter limit (~32k) would throw on
+    // a large manual audience (e.g. CSV import) — chunked OR-joined IN lists
+    // keep the same semantics without hitting the limit.
+    const CHUNK = 500;
+    const rows: { id: number }[] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      rows.push(
+        ...db
+          .select({ id: subscribers.id })
+          .from(subscribers)
+          .where(and(inArray(subscribers.id, slice), eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+          .all(),
+      );
+    }
     return rows.map((r) => r.id);
   }
   if (kind !== "all") return [];
@@ -189,7 +216,9 @@ function parseVariants(json: string | null, titleB: string | null): { key: strin
 function pickVariant(subscriberId: number, variants: { key: string; weight: number }[]): string {
   const total = variants.reduce((s, v) => s + v.weight, 0);
   // deterministic weighted pick via subscriberId hash (LCG)
-  let h = subscriberId * 2654435761;
+  // Math.imul keeps the multiply in int32 — plain * overflows float precision
+  // past 2^53 and skews distribution for large subscriber ids.
+  let h = Math.imul(subscriberId, 2654435761) >>> 0;
   h = (h ^ (h >>> 16)) >>> 0;
   const r = h % total;
   let acc = 0;

@@ -36,15 +36,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .where(eq(automations.id, id))
     .limit(1)
     .all();
-  if (!automation) return NextResponse.json({ ok: false, error: "Automation not found" }, { status: 404 });
 
-  const config = parseAutomationConfig(automation.config_json);
-  const secret = config.secret;
-  if (!secret) return NextResponse.json({ ok: false, error: "Automation has no webhook secret" }, { status: 500 });
+  // Uniform pre-auth response: whether the id, secret or signature is wrong,
+  // outsiders get the same 401 — no enumeration of automation ids/types.
+  const config = automation ? parseAutomationConfig(automation.config_json) : null;
+  const secret = config?.secret ?? null;
 
   const signature = req.headers.get("X-PushPanel-Signature");
-  if (!verifyWebhook(secret, body, signature, timestamp)) {
-    return NextResponse.json({ ok: false, error: "Invalid signature" }, { status: 401 });
+  if (!automation || !config || !secret || !verifyWebhook(secret, body, signature, timestamp)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   if (automation.type !== "push_on_publish") {

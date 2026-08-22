@@ -1,19 +1,15 @@
-import { headers } from "next/headers";
+import { sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { collectMetrics } from "@/lib/metrics";
 
 export const metadata = { title: "Server status" };
 
-interface Metrics {
-  ok: boolean;
-  uptimeSec: number;
-  time: string;
-  node: string;
-  platform: string;
-  load: number | null;
-  memory: { rss: number; heapUsed: number; heapTotal: number };
-  db: { path: string | null; sizeBytes: number };
-  queue: { queued: number; sending: number };
-  deliveriesFailed: number;
-  lastAutomationError: string | null;
+function isDbReady(): boolean {
+  try {
+    return db.get<{ n: number }>(sql`SELECT 1 AS n`)?.n === 1;
+  } catch {
+    return false;
+  }
 }
 
 function fmtBytes(n: number): string {
@@ -40,26 +36,24 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
     <div className="rounded-xl border bg-card p-5">
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
-      {sub && <p className="mt-1 text-sm text-muted-foreground">{sub}</p>}
+      {sub && <p className="mt-1 break-all text-sm text-muted-foreground">{sub}</p>}
     </div>
   );
 }
 
 export default async function StatusPage() {
-  const host = (await headers()).get("host") ?? "localhost:3100";
-  const proto = process.env.NODE_ENV === "production" && !host.startsWith("127.0.0.1") ? "https" : "http";
-  const [res, readiness] = await Promise.all([
-    fetch(`${proto}://${host}/api/metrics`, { cache: "no-store" }).catch(() => null),
-    fetch(`${proto}://${host}/api/health/ready`, { cache: "no-store" }).catch(() => null),
+  // In-process metrics + DB probe — no self-HTTP roundtrip, works even if
+  // the public endpoints are locked down.
+  const [metrics, dbReady] = await Promise.all([
+    collectMetrics().catch(() => null),
+    Promise.resolve().then(isDbReady),
   ]);
-  const metrics: Metrics | null = res?.ok ? ((await res.json()) as Metrics) : null;
 
   if (!metrics) {
     return (
       <>
         <h1 className="text-2xl font-semibold tracking-tight">Server status</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Metrics endpoint unreachable — is the web process running? Check <code className="rounded bg-muted px-1 font-mono text-xs">/api/health</code> and <code className="rounded bg-muted px-1 font-mono text-xs">/api/health/ready</code>.</p>
-        <p className="mt-3 text-xs text-muted-foreground">Worker readiness: {readiness?.ok ? "ready" : "unknown (metrics down)"} · Retry in a few seconds.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Metrics unavailable — check <code className="rounded bg-muted px-1 font-mono text-xs">/api/health</code> and try again in a few seconds.</p>
       </>
     );
   }
@@ -85,15 +79,15 @@ export default async function StatusPage() {
         />
         <Card label="Failed deliveries" value={String(metrics.deliveriesFailed)} sub="all time" />
         <div className="rounded-xl border bg-card p-5 sm:col-span-2 lg:col-span-2">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Worker readiness</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Database readiness</p>
           <p className="mt-2 text-2xl font-semibold">
-            {readiness?.ok ? (
-              <span className="text-emerald-500">ready</span>
+            {dbReady ? (
+              <span className="text-emerald-600 dark:text-emerald-400">ready</span>
             ) : (
               <span className="text-destructive">degraded</span>
             )}
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm break-all text-muted-foreground">
             {metrics.lastAutomationError ? `Last automation error: ${metrics.lastAutomationError}` : "No automation errors."}
           </p>
         </div>

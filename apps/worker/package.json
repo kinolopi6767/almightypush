@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.mjs",
+    "start": "node dist/index.cjs",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

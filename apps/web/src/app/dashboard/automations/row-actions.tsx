@@ -39,9 +39,9 @@ function WebhookBadge({ automationId, secret }: { automationId: number; secret: 
   return (
     <details className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
       <summary className="cursor-pointer">Webhook</summary>
-      <p className="mt-1 font-mono">POST {url}</p>
-      <p className="mt-1 font-mono">X-PushPanel-Signature: sha256=…</p>
-      <p className="mt-1 font-mono" data-testid={`webhook-secret-${automationId}`}>{secret}</p>
+      <p className="mt-1 break-all font-mono">POST {url}</p>
+      <p className="mt-1 break-all font-mono">X-PushPanel-Signature: sha256=…</p>
+      <p className="mt-1 break-all font-mono" data-testid={`webhook-secret-${automationId}`}>{secret}</p>
     </details>
   );
 }

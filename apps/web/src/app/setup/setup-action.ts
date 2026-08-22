@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { workspaces, users } from "@pushpanel/db/schema";
 import { count } from "drizzle-orm";
 import { z } from "zod";
+import { headers } from "next/headers";
 import type { AuthFormState } from "@/app/(auth)/actions";
 
 const setupSchema = z.object({
@@ -18,6 +19,13 @@ const setupSchema = z.object({
  * Only works while no users exist; sign-up is permanently disabled after.
  */
 export async function setupAction(_prev: AuthFormState, formData: FormData): Promise<NonNullable<AuthFormState>> {
+  // Setup creates the owner account — brute-force/throttle protection even
+  // though the window is normally open only until first setup completes.
+  const { clientIp, rateLimit } = await import("@/lib/rate-limit");
+  if (!rateLimit(`setup:${clientIp(await headers())}`, 5, 60_000)) {
+    return { error: "Too many attempts — try again later" };
+  }
+
   const parsed = setupSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),

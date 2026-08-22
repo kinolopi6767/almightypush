@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { campaigns, deliveries, domains, subscribers } from "../schema";
+import { campaigns, deliveries, subscribers } from "../schema";
 import { automations, automationRuns } from "../schema/marketing";
 import type { allTables } from "../schema";
 
@@ -108,16 +108,6 @@ export function activeSubscriberIds(db: PushDb, domainId: number): number[] {
     .orderBy(subscribers.id)
     .all();
   return rows.map((r) => r.id);
-}
-
-export function workspaceOwnsDomain(db: PushDb, workspaceId: number, domainId: number): boolean {
-  const [row] = db
-    .select({ id: domains.id })
-    .from(domains)
-    .where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId)))
-    .limit(1)
-    .all();
-  return !!row;
 }
 
 /** Per-run log row (observability). */

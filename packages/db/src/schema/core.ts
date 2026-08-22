@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { id, timestamps, workspaceRef } from "./common";
 
 /** The "project" container — one panel can host many workspaces. */
@@ -28,7 +28,8 @@ export const users = sqliteTable(
     last_login_at: text("last_login_at"),
     ...timestamps(),
   },
-  (t) => [uniqueIndex("idx_users_email").on(t.email)],
+  // NOTE: no explicit uniqueIndex here — the `.unique()` column constraint
+  // already emits `users_email_unique` (a second index was dropped in 0010).
 );
 
 export const sessions = sqliteTable(
@@ -68,7 +69,7 @@ export const apiKeys = sqliteTable(
     expires_at: text("expires_at"),
     ...timestamps(),
   },
-  (t) => [index("idx_api_keys_ws").on(t.workspace_id)],
+  (t) => [index("idx_api_keys_ws").on(t.workspace_id), index("idx_api_keys_token").on(t.token_hash)],
 );
 
 export const backups = sqliteTable("backups", {

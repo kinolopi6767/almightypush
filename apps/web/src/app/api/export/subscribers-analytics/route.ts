@@ -2,6 +2,7 @@ import { and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { domains, subscribers } from "@pushpanel/db/schema";
+import { csvCell } from "@pushpanel/core";
 import { parseSubscriberFilters, subscriberConditions } from "@/lib/subscriber-filters";
 
 export const dynamic = "force-dynamic";
@@ -49,10 +50,8 @@ export async function GET(request: Request) {
   // Stream to avoid OOM on 1M subs — batch 1000 rows per pull
   const header = "id,browser,os,device,country,state,domain,subscribe_url,subscribe_at,last_active_at,unsubscribed_at\n";
   const encoder = new TextEncoder();
-  const esc = (v: string | number | null | undefined): string => {
-    const s = v === null || v === undefined ? "" : String(v);
-    return `"${s.replace(/"/g, '""')}"`;
-  };
+  // csvCell is formula-injection-safe (see packages/core/csv.ts)
+  const esc = (v: string | number | null | undefined): string => csvCell(v === null || v === undefined ? "" : String(v));
   let offset = 0;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {

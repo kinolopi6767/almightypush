@@ -73,7 +73,11 @@ export function parseCsv(text: string): string[][] {
 
 /** Escape a value as a quoted CSV cell (always quoted for safety). */
 export function csvCell(value: string | null | undefined): string {
-  const str = value ?? "";
+  let str = value ?? "";
+  // CSV formula injection defense: spreadsheet apps interpret cells starting
+  // with = + - @ TAB CR as formulas/DDE. Attacker-controlled fields (browser,
+  // os, city… via the public subscribe API) must never execute on export.
+  if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`;
   return `"${str.replace(/"/g, '""')}"`;
 }
 

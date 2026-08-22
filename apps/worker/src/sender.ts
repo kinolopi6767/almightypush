@@ -83,15 +83,15 @@ export async function runSendCycle(
 
   if (candidateIds.length === 0) return stats;
 
-  const claimedChanges = db
+  // Claim via UPDATE ... RETURNING: we get exactly the rows this cycle won.
+  // The previous re-select-by-claimed_at approach could match another
+  // worker's rows when two cycles claimed within the same millisecond —
+  // RETURNING makes double-claiming structurally impossible.
+  const wonRows = db
     .update(deliveries)
     .set({ status: "sending", claimed_at: now, attempts: sql`attempts + 1` })
     .where(and(inArray(deliveries.id, candidateIds.map((r) => r.id)), eq(deliveries.status, "queued")))
-    .run();
-  if (claimedChanges.changes === 0) return stats;
-
-  const rows = db
-    .select({
+    .returning({
       id: deliveries.id,
       campaign_id: deliveries.campaign_id,
       subscriber_id: deliveries.subscriber_id,
@@ -100,10 +100,9 @@ export async function runSendCycle(
       variant: deliveries.variant,
       claimed_at: deliveries.claimed_at,
     })
-    .from(deliveries)
-    .where(and(inArray(deliveries.id, candidateIds.map((r) => r.id)), eq(deliveries.status, "sending"), eq(deliveries.claimed_at, now)))
-    .orderBy(deliveries.id)
     .all();
+
+  const rows = wonRows as DeliveryRow[];
 
   stats.claimed = rows.length;
   if (rows.length === 0) return stats;
@@ -246,6 +245,11 @@ async function deliverOne(
   // push — the reviving worker will (double-sends are worse than none).
   if (row.claimed_at !== now) return "requeued";
 
+  // Every terminal write is gated on still owning the claim (claimed_at
+  // unchanged). If another worker revived + reclaimed the row while our send
+  // was in flight, our late result must not clobber their state.
+  const owned = eq(deliveries.claimed_at, now);
+
   const [sub] = db
     .select({ id: subscribers.id, token: subscribers.token, unsubscribed_at: subscribers.unsubscribed_at })
     .from(subscribers)
@@ -255,7 +259,7 @@ async function deliverOne(
   if (!sub?.token || sub.unsubscribed_at) {
     db.update(deliveries)
       .set({ status: "failed", error: "subscriber missing or unsubscribed", sent_at: now })
-      .where(eq(deliveries.id, row.id))
+      .where(and(eq(deliveries.id, row.id), owned))
       .run();
     return "failed";
   }
@@ -272,7 +276,7 @@ async function deliverOne(
   } catch (error) {
     db.update(deliveries)
       .set({ status: "failed", error: `vapid config: ${(error as Error).message}`, sent_at: now })
-      .where(eq(deliveries.id, row.id))
+      .where(and(eq(deliveries.id, row.id), owned))
       .run();
     bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
@@ -288,7 +292,7 @@ async function deliverOne(
     return c as CampaignCache | undefined;
   })();
   if (!campaign) {
-    db.update(deliveries).set({ status: "failed", error: "campaign missing", sent_at: now }).where(eq(deliveries.id, row.id)).run();
+    db.update(deliveries).set({ status: "failed", error: "campaign missing", sent_at: now }).where(and(eq(deliveries.id, row.id), owned)).run();
     return "failed";
   }
 
@@ -305,7 +309,7 @@ async function deliverOne(
       .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`${events.ts} BETWEEN ${todayStart} AND ${todayEnd}`))
       .all();
     if ((todayCount?.value ?? 0) >= fatigueCap) {
-      db.update(deliveries).set({ status: "failed", error: `fatigue shield: cap ${fatigueCap}/day`, sent_at: now }).where(eq(deliveries.id, row.id)).run();
+      db.update(deliveries).set({ status: "failed", error: `fatigue shield: cap ${fatigueCap}/day`, sent_at: now }).where(and(eq(deliveries.id, row.id), owned)).run();
       bumpCampaignStat(db, row.campaign_id, "failed");
       return "failed";
     }
@@ -318,7 +322,7 @@ async function deliverOne(
   } catch (error) {
     db.update(deliveries)
       .set({ status: "failed", error: `token decrypt: ${(error as Error).message}`, sent_at: now })
-      .where(eq(deliveries.id, row.id))
+      .where(and(eq(deliveries.id, row.id), owned))
       .run();
     return "failed";
   }
@@ -386,36 +390,48 @@ async function deliverOne(
   } catch (error) {
     db.update(deliveries)
       .set({ status: "failed", error: `send: ${(error as Error).message}`, sent_at: now })
-      .where(eq(deliveries.id, row.id))
+      .where(and(eq(deliveries.id, row.id), owned))
       .run();
     bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
 
   if (result.ok) {
-    db.update(deliveries)
+    // Persist the terminal status FIRST — accounting (event + stat) is
+    // best-effort afterwards. If the status write lost ownership, skip
+    // accounting entirely: another worker owns this delivery now.
+    const sentWrite = db
+      .update(deliveries)
       .set({ status: "sent", sent_at: now, provider_msg: String(result.statusCode), error: null })
-      .where(eq(deliveries.id, row.id))
+      .where(and(eq(deliveries.id, row.id), owned))
       .run();
-    db.insert(events)
-      .values({
-        domain_id: row.domain_id,
-        campaign_id: row.campaign_id,
-        subscriber_id: row.subscriber_id,
-        type: "delivered",
-        meta_json: row.variant ? JSON.stringify({ variant: row.variant }) : undefined,
-      })
-      .run();
-    bumpCampaignStat(db, row.campaign_id, "delivered");
+    if (sentWrite.changes === 0) return "requeued";
+    try {
+      db.insert(events)
+        .values({
+          domain_id: row.domain_id,
+          campaign_id: row.campaign_id,
+          subscriber_id: row.subscriber_id,
+          type: "delivered",
+          meta_json: row.variant ? JSON.stringify({ variant: row.variant }) : undefined,
+        })
+        .run();
+      bumpCampaignStat(db, row.campaign_id, "delivered");
+    } catch {
+      // The push went out; losing an analytics row must not mark it failed
+      // (that would misreport stats while the delivery stays correctly `sent`).
+    }
     return "sent";
   }
 
   if (result.statusCode === 404 || result.statusCode === 410) {
     const reason = result.statusCode === 410 ? "http410" : "http404";
-    db.update(deliveries)
+    const goneWrite = db
+      .update(deliveries)
       .set({ status: "unsubscribed", error: `push service: ${result.statusCode}`, sent_at: now })
-      .where(eq(deliveries.id, row.id))
+      .where(and(eq(deliveries.id, row.id), owned))
       .run();
+    if (goneWrite.changes === 0) return "requeued";
     // Only count out subscribers this worker actually flipped (the row may
     // already be unsubscribed via the unsubscribe route) — `changes === 1`
     // guarantees the decrement matches the flip exactly once.
@@ -430,33 +446,41 @@ async function deliverOne(
         .where(eq(domains.id, row.domain_id))
         .run();
     }
-    db.insert(events)
-      .values({
-        domain_id: row.domain_id,
-        campaign_id: row.campaign_id,
-        subscriber_id: row.subscriber_id,
-        type: "unsubscribed",
-        meta_json: JSON.stringify({ reason }),
-      })
-      .run();
+    try {
+      db.insert(events)
+        .values({
+          domain_id: row.domain_id,
+          campaign_id: row.campaign_id,
+          subscriber_id: row.subscriber_id,
+          type: "unsubscribed",
+          meta_json: JSON.stringify({ reason }),
+        })
+        .run();
+    } catch {
+      void 0;
+    }
     return "gone";
   }
 
   // `attempts` was incremented at claim time, so it includes this attempt.
   if (row.attempts >= MAX_ATTEMPTS) {
-    db.update(deliveries)
+    const failWrite = db
+      .update(deliveries)
       .set({ status: "failed", error: result.error ?? "unknown", sent_at: now })
-      .where(eq(deliveries.id, row.id))
+      .where(and(eq(deliveries.id, row.id), owned))
       .run();
+    if (failWrite.changes === 0) return "requeued";
     bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
 
   const backoff = Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS);
-  db.update(deliveries)
+  const requeueWrite = db
+    .update(deliveries)
     .set({ status: "queued", claimed_at: null, next_attempt_at: now + backoff, error: result.error ?? null })
-    .where(eq(deliveries.id, row.id))
+    .where(and(eq(deliveries.id, row.id), owned))
     .run();
+  if (requeueWrite.changes === 0) return "requeued";
   return "requeued";
 }
 

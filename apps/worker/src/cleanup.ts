@@ -1,5 +1,6 @@
 import { and, count, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { deliveries, domains, events, settings, subscribers } from "@pushpanel/db/schema";
+import { automationRuns, journeyRuns } from "@pushpanel/db/schema";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
 
@@ -63,22 +64,25 @@ function recomputeSubscriberCounts(db: BetterSQLite3Database<typeof allTables>):
  * Runs daily (guarded by last_prune_at). Default 7d deliveries, 30d events — tunable.
  * 1 campaign/day * 1M = 30M rows/month ~4GB. Prune after 7d keeps ~7GB.
  */
-export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>, now: Date = new Date()): { deliveries: number; events: number } {
+export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>, now: Date = new Date(), logger?: { warn: (o: unknown, m: string) => void }): { deliveries: number; events: number } {
   const lastPrune = readSetting(db, "last_prune_at");
   if (lastPrune && now.getTime() - new Date(lastPrune).getTime() < 24 * 60 * 60 * 1000) return { deliveries: 0, events: 0 };
 
   const delDays = Number(readSetting(db, "retention_deliveries_days") ?? process.env.RETENTION_DELIVERIES_DAYS ?? 7);
   const evtDays = Number(readSetting(db, "retention_events_days") ?? process.env.RETENTION_EVENTS_DAYS ?? 30);
+  const runsCutoff = new Date(now.getTime() - 90 * 86_400_000).toISOString(); // automation/journey run history: 90d
   let prunedDel = 0;
   let prunedEvt = 0;
+  let failed = false;
 
   if (delDays > 0) {
     const cutoff = now.getTime() - delDays * 86_400_000;
     try {
       const res = db.delete(deliveries).where(and(inArray(deliveries.status, ["sent", "failed", "cancelled", "unsubscribed"]), isNotNull(deliveries.sent_at), lt(deliveries.sent_at, cutoff))).run();
       prunedDel = res.changes;
-    } catch {
-      void 0;
+    } catch (err) {
+      failed = true;
+      logger?.warn({ err }, "retention pruning failed for deliveries");
     }
   }
   if (evtDays > 0) {
@@ -86,11 +90,22 @@ export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>,
     try {
       const res = db.delete(events).where(lt(events.ts, cutoffIso)).run();
       prunedEvt = res.changes;
-    } catch {
-      void 0;
+    } catch (err) {
+      failed = true;
+      logger?.warn({ err }, "retention pruning failed for events");
     }
   }
-  writeSetting(db, "last_prune_at", now.toISOString());
+  // Run-history tables grow unboundedly otherwise (~96 rows/day per automation).
+  try {
+    db.delete(automationRuns).where(lt(automationRuns.created_at, runsCutoff)).run();
+  } catch { /* table may not exist in very old DBs — non-fatal */ }
+  try {
+    db.delete(journeyRuns).where(lt(journeyRuns.created_at, runsCutoff)).run();
+  } catch { /* ditto */ }
+
+  // Only advance the daily guard when pruning succeeded — a persistent
+  // failure (locked DB, full disk) must retry next tick, not next day.
+  if (!failed) writeSetting(db, "last_prune_at", now.toISOString());
   return { deliveries: prunedDel, events: prunedEvt };
 }
 

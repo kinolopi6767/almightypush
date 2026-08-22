@@ -1,6 +1,7 @@
 "use server";
 
 import { AuthError } from "next-auth";
+import { decryptTotpSecret } from "@/lib/totp-crypto";
 import { signIn, signOut } from "@/auth";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -53,7 +54,7 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
   if (!(await verifyPassword(user.password_hash, parsed.data.password))) {
     return { error: "Invalid email, password or code" };
   }
-  if (user.totp_enabled && !verifyTotp(user.totp_secret ?? "", parsed.data.totp ?? "")) {
+  if (user.totp_enabled && !verifyTotp(decryptTotpSecret(user.totp_secret), parsed.data.totp ?? "")) {
     return { error: "Invalid email, password or code" };
   }
 

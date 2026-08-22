@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { eq, desc } from "drizzle-orm";
 import { TemplateForm } from "./template-form";
 import { deleteTemplateAction } from "./actions";
+import { SubmitButton } from "@/components/submit-button";
 
 export const metadata = { title: "Templates" };
 
@@ -55,13 +56,13 @@ export default async function TemplatesPage() {
                   Edit
                 </Link>
                 <form action={deleteTemplateAction.bind(null, row.id)}>
-                  <button
-                    type="submit"
-                    aria-label={`Delete template ${row.name}`}
-                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  <SubmitButton
+                    confirm={`Delete template "${row.name}"?`}
+                    pendingLabel="…"
+                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                   >
                     Delete
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             </div>

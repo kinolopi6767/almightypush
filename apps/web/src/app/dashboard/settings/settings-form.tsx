@@ -256,8 +256,8 @@ export function BackupsPanel({ rows }: { rows: { id: number; kind: string; statu
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No backups yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-md border">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b bg-muted/30 text-left text-muted-foreground">
                 <th className="px-3 py-2 font-medium">Created</th>
@@ -346,7 +346,7 @@ function RestoreBackup({ id }: { id: number }) {
         if (window.confirm("Restore this backup? Current DB will be overwritten. Continue?")) void action();
       }}
       disabled={pending}
-      className="rounded-md px-2 py-1 text-sm text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 disabled:opacity-50"
+      className="rounded-md px-2 py-1 text-sm text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 disabled:opacity-50 dark:text-amber-400 dark:hover:text-amber-300"
     >
       {pending ? "…" : "Restore"}
     </button>

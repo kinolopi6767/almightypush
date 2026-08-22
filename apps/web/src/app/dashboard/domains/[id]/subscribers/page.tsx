@@ -141,6 +141,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
           type="search"
           name="q"
           defaultValue={q}
+          aria-label="Search subscribers"
           placeholder="Search browser, OS, device, country…"
           className="h-9 w-64 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
@@ -154,13 +155,13 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
         </button>
       </form>
 
-      <div className="overflow-hidden rounded-xl border bg-card shadow-[var(--shadow-card)]">
+      <div className="overflow-x-auto rounded-xl border bg-card shadow-[var(--shadow-card)]">
         {list.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">
             No subscribers yet — add the SDK snippet to your site or import a list.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-left text-muted-foreground">
                 <th className="px-4 py-2.5 font-medium">Client</th>

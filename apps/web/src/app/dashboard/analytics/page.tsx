@@ -202,7 +202,7 @@ export default async function AnalyticsPage({
             return (
               <div key={h} title={`${String(h).padStart(2, "0")}:00 — ${v} clicks`}
                 className="flex h-10 items-center justify-center rounded text-[11px] font-medium text-primary-foreground"
-                style={{ backgroundColor: v === 0 ? "hsl(var(--muted))" : `color-mix(in oklab, var(--primary) ${Math.round(intensity * 100)}%, transparent)` }}>
+                style={{ backgroundColor: v === 0 ? "var(--muted)" : `color-mix(in oklab, var(--primary) ${Math.round(intensity * 100)}%, transparent)` }}>
                 {h}
               </div>
             );

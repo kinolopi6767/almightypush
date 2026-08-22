@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { verifyPassword, verifyTotp } from "@pushpanel/core";
+import { decryptTotpSecret } from "@/lib/totp-crypto";
 import { db } from "@/lib/db";
 import { users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
@@ -11,6 +13,16 @@ const loginSchema = z.object({
   password: z.string().min(1),
   totp: z.string().optional(),
 });
+
+/**
+ * Session-binding fingerprint of the credential: a truncated hash of the
+ * password hash + TOTP state, embedded in the JWT at sign-in and re-checked
+ * against the DB on every request. Changing the password or 2FA enrollment
+ * invalidates all previously issued sessions — stolen cookies die with the
+ * old credential instead of surviving up to maxAge.
+ */
+const credentialVersionOf = (u: { password_hash: string | null; totp_enabled: number | null }) =>
+  createHash("sha256").update(`${u.password_hash ?? ""}:${u.totp_enabled ?? 0}`).digest("hex").slice(0, 16);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
@@ -35,7 +47,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         // Two-factor: the code must be present and valid when enabled.
         if (user.totp_enabled) {
-          if (!verifyTotp(user.totp_secret ?? "", parsed.data.totp ?? "")) return null;
+          const secret = decryptTotpSecret(user.totp_secret);
+          if (!verifyTotp(secret, parsed.data.totp ?? "")) return null;
         }
 
         return {
@@ -54,6 +67,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
         token.role = user.role;
         token.workspaceId = user.workspaceId;
+        // Bind this JWT to the credential state at sign-in (one extra indexed
+        // read per sign-in only).
+        const [row] = await db
+          .select({ password_hash: users.password_hash, totp_enabled: users.totp_enabled })
+          .from(users)
+          .where(eq(users.id, Number(user.id)))
+          .limit(1);
+        token.cv = credentialVersionOf({ password_hash: row?.password_hash ?? null, totp_enabled: row?.totp_enabled ?? null });
       }
       return token;
     },
@@ -62,10 +83,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         session.user.role = (token.role as string) ?? "owner";
         const [row] = await db
-          .select({ workspaceId: users.workspace_id })
+          .select({ workspaceId: users.workspace_id, password_hash: users.password_hash, totp_enabled: users.totp_enabled })
           .from(users)
           .where(eq(users.id, Number(token.id)))
           .limit(1);
+        // Credential changed (or user deleted) since sign-in → invalidate.
+        if (!row) throw new Error("Session invalidated — user missing");
+        if (token.cv !== credentialVersionOf({ password_hash: row.password_hash, totp_enabled: row.totp_enabled })) {
+          throw new Error("Session invalidated — credentials changed");
+        }
         session.user.workspaceId = row?.workspaceId != null ? String(row.workspaceId) : null;
       }
       return session;

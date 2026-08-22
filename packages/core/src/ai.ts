@@ -5,7 +5,7 @@
  * Plug in OpenAI/Anthropic by setting `AI_API_KEY` + `AI_MODEL`.
  */
 
-export type AiKind = "hook" | "spam_score" | "translate" | "url_to_campaign" | "automagic" | "smart_send" | "image" | "fatigue";
+/** AI feature kinds: hook | spam_score | translate | url_to_campaign | automagic | smart_send */
 
 export interface HookAngle {
   angle: string;
@@ -148,20 +148,6 @@ export async function translateText(text: string, targetLang: string, config?: A
     // fallback
   }
   return `[${targetLang}] ${text}`;
-}
-
-export interface AiImageResult {
-  url?: string;
-  prompt: string;
-  error?: string;
-}
-
-/** Stub for AI image generation (DALL-E / Stability) — returns placeholder when no key */
-export async function generateImage(prompt: string, config?: AiConfig): Promise<AiImageResult> {
-  const { key } = resolveAiConfig(config);
-  if (!key) return { prompt, url: `https://picsum.photos/seed/${encodeURIComponent(prompt.slice(0, 20))}/600/400`, error: "no AI key — placeholder" };
-  // Real implementation would call image API; keep stub to avoid vendor lock-in
-  return { prompt, url: `https://picsum.photos/seed/${encodeURIComponent(prompt.slice(0, 20))}/600/400` };
 }
 
 export interface SmartSendSlot {

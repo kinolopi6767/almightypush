@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -109,9 +108,9 @@ export default async function ApiPage() {
                 </li>
               ))}
             </ul>
-            <Link href="/dashboard/api" className="mt-3 inline-block text-xs text-primary">
-              View full reference →
-            </Link>
+            <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer" className="mt-3 inline-block text-xs text-primary hover:underline">
+              OpenAPI spec →
+            </a>
           </div>
         </div>
       </div>

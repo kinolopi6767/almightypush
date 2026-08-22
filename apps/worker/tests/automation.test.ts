@@ -150,7 +150,7 @@ describe("runAutomations crontab scheduling (C3)", () => {
     const after = row(db, id);
     expect(after.status).toBe("active");
     expect(after.consecutive_failures).toBe(0);
-    expect(after.next_run_at).toBe(new Date(2026, 0, 2, 9, 0, 0).toISOString()); // next 09:00 local
+    expect(after.next_run_at).toBe("2026-01-02T09:00:00.000Z"); // next 09:00 UTC (cron pinned to UTC)
   });
 });
 

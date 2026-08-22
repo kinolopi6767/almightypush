@@ -64,9 +64,9 @@ export function LiveFeed({ limit = 20 }: { limit?: number }) {
       ) : (
         <ul className="mt-3 space-y-1.5 text-sm">
           {events.map((e) => (
-            <li key={e.id} className="flex items-center gap-2">
+            <li key={e.id} className="flex min-w-0 items-center gap-2">
               <span
-                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                   e.type === "clicked"
                     ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                     : e.type === "subscribed"
@@ -77,7 +77,7 @@ export function LiveFeed({ limit = 20 }: { limit?: number }) {
                 {TYPE_LABEL[e.type] ?? e.type}
               </span>
               {e.type === "clicked" && e.meta_json && <SendText meta={e.meta_json} />}
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              <span className="ml-auto shrink-0 text-xs tabular text-muted-foreground">
                 {new Date(e.ts).toLocaleTimeString()}
               </span>
             </li>
@@ -93,7 +93,7 @@ function SendText({ meta }: { meta: string }) {
   try {
     const parsed = JSON.parse(meta) as { target_url?: string | null; action?: string | null };
     return (
-      <span className="truncate text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">
         {parsed.action ?? parsed.target_url ?? "—"}
       </span>
     );

@@ -39,7 +39,7 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
             {enabled ? "Enabled — sign-in requires a 6-digit code." : "Add a time-based one-time password from any authenticator app."}
           </p>
         </div>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${enabled ? "bg-emerald-500/15 text-emerald-600" : "bg-muted text-muted-foreground"}`}>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${enabled ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
           {enabled ? "on" : "off"}
         </span>
       </div>
@@ -95,15 +95,30 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
       )}
 
       {enabled && (
-        <form action={disableAction} className="mt-4">
-          <button
-            type="submit"
-            disabled={disablePending}
-            className="inline-flex h-9 items-center justify-center rounded-md border border-destructive/30 px-4 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-          >
-            {disablePending ? "Disabling…" : "Disable 2FA"}
-          </button>
-          {disableState?.error && <p role="alert" className="mt-2 text-sm text-destructive">{disableState.error}</p>}
+        <form action={disableAction} className="mt-4 space-y-2">
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label htmlFor="tfa-disable-password" className="text-sm font-medium">
+                Current password
+              </label>
+              <input
+                id="tfa-disable-password"
+                name="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={disablePending}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-destructive/30 px-4 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              {disablePending ? "Disabling…" : "Disable 2FA"}
+            </button>
+          </div>
+          {disableState?.error && <p role="alert" className="text-sm text-destructive">{disableState.error}</p>}
         </form>
       )}
     </div>

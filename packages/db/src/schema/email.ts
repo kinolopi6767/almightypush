@@ -70,30 +70,6 @@ export const emailCampaigns = sqliteTable(
   (t) => [index("idx_email_campaigns_ws").on(t.workspace_id, t.status, t.sent_at)],
 );
 
-/** Per-campaign A/B variants (LumaPush up to 10, OneSignal up to 10) — polymorphic push/email */
-export const campaignVariants = sqliteTable(
-  "campaign_variants",
-  {
-    id: id(),
-    campaign_id: integer("campaign_id").notNull(),
-    channel: text("channel").notNull().default("push"), // push | email
-    variant_key: text("variant_key").notNull(), // A, B, C...
-    title: text("title"),
-    message: text("message"),
-    image_url: text("image_url"),
-    html: text("html"),
-    subject: text("subject"),
-    /** traffic % 0-100 */
-    weight: integer("weight").notNull().default(50),
-    clicks: integer("clicks").notNull().default(0),
-    sent: integer("sent").notNull().default(0),
-    created_at: text("created_at")
-      .notNull()
-      .$defaultFn(() => new Date().toISOString()),
-  },
-  (t) => [index("idx_campaign_variants_camp").on(t.campaign_id), index("idx_campaign_variants_channel").on(t.channel)],
-);
-
 /** Subscriber tags (custom attributes, LumaPush 1→unlimited, EngageLab alias) */
 export const subscriberTags = sqliteTable(
   "subscriber_tags",
@@ -167,22 +143,6 @@ export const aiGenerations = sqliteTable(
       .$defaultFn(() => new Date().toISOString()),
   },
   (t) => [index("idx_ai_gen_ws_kind").on(t.workspace_id, t.kind)],
-);
-
-/** Frequency caps / Fatigue Shield per subscriber */
-export const frequencyCaps = sqliteTable(
-  "frequency_caps",
-  {
-    id: id(),
-    workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-    subscriber_id: integer("subscriber_id"),
-    email_contact_id: integer("email_contact_id"),
-    /** YYYY-MM-DD */
-    day: text("day").notNull(),
-    count: integer("count").notNull().default(0),
-    last_sent_at: text("last_sent_at"),
-  },
-  (t) => [index("idx_freq_caps_ws_day").on(t.workspace_id, t.day), index("idx_freq_caps_sub_day").on(t.subscriber_id, t.day)],
 );
 
 /** Team invites (RBAC already in users.role owner/admin/editor/viewer) */

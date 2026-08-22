@@ -70,17 +70,24 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
     const fails = outcome.ok ? 0 : (row.consecutive_failures ?? 0) + 1;
     const autoPaused = !outcome.ok && fails >= MAX_CONSECUTIVE_FAILURES;
     const error = outcome.ok ? null : autoPaused ? `Auto-paused after ${fails} consecutive failures: ${outcome.error}` : outcome.error;
-    db.update(automations)
-      .set({
-        last_run_at: nowIso,
-        next_run_at: autoPaused ? null : next ? next.toISOString() : null,
-        status: autoPaused ? "paused" : "active",
-        consecutive_failures: fails,
-        error,
-      })
-      .where(eq(automations.id, row.id))
-      .run();
-    recordAutomationRun(db, row.id, outcome.ok ? "ok" : "error", outcome.ok ? `queued ${outcome.queued} deliveries` : outcome.error);
+    // Bookkeeping is inside per-row isolation: if the automation row was
+    // deleted concurrently (or the run insert hits a lock), one bad row must
+    // not abort the rest of the tick.
+    try {
+      db.update(automations)
+        .set({
+          last_run_at: nowIso,
+          next_run_at: autoPaused ? null : next ? next.toISOString() : null,
+          status: autoPaused ? "paused" : "active",
+          consecutive_failures: fails,
+          error,
+        })
+        .where(eq(automations.id, row.id))
+        .run();
+      recordAutomationRun(db, row.id, outcome.ok ? "ok" : "error", outcome.ok ? `queued ${outcome.queued} deliveries` : outcome.error);
+    } catch {
+      void 0;
+    }
   }
 
   return stats;
@@ -128,42 +135,47 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
         return ok(1, result.queued);
       }
       case "automagic_static": {
-        const post = pickStaticPost(db, row, config);
-        if (!post) return { ok: false, campaigns: 0, queued: 0, error: "Rotation list is empty" };
+        const picked = pickStaticPost(config);
+        if (!picked) return { ok: false, campaigns: 0, queued: 0, error: "Rotation list is empty" };
         const result = enqueueAutomationCampaign({
           db,
           workspaceId: row.workspace_id,
           domainId: row.domain_id,
           automationId: row.id,
-          payload: { ...config.payload, title: post.title ?? config.payload.title, message: post.body ?? config.payload.message, launch_url: post.url ?? config.payload.launch_url },
+          payload: { ...config.payload, title: picked.post.title ?? config.payload.title, message: picked.post.body ?? config.payload.message, launch_url: picked.post.url ?? config.payload.launch_url },
           now,
         });
+        // Persist the rotation cursor only after the enqueue succeeded —
+        // otherwise a failed send loses the rotated item forever.
+        saveAutomationConfig(db, row.id, picked.updated);
         return ok(1, result.queued);
       }
       case "youtube_push": {
-        const video = await awaitLatestVideo(db, row, config);
-        if (!video) return ok(0, 0);
+        const video = await latestVideo(config);
+        if (!video.item) return ok(0, 0);
         const result = enqueueAutomationCampaign({
           db,
           workspaceId: row.workspace_id,
           domainId: row.domain_id,
           automationId: row.id,
-          payload: { ...config.payload, title: video.title ?? config.payload.title, launch_url: video.url ?? config.payload.launch_url },
+          payload: { ...config.payload, title: video.item.title ?? config.payload.title, launch_url: video.item.url ?? config.payload.launch_url },
           now,
         });
+        saveAutomationConfig(db, row.id, video.updated!);
         return ok(1, result.queued);
       }
       case "rss_push": {
-        const item = await awaitLatestFeedItem(db, row, config);
-        if (!item) return ok(0, 0);
+        const feed = await latestFeedItem(config);
+        if (!feed.item) return ok(0, 0);
         const result = enqueueAutomationCampaign({
           db,
           workspaceId: row.workspace_id,
           domainId: row.domain_id,
           automationId: row.id,
-          payload: { ...config.payload, title: item.title ?? config.payload.title, message: item.body ?? config.payload.message, launch_url: item.url ?? config.payload.launch_url },
+          payload: { ...config.payload, title: feed.item.title ?? config.payload.title, message: feed.item.body ?? config.payload.message, launch_url: feed.item.url ?? config.payload.launch_url },
           now,
         });
+        saveAutomationConfig(db, row.id, feed.updated!);
         return ok(1, result.queued);
       }
       case "drip": {
@@ -213,8 +225,8 @@ interface FeedItem {
   url?: string;
 }
 
-/** AutoMagic static: round-robin over the curated rotation list. */
-function pickStaticPost(db: PushDb, row: AutomationRow, config: AutomationConfig): FeedItem | null {
+/** AutoMagic static: round-robin over the curated rotation list (pure — caller persists cursor). */
+function pickStaticPost(config: AutomationConfig): { post: FeedItem; updated: AutomationConfig } | null {
   let list: FeedItem[] = [];
   try {
     const parsed = config.rotation_json ? JSON.parse(config.rotation_json) : [];
@@ -226,39 +238,38 @@ function pickStaticPost(db: PushDb, row: AutomationRow, config: AutomationConfig
 
   const idx = config.rotation_index ?? 0;
   const post = list[idx % list.length] ?? null;
-  if (post) {
-    const updated: AutomationConfig = { ...config, rotation_index: idx + 1 };
-    db.update(automations)
-      .set({ config_json: JSON.stringify(updated) })
-      .where(eq(automations.id, row.id))
-      .run();
-  }
-  return post;
+  if (!post) return null;
+  return { post, updated: { ...config, rotation_index: idx + 1 } };
 }
 
-/** YouTube push: RSS feed poll; only fires when a newer video appears. */
-async function awaitLatestVideo(db: PushDb, row: AutomationRow, config: AutomationConfig): Promise<FeedItem | null> {
+/** Persist automation config (dedupe cursors). Call only after successful dispatch. */
+function saveAutomationConfig(db: PushDb, id: number, config: AutomationConfig): void {
+  db.update(automations)
+    .set({ config_json: JSON.stringify(config) })
+    .where(eq(automations.id, id))
+    .run();
+}
+
+/** YouTube push: RSS feed poll; only fires when a newer video appears (pure — caller persists cursor). */
+async function latestVideo(config: AutomationConfig): Promise<{ item: FeedItem | null; updated?: AutomationConfig }> {
   if (!config.feed_url) throw new Error("feed_url is required");
   const xml = await fetchText(config.feed_url);
   const parser = new Parser();
   const feed = await parser.parseString(xml);
   const entry = feed.items[0];
-  if (!entry) return null;
+  if (!entry) return { item: null };
 
   const videoId = entry.guid?.replace("yt:video:", "") ?? entry.link ?? null;
   const lastId = config.last_video_id ?? null;
-  if (lastId && (!videoId || videoId === lastId)) return null;
+  if (lastId && (!videoId || videoId === lastId)) return { item: null };
 
-  const updated: AutomationConfig = { ...config, last_video_id: videoId ?? undefined };
-  db.update(automations)
-    .set({ config_json: JSON.stringify(updated) })
-    .where(eq(automations.id, row.id))
-    .run();
-
-  return { title: entry.title ?? undefined, body: undefined, url: entry.link ?? undefined };
+  return {
+    item: { title: entry.title ?? undefined, body: undefined, url: entry.link ?? undefined },
+    updated: { ...config, last_video_id: videoId ?? undefined },
+  };
 }
 
-/** C5: generic RSS/Atom publish poll — dedupe key is guid ?? id ?? link. */
+/** C5: generic RSS/Atom publish poll — dedupe key is guid ?? id ?? link (pure — caller persists cursor). */
 export interface RssFeedItem {
   title?: string;
   guid?: string;
@@ -269,23 +280,20 @@ export interface RssFeedItem {
   summary?: string;
 }
 
-export async function awaitLatestFeedItem(db: PushDb, row: AutomationRow, config: AutomationConfig): Promise<FeedItem | null> {
+export async function latestFeedItem(config: AutomationConfig): Promise<{ item: FeedItem | null; updated?: AutomationConfig }> {
   const xml = await fetchText(config.feed_url ?? "");
   const parser = new Parser();
   const feed = await parser.parseString(xml);
   const entry = pickNewestChangedItem(feed.items as RssFeedItem[], config.last_item_guid);
-  if (!entry) return null;
-
-  const updated: AutomationConfig = { ...config, last_item_guid: itemGuid(entry) };
-  db.update(automations)
-    .set({ config_json: JSON.stringify(updated) })
-    .where(eq(automations.id, row.id))
-    .run();
+  if (!entry) return { item: null };
 
   return {
-    title: entry.title ?? undefined,
-    body: entry.contentSnippet ?? entry.summary ?? undefined,
-    url: entry.link ?? undefined,
+    item: {
+      title: entry.title ?? undefined,
+      body: entry.contentSnippet ?? entry.summary ?? undefined,
+      url: entry.link ?? undefined,
+    },
+    updated: { ...config, last_item_guid: itemGuid(entry) },
   };
 }
 
@@ -342,8 +350,23 @@ async function safeFetch(sourceUrl: string, path: (base: URL) => URL): Promise<{
       continue;
     }
     if (!res.ok) throw new Error(`Source returned HTTP ${res.status}`);
-    const text = await res.text();
-    if (text.length > MAX_FETCH_BYTES) throw new Error("Source response too large");
+    // Stream with a cumulative byte cap: res.text() would buffer the whole
+    // body BEFORE the size check — a hostile source could OOM the worker.
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("Source returned no body");
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_FETCH_BYTES) {
+        void reader.cancel();
+        throw new Error("Source response too large");
+      }
+      chunks.push(value);
+    }
+    const text = Buffer.concat(chunks).toString("utf8");
     return { text, url: target };
   }
 }

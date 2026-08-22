@@ -84,13 +84,18 @@ export function rateLimitHeaders(result: RateLimitResult, limit: number): Record
  * Client IP from a request. Forwarded headers are honored only behind a
  * trusted reverse proxy (`TRUST_PROXY=1`); otherwise they are ignored so a
  * direct attacker cannot rotate rate-limit buckets at will.
+ *
+ * Uses the RIGHTMOST X-Forwarded-For entry: proxies append the real client
+ * address, so the leftmost entry is attacker-controlled (spoofable per
+ * request). The last entry is the one our trusted proxy actually saw.
  */
 export function clientIp(headers: Headers): string {
   if (process.env.TRUST_PROXY !== "1") return "unknown";
   const fwd = headers.get("x-forwarded-for");
   if (fwd) {
-    const first = fwd.split(",")[0]?.trim();
-    if (first) return first;
+    const parts = fwd.split(",").map((p) => p.trim()).filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) return last;
   }
   const real = headers.get("x-real-ip");
   if (real) return real;

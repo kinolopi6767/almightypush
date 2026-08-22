@@ -1,5 +1,6 @@
 import { ChannelForm } from "./channel-form";
 import { deleteChannelAction, listChannels, toggleChannelAction, type Channel } from "./actions";
+import { SubmitButton } from "@/components/submit-button";
 
 export const metadata = { title: "YouTube channels" };
 
@@ -59,22 +60,21 @@ export default async function ChannelsPage() {
               </div>
               <div className="flex shrink-0 items-center gap-2 self-start">
                 <form action={toggleChannelAction.bind(null, row.id)}>
-                  <button
-                    type="submit"
-                    aria-label={row.status === "active" ? `Pause channel ${row.title}` : `Resume channel ${row.title}`}
-                    className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+                  <SubmitButton
+                    pendingLabel="…"
+                    className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
                     {row.status === "active" ? "Pause" : "Resume"}
-                  </button>
+                  </SubmitButton>
                 </form>
                 <form action={deleteChannelAction.bind(null, row.id)}>
-                  <button
-                    type="submit"
-                    aria-label={`Delete channel ${row.title}`}
-                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10"
+                  <SubmitButton
+                    confirm={`Delete channel "${row.title}"? This cannot be undone.`}
+                    pendingLabel="…"
+                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10 disabled:opacity-50"
                   >
                     Delete
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { IosInstallHint } from "@/components/ios-install-hint";
 import { AppNav } from "@/components/app-nav";
+import { SignOutButton } from "@/components/sign-out-button";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -31,12 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               await signOut({ redirectTo: "/login" });
             }}
           >
-            <button
-              type="submit"
-              className="w-full rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              Sign out
-            </button>
+            <SignOutButton className="w-full rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50" />
           </form>
         </div>
       </aside>
@@ -54,12 +50,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               await signOut({ redirectTo: "/login" });
             }}
           >
-            <button
-              type="submit"
-              className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              Sign out
-            </button>
+            <SignOutButton className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50" />
           </form>
         </header>
         <nav className="sticky top-[49px] z-30 overflow-x-auto border-b bg-background/80 px-3 py-2 backdrop-blur md:hidden">

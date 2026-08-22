@@ -94,7 +94,9 @@ export function nextCronRun(expr: string, from: Date): Date | null {
   const trimmed = expr.trim();
   if (!trimmed) return null;
   try {
-    const cron = CronExpressionParser.parse(trimmed, { currentDate: new Date(from.getTime() + 1000) });
+    // Pinned to UTC: campaign schedule_at values are stored as UTC ISO and
+    // bare-metal hosts with a local TZ must not shift fire times silently.
+    const cron = CronExpressionParser.parse(trimmed, { currentDate: new Date(from.getTime() + 1000), tz: "UTC" });
     const next = cron.next();
     return next.toDate();
   } catch {
