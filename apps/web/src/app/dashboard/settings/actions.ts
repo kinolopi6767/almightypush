@@ -325,3 +325,43 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }
+
+const outboundSchema = z.object({
+  outbound_webhook_url: z.string().url().max(500).optional().or(z.literal("")),
+  outbound_webhook_secret: z.string().max(200).optional().or(z.literal("")),
+});
+
+/**
+ * Outbound event webhooks (n8n/Zapier/custom): POSTs HMAC-signed JSON on
+ * subscribed / unsubscribed / clicked / campaign_done events.
+ */
+export async function updateOutboundAction(_prev: SettingsFormState, formData: FormData): Promise<NonNullable<SettingsFormState>> {
+  try {
+    await requireOwner();
+  } catch {
+    return { error: "Not signed in or not an owner" };
+  }
+  const parsed = outboundSchema.safeParse({
+    outbound_webhook_url: formData.get("outbound_webhook_url") ?? "",
+    outbound_webhook_secret: formData.get("outbound_webhook_secret") ?? "",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  const d = parsed.data;
+  if (d.outbound_webhook_url) {
+    try {
+      // Validate scheme — webhooks must be https in production.
+      const u = new URL(d.outbound_webhook_url);
+      if (u.protocol !== "https:" && process.env.NODE_ENV === "production") {
+        return { error: "Webhook URL must use https://" };
+      }
+    } catch {
+      return { error: "Invalid webhook URL" };
+    }
+    db.insert(settings).values({ key: "outbound_webhook_url", value: d.outbound_webhook_url }).onConflictDoUpdate({ target: settings.key, set: { value: d.outbound_webhook_url } }).run();
+  } else {
+    db.delete(settings).where(eq(settings.key, "outbound_webhook_url")).run();
+  }
+  if (d.outbound_webhook_secret) setSecret("outbound_webhook_secret", d.outbound_webhook_secret);
+  revalidatePath("/dashboard/settings");
+  return { ok: true };
+}

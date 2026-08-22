@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { auditLog, backups, settings } from "@pushpanel/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
-import { SettingsForm, SecretsForm, GDriveForm } from "./settings-form";
+import { SettingsForm, SecretsForm, GDriveForm, OutboundWebhookForm } from "./settings-form";
 import { BackupsPanel } from "./settings-form";
 
 export const metadata = { title: "Settings" };
@@ -22,6 +22,8 @@ const SETTING_KEYS = [
   "suppression_enabled",
   "gdrive_enabled",
   "gdrive_folder_id",
+  "outbound_webhook_url",
+  "secret:outbound_webhook_secret",
   "secret:ai_api_key",
   "secret:ai_model",
   "secret:ai_base_url",
@@ -103,6 +105,8 @@ export default async function SettingsPage() {
         folderId={valueOf("gdrive_folder_id") ?? ""}
         hasServiceJson={!!valueOf("secret:gdrive_service_json")}
       />
+
+      <OutboundWebhookForm url={valueOf("outbound_webhook_url") ?? ""} hasSecret={!!valueOf("secret:outbound_webhook_secret")} />
 
       <BackupsPanel rows={backupList} />
 

@@ -11,6 +11,8 @@ import {
 } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
 import { readSetting } from "./cleanup";
+import { getOutboundConfig } from "./outbound";
+import { emitWebhookEvent } from "@pushpanel/core";
 
 export const MAX_ATTEMPTS = 3;
 // 1M scale: 500/batch = 1M queued in ~200 batches vs 10k batches at 100. Env tunable for AWS t2.micro (100) vs 4GB VPS (1000)
@@ -544,6 +546,7 @@ function bumpCampaignStat(db: PushDb, campaignId: number, key: "delivered" | "fa
 
 /** A campaign is done once it has no queued/sending deliveries left. */
 function finalizeCampaigns(db: PushDb, campaignIds: number[]) {
+  const webhookConfig = getOutboundConfig(db);
   for (const id of campaignIds) {
     const [pending] = db
       .select({ value: count() })
@@ -557,9 +560,13 @@ function finalizeCampaigns(db: PushDb, campaignIds: number[]) {
       .where(and(eq(deliveries.campaign_id, id), eq(deliveries.status, "sent")))
       .all();
     const anySent = (sentRow?.value ?? 0) > 0;
+    const status = anySent ? "done" : "failed";
     db.update(campaigns)
-      .set({ status: anySent ? "done" : "failed", sent_at: new Date().toISOString() })
+      .set({ status, sent_at: new Date().toISOString() })
       .where(eq(campaigns.id, id))
       .run();
+    if (webhookConfig) {
+      emitWebhookEvent(webhookConfig, "campaign_done", { campaign_id: id, status });
+    }
   }
 }

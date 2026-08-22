@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { emitEvent } from "@/lib/outbound";
 import { corsJson, handlePublicOptions } from "@/lib/cors";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -111,6 +112,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ delivery
         .run();
 
       if (delivery.campaign_id && buttonLabel !== null) bumpButtonStat(delivery.campaign_id, buttonLabel);
+      emitEvent("clicked", {
+        domain_id: delivery.domain_id,
+        campaign_id: delivery.campaign_id,
+        subscriber_id: delivery.subscriber_id,
+        delivery_id: id,
+        target_url: targetUrl,
+        button: buttonLabel,
+      });
     } catch {
       // Two beacons raced the partial unique index; the other one won and
       // already counted the click. Still redirect — never fail a redirect.

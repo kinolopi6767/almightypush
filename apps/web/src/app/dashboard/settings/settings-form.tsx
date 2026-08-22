@@ -3,7 +3,7 @@
 import { useActionState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createBackupAction, deleteBackupAction, restoreBackupAction, updateGDriveAction, updateSecretsAction, updateSettingsAction, type SettingsFormState } from "./actions";
+import { createBackupAction, deleteBackupAction, restoreBackupAction, updateGDriveAction, updateOutboundAction, updateSecretsAction, updateSettingsAction, type SettingsFormState } from "./actions";
 
 function Status({ state }: { state: SettingsFormState }) {
   if (!state) return null;
@@ -491,6 +491,62 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
       </div>
       <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
         {pending ? "Saving…" : "Save Drive Settings"}
+      </button>
+      <Status state={state} />
+    </form>
+  );
+}
+
+
+export function OutboundWebhookForm({ url, hasSecret }: { url: string; hasSecret: boolean }) {
+  const [state, action, pending] = useActionState(updateOutboundAction, undefined);
+  return (
+    <form action={action} className="space-y-4 rounded-lg border bg-card p-5">
+      <h2 className="text-lg font-semibold">Outbound event webhooks</h2>
+      <p className="text-sm text-muted-foreground">
+        POSTs HMAC-signed JSON to your endpoint on{" "}
+        <code className="rounded bg-muted px-1">subscribed</code>,{" "}
+        <code className="rounded bg-muted px-1">unsubscribed</code>,{" "}
+        <code className="rounded bg-muted px-1">clicked</code> and{" "}
+        <code className="rounded bg-muted px-1">campaign_done</code> events — plug straight into n8n, Zapier or
+        your own backend. Clear the URL to disable.
+      </p>
+      <div className="space-y-1">
+        <label htmlFor="outbound_webhook_url" className="text-sm font-medium">
+          Webhook URL {url ? "(active)" : ""}
+        </label>
+        <input
+          id="outbound_webhook_url"
+          name="outbound_webhook_url"
+          type="url"
+          defaultValue={url}
+          placeholder="https://n8n.example.com/webhook/pushpanel"
+          className="h-9 w-full rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+      <div className="space-y-1">
+        <label htmlFor="outbound_webhook_secret" className="text-sm font-medium">
+          Signing secret {hasSecret ? "(set — leave blank to keep)" : "(optional but recommended)"}
+        </label>
+        <input
+          id="outbound_webhook_secret"
+          name="outbound_webhook_secret"
+          type="password"
+          autoComplete="off"
+          placeholder={hasSecret ? "••••••••" : "whsec_..."}
+          className="h-9 w-full rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          Verify header <code className="rounded bg-muted px-1">X-PushPanel-Signature</code> as{" "}
+          <code className="rounded bg-muted px-1">sha256=HMAC(secret, timestamp + &quot;.&quot; + body)</code>.
+        </p>
+      </div>
+      <button
+        type="submit"
+        disabled={pending}
+        className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
+      >
+        {pending ? "Saving…" : "Save webhooks"}
       </button>
       <Status state={state} />
     </form>

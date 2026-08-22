@@ -3,6 +3,7 @@ import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
+import { emitEvent } from "@/lib/outbound";
 import { assertPublicHttpUrl, createCipher, isValidTimezone, parseAutomationConfig, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
@@ -175,6 +176,15 @@ export async function POST(req: Request) {
   if (!existing) {
     fireWelcomeAutomations(domain.id, domain.workspace_id, subscriberId);
   }
+
+  emitEvent("subscribed", {
+    domain_id: domain.id,
+    subscriber_id: subscriberId,
+    browser: data.browser || null,
+    os: data.os || null,
+    device: data.device || null,
+    country: (data as { country?: string }).country || null,
+  });
 
   return corsJson({ ok: true, id: subscriberId });
 }

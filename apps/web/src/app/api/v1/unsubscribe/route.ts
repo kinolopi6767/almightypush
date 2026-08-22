@@ -1,4 +1,5 @@
 import { corsJson, handlePublicOptions } from "@/lib/cors";
+import { emitEvent } from "@/lib/outbound";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -66,6 +67,8 @@ export async function POST(req: Request) {
     .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
     .all();
   db.update(domains).set({ subscribers_count: active?.value ?? 0 }).where(eq(domains.id, domainId)).run();
+
+  emitEvent("unsubscribed", { domain_id: domainId, subscriber_id: row.id });
 
   return corsJson({ ok: true });
 }
