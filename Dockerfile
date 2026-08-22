@@ -41,12 +41,15 @@ COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
 RUN mkdir -p ./node_modules/@node-rs && \
   cp -rL /app/node_modules/@node-rs/argon2* ./node_modules/@node-rs/ 2>/dev/null || true
 
+# Ensure data dir exists with writable perms before VOLUME
+RUN mkdir -p /app/data && chmod 755 /app/data
+
 # Shared data volume (SQLite + WAL + backups).
 VOLUME ["/app/data"]
 ENV DATABASE_PATH=/app/data/pushpanel.db
 
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/api/health/ready >/dev/null 2>&1 || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+  CMD wget -qO- --spider http://127.0.0.1:3000/api/health || exit 1
 
 CMD ["node", "./apps/web/server.js"]
