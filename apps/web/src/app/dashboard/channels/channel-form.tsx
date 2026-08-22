@@ -26,7 +26,7 @@ export function ChannelForm() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98]"
       >
         {open ? "Cancel" : "Add channel"}
       </button>

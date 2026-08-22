@@ -3,15 +3,26 @@
 import { useFormStatus } from "react-dom";
 
 /** Sign-out submit button with pending state (used inside the sign-out form). */
-export function SignOutButton({ className }: { className?: string }) {
+export function SignOutButton({
+  children,
+  pendingLabel,
+  className,
+  title,
+}: {
+  children?: React.ReactNode;
+  pendingLabel?: string;
+  className?: string;
+  title?: string;
+}) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
       disabled={pending}
+      title={title}
       className={className}
     >
-      {pending ? "Signing out…" : "Sign out"}
+      {pending ? (pendingLabel ?? "Signing out…") : (children ?? "Sign out")}
     </button>
   );
 }

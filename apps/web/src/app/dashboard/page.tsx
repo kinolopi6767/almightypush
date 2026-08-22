@@ -64,33 +64,46 @@ export default async function DashboardPage() {
 
   return (
     <>
-      {/* Header */}
-      <div className="rise flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {greeting()}
-              {firstName ? `, ${firstName}` : ""}
-            </h1>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-              Personal · Unlimited
-            </span>
+      {/* Hero */}
+      <div className="rise surface relative overflow-hidden rounded-2xl p-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.55]"
+          style={{
+            background:
+              "radial-gradient(560px 200px at 12% -20%, color-mix(in oklab, var(--primary) 16%, transparent), transparent 70%), radial-gradient(420px 180px at 96% 120%, color-mix(in oklab, var(--primary) 10%, transparent), transparent 70%)",
+          }}
+        />
+        <div className="relative flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-[1.35rem] font-semibold tracking-tight">
+                {greeting()}
+                {firstName ? `, ${firstName}` : ""}
+              </h1>
+              <span className="rounded-full border border-border bg-card/60 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground backdrop-blur">
+                Personal · Unlimited
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">Here&apos;s what&apos;s happening across your domains.</p>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">Here&apos;s what&apos;s happening across your domains.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/dashboard/domains"
-            className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent"
-          >
-            Add domain
-          </Link>
-          <Link
-            href="/dashboard/campaigns/new"
-            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 active:scale-[0.98]"
-          >
-            New campaign
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/domains"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-3.5 text-sm font-medium shadow-xs transition-colors hover:bg-accent"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-3.5" aria-hidden>
+                <path d="M5 12h14M12 5v14" />
+              </svg>
+              Add domain
+            </Link>
+            <Link
+              href="/dashboard/campaigns/new"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98]"
+            >
+              New campaign
+            </Link>
+          </div>
         </div>
       </div>
 

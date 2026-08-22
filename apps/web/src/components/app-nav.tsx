@@ -95,13 +95,13 @@ function NavLink({ href, label, active }: { href: string; label: string; active:
     <>
       <NavIcon
         href={href}
-        className={`size-4 shrink-0 transition-colors ${active ? "" : "opacity-60 group-hover:opacity-100"}`}
+        className={`size-4 shrink-0 transition-opacity ${active ? "" : "opacity-55 group-hover:opacity-100"}`}
       />
       <span className="truncate">{label}</span>
       {pending && (
         <span
           aria-hidden
-          className="ml-auto size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
+          className="ml-auto size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
         />
       )}
     </>
@@ -112,33 +112,25 @@ export function AppNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-5 text-sm">
+    <nav className="flex flex-col gap-4 text-[13px]">
       {SECTIONS.map((section) => (
         <div key={section.heading}>
-          <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
+          <p className="sidebar-heading px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em]">
             {section.heading}
           </p>
-          <div className="mt-1.5 flex flex-col gap-px">
+          <div className="mt-1 flex flex-col gap-px">
             {section.items.map((item) => {
               const active = activeFor(pathname, item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-active={active}
                   aria-current={active ? "page" : undefined}
-                  className={`group relative flex items-center gap-2.5 rounded-lg px-3 py-[7px] transition-all ${
-                    active
-                      ? "bg-primary/10 font-medium text-primary shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  className={`sidebar-item group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] font-medium ${
+                    active ? "" : ""
                   }`}
                 >
-                  {/* Active left rail */}
-                  <span
-                    aria-hidden
-                    className={`absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-primary transition-opacity ${
-                      active ? "opacity-100" : "opacity-0"
-                    }`}
-                  />
                   <NavLink href={item.href} label={item.label} active={active} />
                 </Link>
               );

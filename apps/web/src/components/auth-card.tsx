@@ -29,7 +29,7 @@ export function AuthCard({ title, description, action, footer, children, submitL
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/15 to-transparent" />
       <div className="relative w-full max-w-sm space-y-6">
         <div className="space-y-3 text-center">
-          <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/60 text-base font-bold text-primary-foreground shadow-lg shadow-primary/25">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/55 text-base font-bold text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--primary)_60%,transparent)]">
             P
           </span>
           <div className="space-y-1.5">
@@ -39,7 +39,7 @@ export function AuthCard({ title, description, action, footer, children, submitL
         </div>
         <form
           action={formAction}
-          className="space-y-4 rounded-2xl border bg-card/90 p-6 shadow-xl shadow-black/5 backdrop-blur dark:shadow-black/20"
+          className="surface space-y-4 rounded-2xl p-6 backdrop-blur-sm [box-shadow:var(--shadow-pop)]"
         >
           {children}
           {state?.error && (
@@ -50,7 +50,7 @@ export function AuthCard({ title, description, action, footer, children, submitL
           <button
             type="submit"
             disabled={pending}
-            className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-all hover:bg-primary/90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
+            className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
           >
             {pending && (
               <span
