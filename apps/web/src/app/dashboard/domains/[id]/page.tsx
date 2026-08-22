@@ -6,12 +6,22 @@ import { deliveries, domains, events, subscribers } from "@pushpanel/db/schema";
 import { TestPushForm } from "../test-push-form";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
+import { CopyButton } from "@/components/copy-button";
 
 export const metadata = { title: "Domain" };
 
 interface Props {
   params: Promise<{ id: string }>;
 }
+
+const DELIVERY_TONE: Record<string, string> = {
+  sent: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  delivered: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  queued: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  failed: "bg-destructive/10 text-destructive",
+};
 
 export default async function DomainDetailPage({ params }: Props) {
   const session = await auth();
@@ -61,88 +71,124 @@ export default async function DomainDetailPage({ params }: Props) {
     config = {};
   }
 
-  const snippet = `<script src="https://YOUR-PANEL-HOST/sdk/pushpanel-sdk.js"></script>
+  // Real panel origin (never "YOUR-PANEL-HOST") — the snippet must work as-is.
+  const baseUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  const snippet = `<script src="${baseUrl}/sdk/pushpanel-sdk.js"></script>
 <script>
   PushPanel.init({
     domain: ${domain.id},
     publicKey: "${config.publicKey ?? ""}",
-    baseUrl: "https://YOUR-PANEL-HOST",
+    baseUrl: "${baseUrl}",
     serviceWorkerPath: "/sw.js"
   });
 </script>`;
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3">
-        <Link href="/dashboard/domains" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Domains
-        </Link>
-        <h1 className="truncate text-2xl font-semibold tracking-tight">{domain.name}</h1>
-        <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          {domain.status}
-        </span>
+      <div className="rise">
         <Link
-          href={`/dashboard/domains/${domainId}/subscribers`}
-          className="ml-auto inline-flex shrink-0 items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          href="/dashboard/domains"
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          Subscribers →
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3.5" aria-hidden>
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+          Domains
         </Link>
+        <PageHeader
+          title={
+            <span className="flex items-center gap-3">
+              {domain.name}
+              <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                {domain.status}
+              </span>
+            </span>
+          }
+          description={`Created ${new Date(domain.created_at).toLocaleDateString()} · ${domain.provider.toUpperCase()} signing`}
+          actions={
+            <Link
+              href={`/dashboard/domains/${domainId}/subscribers`}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+            >
+              Subscribers →
+            </Link>
+          }
+        />
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        {[
-          ["Active subscribers", activeSubs.toLocaleString()],
-          ["Clicks", (clicksRow?.value ?? 0).toLocaleString()],
-          ["Recent deliveries", recentDeliveries.length],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
-            <p className="kicker text-muted-foreground">{label}</p>
-            <p className="tabular mt-2 text-3xl font-semibold tracking-tight">{value}</p>
-          </div>
-        ))}
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <div className="rise">
+          <StatCard label="Active subscribers" value={activeSubs.toLocaleString()} tone="primary" />
+        </div>
+        <div className="rise rise-1">
+          <StatCard label="Clicks" value={(clicksRow?.value ?? 0).toLocaleString()} tone="amber" />
+        </div>
+        <div className="rise rise-2">
+          <StatCard label="Recent deliveries" value={recentDeliveries.length} tone="emerald" />
+        </div>
       </div>
+
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="font-semibold">VAPID public key</h2>
+          {/* Integration — the primary action on this page */}
+          <section className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-semibold tracking-tight">Integration snippet</h2>
+              <CopyButton value={snippet} label="Copy snippet" />
+            </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              The public half of this domain&apos;s keypair — embed it in your site. The private half is stored
-              encrypted at rest via <code className="rounded bg-muted px-1 font-mono text-xs">APP_ENC_KEY</code>.
+              Paste into your site&apos;s HTML before{" "}
+              <code className="rounded bg-muted px-1 font-mono text-xs">&lt;/head&gt;</code>. The SDK asks for
+              permission, registers the service worker and reports subscriptions back to this panel.
             </p>
-            <code className="mt-3 block break-all rounded-md bg-muted p-3 text-xs leading-relaxed">{config.publicKey || "(generating…)"}</code>
-            <p className="mt-2 text-xs text-muted-foreground">Needs rotation? Re-create the domain — VAPID keys are per-domain and immutable for deliverability.</p>
-          </div>
-
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="font-semibold">Integration snippet</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Paste into your site&apos;s HTML. The SDK asks for permission, registers the service worker and reports
-              the subscription back to this panel.
-            </p>
-            <pre className="mt-3 overflow-x-auto rounded-md bg-background p-3 text-xs">{snippet}</pre>
+            <pre className="mt-3 overflow-x-auto rounded-lg border bg-muted/40 p-3.5 text-xs leading-relaxed">{snippet}</pre>
             <p className="mt-3 text-xs text-muted-foreground">
-              Sandbox demo:{" "}
-              <Link href={`/demo?domain=${domain.id}`} className="underline">
+              Prefer to see it live? Open the sandbox demo:{" "}
+              <Link href={`/demo?domain=${domain.id}`} className="font-medium text-primary hover:underline">
                 /demo?domain={domain.id}
               </Link>
             </p>
-          </div>
+          </section>
 
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="font-semibold">Recent deliveries</h2>
-            <ul className="mt-3 space-y-2 text-sm">
+          <section className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-semibold tracking-tight">VAPID public key</h2>
+              {config.publicKey && <CopyButton value={config.publicKey} label="Copy key" />}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The public half of this domain&apos;s keypair. The private half is encrypted at rest with{" "}
+              <code className="rounded bg-muted px-1 font-mono text-xs">APP_ENC_KEY</code>.
+            </p>
+            <code className="mt-3 block break-all rounded-lg border bg-muted/40 p-3 text-xs leading-relaxed">
+              {config.publicKey || "(generating…)"}
+            </code>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Keys are per-domain and immutable for deliverability — re-create the domain to rotate.
+            </p>
+          </section>
+
+          <section className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+            <h2 className="font-semibold tracking-tight">Recent deliveries</h2>
+            <ul className="mt-3 divide-y divide-border/60 text-sm">
               {recentDeliveries.length === 0 && (
-                <li className="text-muted-foreground">Nothing sent yet — try the test push form.</li>
+                <li className="py-3 text-muted-foreground">Nothing sent yet — try the test push form.</li>
               )}
               {recentDeliveries.map((d) => (
-                <li key={d.id} className="flex items-center justify-between gap-2">
+                <li key={d.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${DELIVERY_TONE[d.status] ?? "bg-accent"}`}>
+                    {d.status}
+                  </span>
                   <span className="text-muted-foreground">delivery #{d.id}</span>
-                  <span className="rounded-full bg-accent px-2 py-0.5 text-xs">{d.status}</span>
                   {d.error && <span className="truncate text-xs text-destructive">{d.error}</span>}
+                  {d.sent_at && (
+                    <span className="ml-auto shrink-0 text-xs tabular text-muted-foreground">
+                      {new Date(d.sent_at).toLocaleTimeString()}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
-          </div>
+          </section>
         </div>
 
         <TestPushForm domainId={domain.id} />

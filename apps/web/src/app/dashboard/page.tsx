@@ -5,8 +5,27 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LiveFeed } from "@/components/live-feed";
+import { StatCard } from "@/components/stat-card";
 
 export const metadata = { title: "Dashboard" };
+
+/* 24×24 stroke icon paths */
+const ICONS = {
+  users:
+    "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
+  globe:
+    "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z",
+  send: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
+  click: "M9 9l5 12 1.8-5.2L21 14zM7.2 2.2 8 5.1M5.1 8 2.2 7.2M14 4.1 12 6M6 12l-1.9 2",
+};
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 5) return "Working late";
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -33,13 +52,6 @@ export default async function DashboardPage() {
     .innerJoin(domains, eq(domains.id, events.domain_id))
     .where(and(eq(events.type, "clicked"), eq(domains.workspace_id, wsId)));
 
-  const cards = [
-    ["Subscribers", subsRow?.value ?? 0],
-    ["Domains", domainsRow?.value ?? 0],
-    ["Campaigns sent", sentRow?.value ?? 0],
-    ["Clicks", clicksRow?.value ?? 0],
-  ] as const;
-
   const [lastBackup] = wsId
     ? db.select({ created_at: backups.created_at, kind: backups.kind }).from(backups).orderBy(desc(backups.created_at)).limit(1).all()
     : [];
@@ -48,52 +60,150 @@ export default async function DashboardPage() {
     : false;
   const hasAiKey = wsId ? !!db.select({ value: settings.value }).from(settings).where(eq(settings.key, "secret:ai_api_key")).get()?.value : false;
 
+  const firstName = (session.user.name ?? session.user.email ?? "").split(/[\s@]/)[0];
+
   return (
     <>
-      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-        <p className="text-sm font-medium">Personal Edition — All features unlocked</p>
-        <p className="mt-1 text-xs text-muted-foreground">Private single-tenant • Unlimited domains/subscribers/campaigns • No pricing/plans • Data stays on your VPS • Backups: local + Google Drive (disabled by default)</p>
-      </div>
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight">Dashboard</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Signed in as {session.user.email} · workspace {session.user.workspaceId ?? "—"} · {session.user.role} · <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">personal unlimited</span>
-      </p>
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map(([label, value]) => (
-          <div
-            key={label}
-            className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]"
-          >
-            <p className="kicker text-muted-foreground">{label}</p>
-            <p className="tabular mt-2.5 text-3xl font-semibold tracking-tight">{value.toLocaleString()}</p>
+      {/* Header */}
+      <div className="rise flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {greeting()}
+              {firstName ? `, ${firstName}` : ""}
+            </h1>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+              Personal · Unlimited
+            </span>
           </div>
-        ))}
+          <p className="mt-1 text-sm text-muted-foreground">Here&apos;s what&apos;s happening across your domains.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/domains"
+            className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent"
+          >
+            Add domain
+          </Link>
+          <Link
+            href="/dashboard/campaigns/new"
+            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 active:scale-[0.98]"
+          >
+            New campaign
+          </Link>
+        </div>
       </div>
 
+      {/* Stats */}
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rise">
+          <StatCard
+            label="Subscribers"
+            value={(subsRow?.value ?? 0).toLocaleString()}
+            icon={<path d={ICONS.users} />}
+            tone="primary"
+            hint="Active across all domains"
+          />
+        </div>
+        <div className="rise rise-1">
+          <StatCard
+            label="Domains"
+            value={(domainsRow?.value ?? 0).toLocaleString()}
+            icon={<path d={ICONS.globe} />}
+            tone="sky"
+            href="/dashboard/domains"
+          />
+        </div>
+        <div className="rise rise-2">
+          <StatCard
+            label="Campaigns sent"
+            value={(sentRow?.value ?? 0).toLocaleString()}
+            icon={<path d={ICONS.send} />}
+            tone="emerald"
+            href="/dashboard/campaigns"
+          />
+        </div>
+        <div className="rise rise-3">
+          <StatCard
+            label="Clicks"
+            value={(clicksRow?.value ?? 0).toLocaleString()}
+            icon={<path d={ICONS.click} />}
+            tone="amber"
+            hint="All-time link clicks"
+          />
+        </div>
+      </div>
+
+      {/* Quick cards */}
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">Backups</p>
-          <p className="mt-1 text-sm">{lastBackup ? `${lastBackup.kind} • ${new Date(lastBackup.created_at).toLocaleDateString()}` : "No backups yet"}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Local VACUUM INTO + {gdriveEnabled ? "Drive ✓" : "Drive off"}</p>
-          <Link href="/dashboard/settings" className="mt-2 inline-block text-xs text-primary hover:underline">Manage →</Link>
-        </div>
-        <div className="rounded-xl border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">AI Studio</p>
-          <p className="mt-1 text-sm">{hasAiKey ? "API key set ✓" : "Heuristic fallback"}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Hook / spam / translate / image</p>
-          <Link href="/dashboard/ai" className="mt-2 inline-block text-xs text-primary hover:underline">Open →</Link>
-        </div>
-        <div className="rounded-xl border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">Hosting</p>
-          <p className="mt-1 text-sm">VPS / Coolify ready</p>
-          <p className="mt-1 text-xs text-muted-foreground">SQLite WAL • 1M scale • Litestream optional</p>
-          <Link href="/dashboard/guides" className="mt-2 inline-block text-xs text-primary hover:underline">Guides →</Link>
-        </div>
+        <QuickCard
+          title="Backups"
+          value={lastBackup ? `${lastBackup.kind} · ${new Date(lastBackup.created_at).toLocaleDateString()}` : "No backups yet"}
+          sub={`Local VACUUM INTO + Drive ${gdriveEnabled ? "on" : "off"}`}
+          href="/dashboard/settings"
+          linkLabel="Manage"
+          icon={
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8M21 3v5h-5" />
+          }
+        />
+        <QuickCard
+          title="AI Studio"
+          value={hasAiKey ? "API key connected" : "Heuristic fallback"}
+          sub="Hooks · spam check · translate · images"
+          href="/dashboard/ai"
+          linkLabel="Open"
+          icon={
+            <path d="M12 3l1.9 5.8L19.7 10l-5.8 1.9L12 17.7l-1.9-5.8L4.3 10l5.8-1.2zM19 15l.9 2.6L22.5 18.5l-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z" />
+          }
+        />
+        <QuickCard
+          title="Hosting"
+          value="VPS / Coolify ready"
+          sub="SQLite WAL · 1M scale · Litestream optional"
+          href="/dashboard/guides"
+          linkLabel="Guides"
+          icon={<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />}
+        />
       </div>
 
-      <div className="mt-8 max-w-2xl">
-        <LiveFeed />
+      {/* Live feed */}
+      <div className="mt-6 rise rise-2">
+        <LiveFeed limit={20} />
       </div>
     </>
+  );
+}
+
+function QuickCard({
+  title,
+  value,
+  sub,
+  href,
+  linkLabel,
+  icon,
+}: {
+  title: string;
+  value: string;
+  sub: string;
+  href: string;
+  linkLabel: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden className="icon-chip size-7 shrink-0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+            {icon}
+          </svg>
+        </span>
+        <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">{title}</p>
+      </div>
+      <p className="mt-2.5 text-sm font-medium">{value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
+      <Link href={href} className="mt-2 inline-block text-xs font-medium text-primary hover:underline">
+        {linkLabel} →
+      </Link>
+    </div>
   );
 }
