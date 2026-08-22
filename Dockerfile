@@ -41,13 +41,15 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 # Worker: bundled ESM (native deps resolved from traced node_modules)
 COPY --from=build /app/apps/worker/dist/index.mjs ./worker/index.mjs
 
+# Definitive fix: copy the FULL hoisted node_modules into the runtime image.
+# The worker bundle keeps dotenv/drizzle-orm/better-sqlite3 as externals and the
+# web standalone trace can miss request-time dynamic imports — the full flat
+# node_modules guarantees every import resolves at runtime.
+COPY --from=build /app/node_modules ./node_modules
+
 # Single entrypoint: worker loop in background + web in foreground
 COPY --from=build /app/start.sh ./start.sh
 RUN chmod +x ./start.sh
-
-# Safety net: copy hoisted native binaries into standalone node_modules if trace missed them
-RUN mkdir -p ./node_modules/@node-rs && \
-  cp -rL /app/node_modules/@node-rs/argon2* ./node_modules/@node-rs/ 2>/dev/null || true
 
 # Ensure data dir exists with writable perms before VOLUME
 RUN mkdir -p /app/data && chmod 755 /app/data
@@ -57,7 +59,8 @@ VOLUME ["/app/data"]
 ENV DATABASE_PATH=/app/data/pushpanel.db
 
 EXPOSE 3000
+# BusyBox/GNU wget compatible (no --spider flag): fetch /api/health, exit 1 on failure.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
-  CMD wget -qO- --spider http://127.0.0.1:3000/api/health || exit 1
+  CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1
 
 CMD ["./start.sh"]
