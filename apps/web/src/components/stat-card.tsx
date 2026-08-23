@@ -2,13 +2,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 const TONES: Record<string, string> = {
-  primary: "bg-primary/12 text-primary shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_22%,transparent)]",
-  emerald: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--success)_24%,transparent)]",
-  amber: "bg-amber-500/12 text-amber-600 dark:text-amber-400 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--warning)_26%,transparent)]",
-  sky: "bg-sky-500/12 text-sky-600 dark:text-sky-400 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-sky-500)_24%,transparent)]",
+  primary: "bg-primary/[0.08] text-primary ring-1 ring-primary/15 dark:bg-primary/15 dark:text-primary dark:ring-primary/20",
+  emerald: "bg-emerald-500/[0.08] text-emerald-600 ring-1 ring-emerald-500/15 dark:bg-emerald-500/15 dark:text-emerald-400",
+  amber: "bg-amber-500/[0.08] text-amber-600 ring-1 ring-amber-500/15 dark:bg-amber-500/15 dark:text-amber-400",
+  sky: "bg-sky-500/[0.08] text-sky-600 ring-1 ring-sky-500/15 dark:bg-sky-500/15 dark:text-sky-400",
 };
 
-/** Stat tile: tinted gradient icon chip, kicker label, big tabular value. */
+/** Premium stat tile — airy, minimal, data-first. */
 export function StatCard({
   label,
   value,
@@ -29,30 +29,32 @@ export function StatCard({
 }) {
   const body = (
     <>
-      <div className="flex items-start justify-between gap-2">
-        <p className="kicker pt-1 text-muted-foreground">{label}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="kicker pt-0.5 text-muted-foreground">{label}</p>
         {icon && (
-          <span aria-hidden className={`flex size-9 items-center justify-center rounded-[10px] ${TONES[tone]}`}>
+          <span aria-hidden className={`flex size-8 items-center justify-center rounded-lg ${TONES[tone]}`}>
             <svg
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.75"
+              strokeWidth="1.7"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="size-[18px]"
+              className="size-[16px]"
             >
               {icon}
             </svg>
           </span>
         )}
       </div>
-      <p className="tabular mt-3 text-[1.875rem] font-semibold leading-none tracking-tight">{value}</p>
-      {hint && <div className="mt-2.5 flex items-center gap-1.5 text-xs text-muted-foreground">{hint}</div>}
+      <p className="tabular mt-4 text-[28px] font-semibold leading-none tracking-tight">{value}</p>
+      {hint && <div className="mt-2 text-xs leading-relaxed text-muted-foreground">{hint}</div>}
     </>
   );
 
-  const cls = `surface card-lift block rounded-xl p-5 ${className}`;
+  const base = "surface group block rounded-2xl p-6 transition-all";
+  const hover = href ? " surface-hover hover:border-border-strong" : "";
+  const cls = `${base}${hover} ${className}`;
   return href ? (
     <Link href={href} className={cls}>
       {body}

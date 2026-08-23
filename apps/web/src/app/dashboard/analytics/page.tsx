@@ -18,7 +18,7 @@ const DIMENSIONS = [
 ] as const;
 
 const inputCls =
-  "h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus:border-primary";
+  "h-9 rounded-lg border bg-card px-3 text-sm shadow-xs outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/20";
 
 export default async function AnalyticsPage({
   searchParams,
@@ -93,7 +93,7 @@ export default async function AnalyticsPage({
         Subscriber growth, audience breakdowns and click timing — filtered in your browser&apos;s history-friendly GET form below.
       </p>
 
-      <form method="get" className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4">
+      <form method="get" className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-5 shadow-sm">
         <div>
           <label className="text-xs font-medium text-muted-foreground" htmlFor="f-domain">Domain</label>
           <select id="f-domain" name="domain" className={`ml-2 ${inputCls}`} defaultValue={filter.domainId ?? ""}>

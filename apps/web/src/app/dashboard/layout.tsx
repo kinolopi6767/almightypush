@@ -22,34 +22,38 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="app-shell flex min-h-svh">
-      {/* ── Sidebar: always-dark chrome ─────────────────────────── */}
-      <aside className="sidebar-panel sticky top-0 hidden h-svh w-[248px] shrink-0 flex-col md:flex">
-        <div className="flex items-center gap-2.5 px-4 pb-5 pt-5">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/55 text-sm font-bold text-primary-foreground shadow-[0_4px_14px_-2px_color-mix(in_oklab,var(--primary)_60%,transparent)]">
+      {/* ── Sidebar ─────────────────────────────── */}
+      <aside className="sidebar-panel sticky top-0 hidden h-svh w-[260px] shrink-0 flex-col md:flex">
+        {/* Brand */}
+        <div className="flex h-[56px] shrink-0 items-center gap-2.5 border-b border-[var(--sidebar-border)] px-4">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-foreground text-[13px] font-bold tracking-tight text-background dark:bg-white dark:text-zinc-900">
             P
           </span>
-          <div className="leading-tight">
-            <p className="text-[13.5px] font-semibold tracking-tight">PushPanel</p>
-            <p className="text-[10.5px] font-medium text-[var(--sidebar-fg-muted)]">Personal · Unlimited</p>
+          <div className="leading-none">
+            <p className="text-[13.5px] font-semibold tracking-tight text-foreground dark:text-white">PushPanel</p>
+            <p className="text-[11px] font-medium text-muted-foreground">Personal · Unlimited</p>
           </div>
+          <span className="ml-auto hidden rounded-full border bg-card px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground lg:inline-flex">
+            v1
+          </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2.5 pb-4">
+        <div className="flex-1 overflow-y-auto px-3 py-4">
           <AppNav />
         </div>
 
-        {/* User card */}
-        <div className="mx-2.5 mb-3 rounded-xl border border-[var(--sidebar-border)] bg-black/20 p-2.5">
-          <div className="flex items-center gap-2.5">
+        {/* User */}
+        <div className="border-t border-[var(--sidebar-border)] p-3">
+          <div className="flex items-center gap-2.5 rounded-xl border bg-card p-2.5 shadow-xs dark:border-white/5 dark:bg-white/[0.04]">
             <span
               aria-hidden
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/80 to-primary/40 text-[11px] font-bold text-primary-foreground"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground"
             >
               {initials(displayName, email)}
             </span>
             <div className="min-w-0 flex-1 leading-tight">
               <p className="truncate text-xs font-medium">{displayName}</p>
-              <p className="truncate text-[10.5px] capitalize text-[var(--sidebar-fg-muted)]">{role}</p>
+              <p className="truncate text-[11px] capitalize text-muted-foreground">{role}</p>
             </div>
             <form
               action={async () => {
@@ -59,7 +63,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             >
               <SignOutButton
                 title="Sign out"
-                className="inline-flex size-7 items-center justify-center rounded-md text-[var(--sidebar-fg-muted)] transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+                className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="size-3.5" aria-hidden>
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
@@ -71,28 +75,29 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </aside>
 
-      {/* ── Main column ─────────────────────────────────────────── */}
+      {/* ── Main ─────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Desktop topbar */}
-        <header className="sticky top-0 z-40 hidden items-center justify-between gap-3 border-b border-border/70 bg-[var(--header-bg)] px-6 py-2.5 backdrop-blur-md md:flex">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Link href="/dashboard/status" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground">
-              <span aria-hidden className="relative flex size-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-success" />
+        <header className="sticky top-0 z-40 hidden h-[56px] items-center justify-between gap-4 border-b bg-card/80 px-6 backdrop-blur-xl md:flex">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground shadow-xs">
+              <span aria-hidden className="relative flex size-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
               </span>
-              System status
-            </Link>
-            <span aria-hidden className="text-border-strong">·</span>
-            <Link href="/dashboard/guides" className="transition-colors hover:text-foreground">
+              All systems operational
+            </span>
+            <span className="hidden text-border-strong lg:inline">·</span>
+            <Link href="/dashboard/guides" className="hidden rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex">
               Guides
             </Link>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <div className="mx-1 h-4 w-px bg-border" aria-hidden />
             <Link
               href="/dashboard/campaigns/new"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground shadow-[0_2px_10px_-2px_color-mix(in_oklab,var(--primary)_50%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98]"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-foreground px-3.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 active:scale-[0.98] dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-3.5" aria-hidden>
                 <path d="M5 12h14M12 5v14" />
@@ -103,9 +108,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </header>
 
         {/* Mobile header */}
-        <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-border/70 bg-[var(--header-bg)] px-4 py-2.5 backdrop-blur-md md:hidden">
-          <div className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/55 text-xs font-bold text-primary-foreground">
+        <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b bg-card/80 px-4 backdrop-blur-xl md:hidden">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-foreground text-xs font-bold text-background dark:bg-white dark:text-zinc-900">
               P
             </span>
             <span className="text-sm font-semibold tracking-tight">PushPanel</span>
@@ -118,18 +123,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 await signOut({ redirectTo: "/login" });
               }}
             >
-              <SignOutButton className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50" />
+              <SignOutButton className="rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50" />
             </form>
           </div>
         </header>
 
-        {/* Mobile chip nav */}
         <MobileNav />
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 md:px-8 md:py-9">{children}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-6 md:py-8">{children}</main>
 
-        <footer className="border-t border-border/60 py-4 text-center text-[11px] text-muted-foreground/70">
-          PushPanel · self-hosted web push · data stays on your server
+        <footer className="border-t py-4 text-center text-[11px] tracking-wide text-muted-foreground/60">
+          PushPanel · self-hosted · data stays on your server
         </footer>
       </div>
       <IosInstallHint />
@@ -160,13 +164,13 @@ const MOBILE_LINKS = [
 
 function MobileNav() {
   return (
-    <nav className="sticky top-[49px] z-30 overflow-x-auto border-b border-border/70 bg-[var(--header-bg)] px-3 py-2 backdrop-blur-md md:hidden">
-      <div className="flex items-center gap-1 text-[13px]">
+    <nav className="sticky top-14 z-30 overflow-x-auto border-b bg-card/80 backdrop-blur-xl md:hidden">
+      <div className="flex items-center gap-1 px-3 py-2 text-[13px]">
         {MOBILE_LINKS.map(([href, label]) => (
           <Link
             key={href}
             href={href}
-            className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="shrink-0 whitespace-nowrap rounded-full border border-transparent px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             {label}
           </Link>

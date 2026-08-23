@@ -8,7 +8,7 @@ export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const dark = mounted ? resolvedTheme === "dark" : true;
+  const dark = mounted ? resolvedTheme === "dark" : false;
 
   return (
     <button
@@ -16,20 +16,23 @@ export function ThemeToggle() {
       aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
       title={dark ? "Light mode" : "Dark mode"}
       onClick={() => setTheme(dark ? "light" : "dark")}
-      className="inline-flex size-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="relative inline-flex h-8 w-[52px] items-center rounded-full border bg-muted p-1 transition-colors dark:border-white/10 dark:bg-white/10"
     >
-      {dark ? (
-        // Sun (switch to light)
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" className="size-4" aria-hidden>
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-        </svg>
-      ) : (
-        // Moon (switch to dark)
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden>
-          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" />
-        </svg>
-      )}
+      <span
+        aria-hidden
+        className={`inline-flex size-6 items-center justify-center rounded-full bg-card text-foreground shadow-sm transition-all ${dark ? "translate-x-6" : "translate-x-0"}`}
+      >
+        {dark ? (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="size-3.5">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" />
+          </svg>
+        )}
+      </span>
     </button>
   );
 }
