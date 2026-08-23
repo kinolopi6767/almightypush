@@ -39,6 +39,16 @@ export async function runJourneys(db: PushDb, now: Date = new Date()): Promise<J
     } catch {
       stats.ran++;
       stats.failed++;
+      // Back off failures — otherwise a persistently failing journey is
+      // retried every tick (as fast as the worker's tick interval).
+      try {
+        db.update(journeys)
+          .set({ next_run_at: new Date(now.getTime() + 3 * 60_000).toISOString() })
+          .where(eq(journeys.id, row.id))
+          .run();
+      } catch {
+        void 0;
+      }
     }
   }
   return stats;

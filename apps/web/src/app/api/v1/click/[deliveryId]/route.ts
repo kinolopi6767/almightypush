@@ -131,7 +131,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ delivery
   if (!targetUrl) {
     return corsJson({ ok: true, url: null }, { status: 200 });
   }
-  return NextResponse.redirect(targetUrl, 302);
+  // ACAO on the redirect too: a cross-origin fetch() following the hop needs
+  // CORS on every response in the chain or the beacon rejects.
+  return NextResponse.redirect(targetUrl, { status: 302, headers: { "Access-Control-Allow-Origin": "*" } });
 }
 
 function recordEvent(

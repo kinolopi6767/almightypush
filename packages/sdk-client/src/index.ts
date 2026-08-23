@@ -70,7 +70,7 @@ export interface PushPanelApi {
 }
 
 const PROMPT_STORAGE_KEY = "__pushpanel_prompt_dismissed__";
-const PENDING_SUB_KEY = "__pushpanel_pending_sub__";
+const pendingSubKey = (domain: number): string => `__pushpanel_pending_sub_${domain}__`;
 /** Module-level singleton: re-init() with the same domain must not mount duplicate UI. */
 interface PushPanelWindow extends Window {
   __pushpanel_instances__?: Map<number, PushPanelApi>;
@@ -200,6 +200,70 @@ function positionClass(position: NonNullable<PushPromptConfig["position"]>): str
   return `pp-sdk-${position}`;
 }
 
+/* ── IndexedDB config store (shared with the service worker) ──────────────
+ * The SW cannot read localStorage; pushsubscriptionchange needs the domain,
+ * VAPID key and panel URL to re-subscribe. One small IDB record. */
+const IDB_NAME = "pushpanel";
+const IDB_STORE = "config";
+
+function idbSet(key: string, value: unknown): void {
+  try {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => {
+      try {
+        const tx = req.result.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(value, key);
+      } catch {
+        void 0;
+      }
+    };
+    // onerror intentionally ignored — reconciliation is best-effort
+    req.onerror = () => undefined;
+  } catch {
+    void 0;
+  }
+}
+
+const SYNC_THROTTLE_KEY = "__pushpanel_last_sync__";
+
+/** Auto-resync (OneSignal "auto-resubscribe"): while permission is granted,
+ * periodically re-post the CURRENT browser subscription so endpoint rotations
+ * and server-side drift self-heal. Throttled to once per 12h per domain. */
+function schedulePeriodicSync(
+  api: { state: () => PushPanelState },
+  opts: { domain: number; baseUrl?: string; serviceWorkerPath?: string },
+): void {
+  try {
+    const last = Number(localStorage.getItem(SYNC_THROTTLE_KEY) ?? 0);
+    if (Date.now() - last < 12 * 3_600_000) return;
+    localStorage.setItem(SYNC_THROTTLE_KEY, String(Date.now()));
+  } catch {
+    return; // no storage — skip sync rather than hammering
+  }
+  setTimeout(async () => {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (api.state() !== "subscribed") return;
+    try {
+      const reg = (await navigator.serviceWorker.getRegistration(opts.serviceWorkerPath ?? "/sw.js")) ?? undefined;
+      const sub = await reg?.pushManager.getSubscription();
+      if (!reg || !sub || !opts.baseUrl) return;
+      await fetch(`${opts.baseUrl.replace(/\/+$/, "")}/api/v1/resubscribe`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          domainId: opts.domain,
+          subscription: { endpoint: sub.endpoint, keys: sub.toJSON().keys },
+        }),
+      });
+    } catch {
+      void 0;
+    }
+  }, 5_000);
+}
+
 export function init(options: PushPanelOptions): PushPanelApi {
   // Singleton per domain: landing pages call init() inside click handlers,
   // host pages sometimes double-init — duplicates stacked prompt cards/bells.
@@ -241,6 +305,24 @@ export function init(options: PushPanelOptions): PushPanelApi {
   const alreadySubscribed = (): boolean =>
     typeof Notification !== "undefined" && Notification.permission === "granted";
 
+  /** Opt-in funnel telemetry — once per stage per browsing session. */
+  const trackOptin = (stage: "prompt_shown" | "prompt_allowed" | "prompt_denied" | "prompt_dismissed"): void => {
+    try {
+      if (!options.baseUrl) return;
+      const key = `__pp_funnel_${stage}__`;
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      return; // no storage — skip rather than spam
+    }
+    void fetch(`${baseUrl}/api/v1/optin`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ domainId: options.domain, stage }),
+      keepalive: true,
+    }).catch(() => undefined);
+  };
+
   /** Central teardown for prompt triggers (scroll/idle listeners + timers). */
   const teardowns: (() => void)[] = [];
   const teardownTriggers = (): void => {
@@ -253,14 +335,14 @@ export function init(options: PushPanelOptions): PushPanelApi {
    * forever (permission=granted suppresses every future prompt). */
   function queuePendingSubscription(payload: unknown): void {
     try {
-      localStorage.setItem(PENDING_SUB_KEY, JSON.stringify(payload));
+      localStorage.setItem(pendingSubKey(options.domain), JSON.stringify(payload));
     } catch {
       void 0;
     }
   }
 
   async function flushPendingSubscription(): Promise<void> {
-    const raw = storageGet(PENDING_SUB_KEY);
+    const raw = storageGet(pendingSubKey(options.domain));
     if (!raw) return;
     try {
       const payload = JSON.parse(raw) as unknown;
@@ -271,7 +353,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
       });
       if (res.ok) {
         try {
-          localStorage.removeItem(PENDING_SUB_KEY);
+          localStorage.removeItem(pendingSubKey(options.domain));
         } catch {
           void 0;
         }
@@ -294,10 +376,9 @@ export function init(options: PushPanelOptions): PushPanelApi {
     uiMounted = true;
     injectStyles(prompt.customCss);
 
-    void flushPendingSubscription();
-
     if (type === "bell") {
       mountBell();
+      trackOptin("prompt_shown");
       return;
     }
     if (type === "none") return;
@@ -306,6 +387,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
       teardownTriggers();
       if (document.querySelector(".pp-sdk-card, .pp-sdk-fullscreen")) return;
       mountCard(type);
+      trackOptin("prompt_shown");
     };
 
     const scheduleShow = () => queueMicrotask(() => setTimeout(show, prompt.delayMs ?? 1500));
@@ -376,6 +458,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
       backdrop.addEventListener("click", () => {
         markPromptDismissed();
         current = "dismissed";
+        trackOptin("prompt_dismissed");
         teardownTriggers();
         backdrop?.remove();
         document.querySelector(".pp-sdk-card")?.remove();
@@ -419,6 +502,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
       dismiss.addEventListener("click", () => {
         markPromptDismissed();
         current = "dismissed";
+        trackOptin("prompt_dismissed");
         teardownTriggers();
         wrap.remove();
         backdrop?.remove();
@@ -448,6 +532,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
     dismiss.addEventListener("click", () => {
       markPromptDismissed();
       current = "dismissed";
+        trackOptin("prompt_dismissed");
       teardownTriggers();
       wrap.remove();
       backdrop?.remove();
@@ -514,8 +599,6 @@ export function init(options: PushPanelOptions): PushPanelApi {
     const deadline = Date.now() + 10_000;
     while (!registration.active) {
       if (Date.now() > deadline) throw new Error("service worker activation timeout");
-      await navigator.serviceWorker.ready;
-      if (registration.active) return;
       await new Promise((r) => setTimeout(r, 50));
     }
   }
@@ -536,6 +619,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
       }
       if (permission !== "granted") {
         current = "denied";
+        trackOptin("prompt_denied");
         return current;
       }
       const registration = await navigator.serviceWorker.register(swPath);
@@ -560,7 +644,10 @@ export function init(options: PushPanelOptions): PushPanelApi {
         });
       }
       if (options.endpointOverride) {
-        subscription = { ...subscription, endpoint: options.endpointOverride } as PushSubscription;
+        // Spread of a PushSubscription copies nothing (IDL attributes live on
+        // the prototype) — rebuild from its JSON representation instead.
+        const json = subscription.toJSON() as { endpoint?: string; keys?: { p256dh: string; auth: string } };
+        subscription = { endpoint: options.endpointOverride, keys: json.keys } as unknown as PushSubscription;
       }
       const payload = {
         domainId: options.domain,
@@ -580,8 +667,15 @@ export function init(options: PushPanelOptions): PushPanelApi {
         queuePendingSubscription(payload);
         throw new Error("panel unreachable — will retry on next visit");
       }
-      if (!res.ok) throw new Error(`subscribe failed (${res.status})`);
+      if (!res.ok) {
+        // The browser now holds a live push subscription either way — if the
+        // row never reached the DB this user is silently lost forever. Queue
+        // for the next visit on any server-side failure as well.
+        if (res.status >= 500 || res.status === 429) queuePendingSubscription(payload);
+        throw new Error(`subscribe failed (${res.status})`);
+      }
       current = "subscribed";
+      trackOptin("prompt_allowed");
     } catch (error) {
       current = "error";
       throw error;
@@ -589,11 +683,22 @@ export function init(options: PushPanelOptions): PushPanelApi {
     return current;
   }
 
+  /** Our own registration for swPath — NEVER serviceWorker.ready, which can
+   * return a co-existing site worker whose push subscription we'd then
+   * destroy. Returns null when PushPanel's SW isn't registered. */
+  async function getOwnRegistration(): Promise<ServiceWorkerRegistration | null> {
+    try {
+      return (await navigator.serviceWorker.getRegistration(swPath)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async function unsubscribe(): Promise<PushPanelState> {
     if (current === "unsupported") return "unsupported";
     try {
-      const registration = await navigator.serviceWorker.ready;
-      const sub = await registration.pushManager.getSubscription();
+      const registration = await getOwnRegistration();
+      const sub = await registration?.pushManager.getSubscription();
       if (!sub) {
         current = "idle";
         return current;
@@ -615,8 +720,8 @@ export function init(options: PushPanelOptions): PushPanelApi {
   async function setTags(tags: Record<string, string | number | boolean>): Promise<boolean> {
     if (current === "unsupported") return false;
     try {
-      const registration = await navigator.serviceWorker.ready;
-      const sub = await registration.pushManager.getSubscription();
+      const registration = await getOwnRegistration();
+      const sub = await registration?.pushManager.getSubscription();
       if (!sub) return false;
       // Stringify values (OneSignal-style flat tags), cap count/lengths server-side.
       const clean: Record<string, string> = {};
@@ -635,7 +740,14 @@ export function init(options: PushPanelOptions): PushPanelApi {
     }
   }
 
+  // Recovery path runs regardless of prompt gating: a returning visitor with
+  // permission=granted must still flush a subscription queued while the panel
+  // was down (mountUi early-returns for them).
+  void flushPendingSubscription();
   queueMicrotask(mountUi);
+
+  idbSet("subscription", { domainId: options.domain, publicKey: options.publicKey, baseUrl });
+
 
   const api: PushPanelApi = {
     state: () => current,
@@ -645,5 +757,6 @@ export function init(options: PushPanelOptions): PushPanelApi {
     setTags,
   };
   w.__pushpanel_instances__!.set(options.domain, api);
+  schedulePeriodicSync(api, options);
   return api;
 }

@@ -52,6 +52,16 @@ export function rateLimitWithHeaders(key: string, limit: number, windowMs: numbe
   const now = Date.now();
   if (buckets.size === 0 || buckets.size % CLEANUP_EVERY === 0) cleanup(now);
   if (buckets.size >= MAX_BUCKETS) cleanup(now);
+  // Hard bound: cleanup is age-based and can still lose the race under key
+  // rotation (spoofed XFF with TRUST_PROXY=1 misconfig). Evict the
+  // oldest-inserted bucket — Map preserves insertion order — so memory stays
+  // capped no matter what. A wrongly-evicted hot key merely restarts its
+  // window; correctness of the limiter never depends on this path.
+  while (buckets.size >= MAX_BUCKETS && !buckets.has(key)) {
+    const oldest = buckets.keys().next().value;
+    if (oldest === undefined) break;
+    buckets.delete(oldest);
+  }
 
   const bucket = buckets.get(key) ?? { hits: [] };
   // Sliding window: keep only hits inside window

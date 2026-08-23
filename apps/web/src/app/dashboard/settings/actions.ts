@@ -106,7 +106,7 @@ export async function updateSettingsAction(
       .run();
   }
 
-  if (workspaceId) logAudit(db, { workspaceId, action: "settings.update" });
+  if (workspaceId) if (workspaceId) logAudit(db, { workspaceId, action: "settings.update" });
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }
@@ -336,8 +336,10 @@ const outboundSchema = z.object({
  * subscribed / unsubscribed / clicked / campaign_done events.
  */
 export async function updateOutboundAction(_prev: SettingsFormState, formData: FormData): Promise<NonNullable<SettingsFormState>> {
+  let workspaceId: number | null = null;
   try {
-    await requireOwner();
+    const ownerSession = await requireOwner();
+    workspaceId = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : null;
   } catch {
     return { error: "Not signed in or not an owner" };
   }
@@ -360,8 +362,13 @@ export async function updateOutboundAction(_prev: SettingsFormState, formData: F
     db.insert(settings).values({ key: "outbound_webhook_url", value: d.outbound_webhook_url }).onConflictDoUpdate({ target: settings.key, set: { value: d.outbound_webhook_url } }).run();
   } else {
     db.delete(settings).where(eq(settings.key, "outbound_webhook_url")).run();
+    // No URL → no use for the signing secret; don't leave it in the vault.
+    db.delete(settings).where(eq(settings.key, "secret:outbound_webhook_secret")).run();
   }
   if (d.outbound_webhook_secret) setSecret("outbound_webhook_secret", d.outbound_webhook_secret);
+  if (workspaceId) {
+    logAudit(db, { workspaceId, action: "settings.update", entityType: "settings", meta: { outbound_webhook_url: d.outbound_webhook_url ? "set" : "cleared", secret_rotated: Boolean(d.outbound_webhook_secret) } });
+  }
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }

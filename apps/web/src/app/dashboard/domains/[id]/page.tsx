@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deliveries, domains, events, subscribers } from "@pushpanel/db/schema";
 import { TestPushForm } from "../test-push-form";
@@ -64,6 +64,21 @@ export default async function DomainDetailPage({ params }: Props) {
     .where(and(eq(events.domain_id, domainId), eq(events.type, "clicked")))
     .all();
 
+  // Opt-in funnel (30d): prompt_shown → allowed / denied / dismissed.
+  const funnelRows = await db
+    .select({ type: events.type, value: count() })
+    .from(events)
+    .where(
+      and(
+        eq(events.domain_id, domainId),
+        sql`${events.type} IN ('prompt_shown','prompt_allowed','prompt_denied','prompt_dismissed')`,
+        sql`${events.ts} >= ${new Date(Date.now() - 30 * 86_400_000).toISOString()}`,
+      ),
+    )
+    .groupBy(events.type)
+    .all();
+  const funnel = Object.fromEntries(funnelRows.map((r) => [r.type, r.value])) as Record<string, number>;
+
   let config: { publicKey?: string; subject?: string } = {};
   try {
     config = domain.provider_config_json ? JSON.parse(domain.provider_config_json) : {};
@@ -124,9 +139,41 @@ export default async function DomainDetailPage({ params }: Props) {
           <StatCard label="Clicks" value={(clicksRow?.value ?? 0).toLocaleString()} tone="amber" />
         </div>
         <div className="rise rise-2">
-          <StatCard label="Recent deliveries" value={recentDeliveries.length} tone="emerald" />
+          <StatCard
+            label="Recent deliveries"
+            value={recentDeliveries.length}
+            tone="emerald"
+            hint={funnelRows.length > 0 ? undefined : "No opt-in data yet"}
+          />
         </div>
       </div>
+
+      {funnelRows.length > 0 && (
+        <div className="surface rise rise-1 mt-4 rounded-xl p-5">
+          <p className="kicker text-muted-foreground">Opt-in funnel · 30 days</p>
+          <div className="mt-3 flex flex-wrap gap-x-8 gap-y-3 text-sm">
+            {[
+              ["Prompt shown", funnel.prompt_shown ?? 0, "text-foreground"],
+              ["Allowed", funnel.prompt_allowed ?? 0, "text-emerald-600 dark:text-emerald-400"],
+              ["Denied", funnel.prompt_denied ?? 0, "text-destructive"],
+              ["Dismissed", funnel.prompt_dismissed ?? 0, "text-muted-foreground"],
+            ].map(([label, value, cls]) => (
+              <div key={label as string} className="leading-tight">
+                <p className={`tabular text-xl font-semibold ${cls}`}>{(value as number).toLocaleString()}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+              </div>
+            ))}
+            {(funnel.prompt_shown ?? 0) > 0 && (
+              <div className="leading-tight">
+                <p className="tabular text-xl font-semibold text-primary">
+                  {Math.round(((funnel.prompt_allowed ?? 0) / (funnel.prompt_shown ?? 1)) * 100)}%
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Grant rate</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">

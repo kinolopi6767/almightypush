@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { safeEqual } from "./crypto.js";
 
 /**
  * TOTP (RFC 6238) for two-factor auth — HMAC-SHA1, 30s period, 6 digits,
@@ -64,7 +65,7 @@ export function verifyTotp(secretB32: string, code: string, atMs: number = Date.
   if (!code || !/^\d{6}$/.test(code)) return false;
   const counter = Math.floor(atMs / 1000 / STEP_SECONDS);
   for (let i = -WINDOW; i <= WINDOW; i++) {
-    if (hotp(base32Decode(secretB32), counter + i) === code) return true;
+    if (safeEqual(hotp(base32Decode(secretB32), counter + i), code)) return true;
   }
   return false;
 }

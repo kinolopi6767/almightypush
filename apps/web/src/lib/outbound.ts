@@ -13,7 +13,9 @@ export function getOutboundConfig(): OutboundWebhookConfig | null {
     try {
       secret = createCipher(process.env.APP_ENC_KEY).decrypt(enc);
     } catch {
-      secret = null;
+      // Fail CLOSED: a receiver verifying HMAC would silently drop unsigned
+      // events. A broken vault key must disable emission, not downgrade it.
+      return null;
     }
   }
   return { url, secret };

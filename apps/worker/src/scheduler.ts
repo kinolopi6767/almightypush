@@ -69,7 +69,7 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
         // Mark failed so it never re-matches the due-campaigns query.
         db.update(campaigns)
           .set({ status: "failed" })
-          .where(and(eq(campaigns.id, row.id), eq(campaigns.status, "scheduled")))
+          .where(and(eq(campaigns.id, row.id), eq(campaigns.status, "sending")))
           .run();
       } catch {
         void 0;
@@ -80,10 +80,20 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
 }
 
 function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { queued: number; skipped: number } {
+  // Atomic claim: only the worker that flips scheduled→sending may enqueue.
+  // Two workers sharing the SQLite file would otherwise both resolve the
+  // audience and insert duplicate deliveries for every subscriber.
+  const claimed = db
+    .update(campaigns)
+    .set({ status: "sending" })
+    .where(and(eq(campaigns.id, campaign.id), eq(campaigns.status, "scheduled")))
+    .run();
+  if (claimed.changes === 0) return { queued: 0, skipped: 1 };
+
   if (!campaign.domain_id) {
     db.update(campaigns)
       .set({ status: "failed" })
-      .where(eq(campaigns.id, campaign.id))
+      .where(and(eq(campaigns.id, campaign.id), eq(campaigns.status, "sending")))
       .run();
     return { queued: 0, skipped: 1 };
   }
@@ -118,17 +128,7 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
           })
           .run();
       }
-      if (i === 0) {
-        tx.update(campaigns)
-          .set({ status: "sending" })
-          .where(eq(campaigns.id, campaign.id))
-          .run();
-      }
     });
-  }
-  // Edge: ensure campaign marked sending even if chunked (first chunk already did)
-  if (audience.length > 0) {
-    db.update(campaigns).set({ status: "sending" }).where(eq(campaigns.id, campaign.id)).run();
   }
 
   return { queued: audience.length, skipped: 0 };

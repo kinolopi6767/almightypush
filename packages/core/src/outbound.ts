@@ -25,7 +25,7 @@ export function emitWebhookEvent(
     const timestamp = Date.now();
     const headers: Record<string, string> = {
       "content-type": "application/json",
-      "x-pushpanel-event": event.slice(0, 64),
+      "x-pushpanel-event": event.replace(/[\r\n]/g, "").slice(0, 64),
       "x-pushpanel-timestamp": String(timestamp),
       "user-agent": "PushPanel-Webhooks/1.0",
     };

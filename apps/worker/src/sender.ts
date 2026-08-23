@@ -112,6 +112,8 @@ export async function runSendCycle(
 
   const concurrency = resolveConcurrency(db);
   const utmEnabled = readSetting(db, "utm_enabled") === "1";
+  // Read once per cycle — was a settings SELECT per delivery.
+  const fatigueCap = Math.max(0, Math.floor(Number(readSetting(db, "frequency_cap_daily") ?? 0) || 0));
   const campaignIds = new Set(rows.map((r) => r.campaign_id));
 
   // Batch-fetch campaign + domain configs once per cycle (hot loop optimization).
@@ -148,7 +150,7 @@ export async function runSendCycle(
     for (const d of dRows) domainCache.set(d.id, d.provider_config_json ?? null);
   }
 
-  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled, campaignCache, domainCache));
+  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled, campaignCache, domainCache, fatigueCap));
   for (const outcome of outcomes) {
     if (outcome.result === "sent") stats.sent++;
     else if (outcome.result === "gone") stats.gone++;
@@ -242,6 +244,7 @@ async function deliverOne(
   utmEnabled = false,
   campaignCache?: Map<number, CampaignCache>,
   domainCache?: Map<number, string | null>,
+  fatigueCapCycle = 0,
 ): Promise<Outcome> {
   // Stale-claim guard: a crashed worker's rows are requeued after
   // STALE_CLAIM_MS; if a slow cycle finds its claim superseded, it must not
@@ -277,11 +280,12 @@ async function deliverOne(
     config = providerJson ? (JSON.parse(providerJson) as VapidConfig) : ({} as VapidConfig);
     if (!config.publicKey || !config.privateKeyEnc) throw new Error("no vapid config");
   } catch (error) {
-    db.update(deliveries)
+    const cfgWrite = db
+      .update(deliveries)
       .set({ status: "failed", error: `vapid config: ${(error as Error).message}`, sent_at: now })
       .where(and(eq(deliveries.id, row.id), owned))
       .run();
-    bumpCampaignStat(db, row.campaign_id, "failed");
+    if (cfgWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
 
@@ -300,7 +304,7 @@ async function deliverOne(
   }
 
   // LumaPush Fatigue Shield: suppress if daily cap reached (0 = disabled) — uses new idx_events_subscriber_type for speed
-  const fatigueCap = Number(readSetting(db, "frequency_cap_daily") ?? 0);
+  const fatigueCap = fatigueCapCycle;
   if (fatigueCap > 0 && row.subscriber_id) {
     const today = new Date().toISOString().slice(0, 10);
     // Optimized: count via indexed subscriber_id + type + date range (avoids full scan at 1M events)
@@ -312,8 +316,12 @@ async function deliverOne(
       .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`${events.ts} BETWEEN ${todayStart} AND ${todayEnd}`))
       .all();
     if ((todayCount?.value ?? 0) >= fatigueCap) {
-      db.update(deliveries).set({ status: "failed", error: `fatigue shield: cap ${fatigueCap}/day`, sent_at: now }).where(and(eq(deliveries.id, row.id), owned)).run();
-      bumpCampaignStat(db, row.campaign_id, "failed");
+      const fatWrite = db
+        .update(deliveries)
+        .set({ status: "failed", error: `fatigue shield: cap ${fatigueCap}/day`, sent_at: now })
+        .where(and(eq(deliveries.id, row.id), owned))
+        .run();
+      if (fatWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
       return "failed";
     }
   }
@@ -412,6 +420,8 @@ async function deliverOne(
       campaignId: row.campaign_id,
       subscriberId: row.subscriber_id ?? undefined,
       panelOrigin,
+      // lets the SW ignore notification_closed fired by tag-replacement
+      issuedAt: now,
     };
 
     const vapid = {
@@ -427,11 +437,12 @@ async function deliverOne(
 
     result = await provider.send(subscription, message, { vapid, ttl, urgency, topic });
   } catch (error) {
-    db.update(deliveries)
+    const failWrite = db
+      .update(deliveries)
       .set({ status: "failed", error: `send: ${(error as Error).message}`, sent_at: now })
       .where(and(eq(deliveries.id, row.id), owned))
       .run();
-    bumpCampaignStat(db, row.campaign_id, "failed");
+    if (failWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
 
@@ -463,7 +474,9 @@ async function deliverOne(
     return "sent";
   }
 
-  if (result.statusCode === 404 || result.statusCode === 410) {
+  const isGoogleEndpoint = /(^|\.)googleapis\.com$/i.test(new URL(subscription.endpoint).hostname);
+  const isGone = result.statusCode === 410 || (result.statusCode === 404 && isGoogleEndpoint);
+  if (isGone) {
     const reason = result.statusCode === 410 ? "http410" : "http404";
     const goneWrite = db
       .update(deliveries)
@@ -563,7 +576,9 @@ function finalizeCampaigns(db: PushDb, campaignIds: number[]) {
     const status = anySent ? "done" : "failed";
     db.update(campaigns)
       .set({ status, sent_at: new Date().toISOString() })
-      .where(eq(campaigns.id, id))
+      // Never clobber an operator's `cancelled` (or a fresh `scheduled`)
+      // written while this cycle was in flight.
+      .where(and(eq(campaigns.id, id), inArray(campaigns.status, ["scheduled", "sending"])))
       .run();
     if (webhookConfig) {
       emitWebhookEvent(webhookConfig, "campaign_done", { campaign_id: id, status });

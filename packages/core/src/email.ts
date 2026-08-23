@@ -23,6 +23,10 @@ export type EmailCampaignInput = z.infer<typeof emailCampaignSchema>;
 export function renderBlocksToHtml(blocks: EmailBlock[]): string {
   const parts: string[] = ['<div style="font-family:system-ui;max-width:600px;margin:0 auto">'];
   for (const b of blocks) {
+    // Scheme allowlist: zod's .url() accepts javascript:/data: — those must
+    // never reach href/src, even in owner-authored content (stored-XSS
+    // latency when a real send path or preview lands).
+    if (!isSafeEmailUrl(b.url)) continue;
     if (b.type === "hero" && b.url) parts.push(`<img src="${escapeHtml(b.url)}" style="width:100%;border-radius:8px" />`);
     else if (b.type === "text") parts.push(`<p>${escapeHtml(b.content ?? "")}</p>`);
     else if (b.type === "button" && b.content && b.url) parts.push(`<a href="${escapeHtml(b.url)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">${escapeHtml(b.content)}</a>`);
@@ -31,6 +35,16 @@ export function renderBlocksToHtml(blocks: EmailBlock[]): string {
   }
   parts.push("</div>");
   return parts.join("\n");
+}
+
+function isSafeEmailUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" || u.protocol === "mailto:";
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(s: string): string {

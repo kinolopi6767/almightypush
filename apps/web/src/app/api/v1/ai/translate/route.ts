@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   text: z.string().min(1).max(5000),
-  lang: z.string().min(2).max(10),
+  lang: z.string().regex(/^[A-Za-z-]{2,10}$/, "Invalid language"),
 });
 
 export async function POST(req: Request) {

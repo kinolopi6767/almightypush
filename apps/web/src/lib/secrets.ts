@@ -52,22 +52,22 @@ export function getSecretWithEnvFallback(panelKey: string, envName: string): str
 export function getAiConfig(): { apiKey: string | null; model: string; baseUrl: string } {
   return {
     apiKey: getSecretWithEnvFallback("ai_api_key", "AI_API_KEY"),
-    model: getSecret("ai_model") ?? process.env.AI_MODEL ?? "gpt-4o-mini",
-    baseUrl: getSecret("ai_base_url") ?? process.env.AI_BASE_URL ?? "https://api.openai.com/v1",
+    model: getSecretWithEnvFallback("ai_model", "AI_MODEL") ?? "gpt-4o-mini",
+    baseUrl: getSecretWithEnvFallback("ai_base_url", "AI_BASE_URL") ?? "https://api.openai.com/v1",
   };
 }
 
 export function getMailConfig(): { provider: string; apiKey: string | null; from: string | null } {
   return {
-    provider: getSecret("mail_provider") ?? process.env.MAIL_PROVIDER ?? "resend",
+    provider: getSecretWithEnvFallback("mail_provider", "MAIL_PROVIDER") ?? "resend",
     apiKey: getSecretWithEnvFallback("mail_api_key", "MAIL_API_KEY") ?? getSecretWithEnvFallback("resend_api_key", "RESEND_API_KEY"),
-    from: getSecret("mail_from") ?? process.env.MAIL_FROM ?? null,
+    from: getSecretWithEnvFallback("mail_from", "MAIL_FROM"),
   };
 }
 
 export function getGDriveConfig(): { enabled: boolean; folderId: string | null; serviceJson: string | null } {
   const enabled = (db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_enabled")).get()?.value ?? "0") === "1";
   const folderId = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_folder_id")).get()?.value ?? null;
-  const serviceJson = getSecret("gdrive_service_json") ?? process.env.GDRIVE_SERVICE_JSON ?? null;
+  const serviceJson = getSecretWithEnvFallback("gdrive_service_json", "GDRIVE_SERVICE_JSON");
   return { enabled, folderId, serviceJson };
 }

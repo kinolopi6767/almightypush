@@ -32,6 +32,6 @@ export function getSecretWithEnvFallback(db: PushDb, panelKey: string, envName: 
 export function getGDriveConfig(db: PushDb): { enabled: boolean; folderId: string | null; serviceJson: string | null } {
   const enabled = (db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_enabled")).get()?.value ?? "0") === "1";
   const folderId = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_folder_id")).get()?.value ?? null;
-  const serviceJson = getSecret(db, "gdrive_service_json") ?? process.env.GDRIVE_SERVICE_JSON ?? null;
+  const serviceJson = getSecretWithEnvFallback(db, "gdrive_service_json", "GDRIVE_SERVICE_JSON");
   return { enabled, folderId, serviceJson };
 }

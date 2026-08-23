@@ -77,5 +77,14 @@ export function naiveLocalToUtcMs(naive: string, timeZone?: string): number {
   let utc = wallAsUtc - offsetAt(wallAsUtc);
   const secondPass = wallAsUtc - offsetAt(utc);
   if (secondPass !== utc) utc = secondPass;
+
+  // DST spring-forward gap guard: inside the gap the fixed-point iteration
+  // oscillates and never converges. Verify the result round-trips to the
+  // requested wall clock; if not, snap forward to the post-transition
+  // instant (conventional gap resolution — 02:30 becomes 03:30 local).
+  const verify = offsetAt(utc);
+  if (utc + verify !== wallAsUtc) {
+    utc = wallAsUtc - Math.min(verify, offsetAt(wallAsUtc));
+  }
   return utc;
 }

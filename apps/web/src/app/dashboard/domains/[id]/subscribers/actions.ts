@@ -197,7 +197,12 @@ export async function importSubscribersAction(
       const idx = (name: string) => cols.indexOf(name);
       const cell = (row: string[], name: string) => {
         const i = idx(name);
-        return i < 0 ? undefined : (row[i] ?? "").trim();
+        if (i < 0) return undefined;
+        const raw = (row[i] ?? "").trim();
+        // Symmetric with csvCell's formula-injection guard: exported cells
+        // that started with [=+-@] gained a leading apostrophe — strip
+        // exactly one so export→import round-trips byte-identically.
+        return raw.startsWith("'") ? raw.slice(1) : raw;
       };
       for (const line of body) {
         if (line.every((c) => c === "")) continue;

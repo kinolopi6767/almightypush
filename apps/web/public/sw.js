@@ -32,19 +32,27 @@ self.addEventListener("push", (event) => {
     : [];
   const panelOrigin = typeof data.panelOrigin === "string" && data.panelOrigin ? data.panelOrigin : null;
 
+  const options = {
+    body,
+    icon,
+    image,
+    data: { url, deliveryId, panelOrigin, buttons, issuedAt: typeof data.issuedAt === "number" ? data.issuedAt : null },
+    actions: buttons.map((b, i) => ({ action: String(i), title: b.label })),
+    // Display-level collapse: same topic (else same campaign) replaces an
+    // existing still-visible notification instead of stacking.
+    tag: topic ?? (campaignId != null ? `c-${campaignId}` : undefined),
+    requireInteraction,
+    badge: icon,
+  };
+
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon,
-      image,
-      data: { url, deliveryId, panelOrigin, buttons },
-      actions: buttons.map((b, i) => ({ action: String(i), title: b.label })),
-      // Display-level collapse: same topic (else same campaign) replaces an
-      // existing still-visible notification instead of stacking.
-      tag: topic ?? (campaignId != null ? `c-${campaignId}` : undefined),
-      requireInteraction,
-      badge: icon,
-    }),
+    self.registration
+      .showNotification(title, options)
+      .catch(() =>
+        // A malformed icon/image URL must not consume the push silently —
+        // retry with a bare notification so the user still sees it.
+        self.registration.showNotification(title, { body, tag: options.tag, data: options.data }),
+      ),
   );
 });
 
@@ -99,6 +107,11 @@ self.addEventListener("notificationclick", (event) => {
 self.addEventListener("notificationclose", (event) => {
   const data = event.notification?.data || {};
   if (!data.deliveryId || !data.panelOrigin) return;
+  // Tag-collapse replacement fires notificationclose for the OLD notification
+  // the instant the new one displays — that's not a user dismissal. Ignore
+  // closes within a few seconds of issue. Legacy payloads without issuedAt
+  // keep current behavior.
+  if (typeof data.issuedAt === "number" && Date.now() - data.issuedAt < 5_000) return;
   try {
     const base = new URL(data.panelOrigin).origin;
     const beaconUrl = new URL(`api/v1/click/${data.deliveryId}?close=1`, base).toString();
@@ -106,4 +119,84 @@ self.addEventListener("notificationclose", (event) => {
   } catch {
     void 0;
   }
+});
+
+/* ── Subscription reconciliation ────────────────────────────────────────────
+ * Push services rotate endpoints; browsers may drop registrations. The SDK
+ * stores {domainId, publicKey, baseUrl} in IndexedDB (shared origin storage
+ * readable from the SW — localStorage is NOT). On pushsubscriptionchange we
+ * re-subscribe with the stored VAPID key and migrate the server row in place.
+ * Chromium/Safari fire this event unreliably, so the page also syncs on load;
+ * this handler covers the background cases. */
+
+const IDB_NAME = "pushpanel";
+const IDB_STORE = "config";
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key) {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function base64UrlToBytes(s) {
+  const padding = "=".repeat((4 - (s.length % 4)) % 4);
+  const b64 = (s + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      const cfg = await idbGet("subscription");
+      if (!cfg || !cfg.domainId || !cfg.publicKey || !cfg.baseUrl) return;
+      let newSub;
+      try {
+        newSub =
+          event.newSubscription ??
+          (await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: base64UrlToBytes(cfg.publicKey),
+          }));
+      } catch {
+        // Permission revoked or storage gone — nothing to migrate.
+        return;
+      }
+      const oldEndpoint = event.oldSubscription ? event.oldSubscription.endpoint : undefined;
+      try {
+        await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/api/v1/resubscribe`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            domainId: cfg.domainId,
+            oldEndpoint,
+            subscription: { endpoint: newSub.endpoint, keys: newSub.toJSON().keys },
+          }),
+        });
+      } catch {
+        // Offline — the page-load sync will reconcile on next visit.
+      }
+    })(),
+  );
 });

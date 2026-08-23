@@ -1,8 +1,12 @@
 /** B2: regex-based og: + <title> extraction (no DOM needed for the meta block). */
 export function extractOpenGraph(html: string): { title?: string; description?: string; image?: string } {
+  // OG tags live in <head>; scanning a bounded prefix + capping per-tag length
+  // keeps the attribute regexes linear even on hostile multi-MB bodies
+  // (thousands of unclosed `x="` prefixes would otherwise stall the loop).
+  const head = html.slice(0, 131_072);
   const getMetaContent = (name: string): string | undefined => {
     // Find all meta tags, then check attributes irrespective of order.
-    const metaTags = html.matchAll(/<meta\b[^>]*>/gi);
+    const metaTags = head.matchAll(/<meta\b[^>]{0,2000}>/gi);
     const target = name.toLowerCase();
     for (const m of metaTags) {
       const tag = m[0];

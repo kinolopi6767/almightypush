@@ -31,6 +31,9 @@ export interface PushMessage {
   subscriberId?: number;
   /** Panel origin for the click beacon (e.g. https://push.example.com) */
   panelOrigin?: string;
+  /** Issue time (epoch ms) — the SW suppresses notification_closed beacons
+   * fired by tag-replacement of a just-issued notification. */
+  issuedAt?: number;
 }
 
 export interface VapidDetails {

@@ -15,8 +15,8 @@ const bodySchema = z.object({
   endpoint: z.string().url().max(2048),
   /** Flat string tags (OneSignal-style) — values already truncated by the SDK. */
   tags: z.record(z.string().max(64), z.union([z.string().max(200), z.number(), z.boolean()])).refine(
-    (t) => Object.keys(t).length <= MAX_TAGS,
-    `Max ${MAX_TAGS} tags`,
+    (t) => Object.keys(t).length >= 1 && Object.keys(t).length <= MAX_TAGS,
+    `Provide 1–${MAX_TAGS} tags`,
   ),
 });
 
@@ -31,18 +31,26 @@ export async function POST(req: Request) {
   if (!rl.allowed) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
   }
-
-  let parsed;
+  // Body is needed for the domain id before the resource-level bucket — read it once here.
+  let bodyJson: unknown;
   try {
-    parsed = bodySchema.safeParse(await req.json());
+    bodyJson = await req.json();
   } catch {
     return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
+
+  const parsed = bodySchema.safeParse(bodyJson);
   if (!parsed.success) {
     return corsJson({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
 
   const { domainId, endpoint, tags } = parsed.data;
+
+  // Resource-level window so one noisy site cannot starve the shared IP bucket.
+  const rlDom = rateLimitWithHeaders(`tags:dom:${domainId}`, 60, 60_000);
+  if (!rlDom.allowed) {
+    return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 60) });
+  }
 
   // Resolve this browser's active subscriber row for the domain.
   const [domain] = db.select({ id: domains.id }).from(domains).where(and(eq(domains.id, domainId), eq(domains.status, "active"))).limit(1).all();
