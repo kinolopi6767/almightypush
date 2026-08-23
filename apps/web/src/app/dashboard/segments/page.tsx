@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { SegmentForm } from "./segment-form";
 import { deleteSegmentAction } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Segments" };
 
@@ -38,11 +39,7 @@ export default async function SegmentsPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Segments</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Reusable audience rules built on subscriber attributes. Pick a segment as a campaign audience and it stays
-        up to date.
-      </p>
+      <PageHeader title="Segments" description="Reusable audience rules built on subscriber attributes. Pick a segment as a campaign audience and it stays up to date." />
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
         <div className="space-y-3">

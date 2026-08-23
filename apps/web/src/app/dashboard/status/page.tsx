@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { collectMetrics } from "@/lib/metrics";
 
@@ -52,16 +53,21 @@ export default async function StatusPage() {
   if (!metrics) {
     return (
       <>
-        <h1 className="text-2xl font-semibold tracking-tight">Server status</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Metrics unavailable — check <code className="rounded bg-muted px-1 font-mono text-xs">/api/health</code> and try again in a few seconds.</p>
+        <PageHeader
+          title="Server status"
+          description={
+            <>
+              Metrics unavailable — check <code className="rounded bg-muted px-1 font-mono text-xs">/api/health</code> and try again in a few seconds.
+            </>
+          }
+        />
       </>
     );
   }
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Server status</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Live process, queue and database health.</p>
+      <PageHeader title="Server status" description="Live process, queue and database health." />
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Uptime" value={fmtUptime(metrics.uptimeSec)} sub={metrics.node} />

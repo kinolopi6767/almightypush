@@ -6,6 +6,7 @@ import { eq, desc } from "drizzle-orm";
 import { TemplateForm } from "./template-form";
 import { deleteTemplateAction } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Templates" };
 
@@ -29,10 +30,7 @@ export default async function TemplatesPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Saved push payloads. Pick a template in the campaign editor to pre-fill title, message and links.
-      </p>
+      <PageHeader title="Templates" description="Saved push payloads. Pick a template in the campaign editor to pre-fill title, message and links." />
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
         <div className="space-y-3">
