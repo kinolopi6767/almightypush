@@ -171,23 +171,34 @@ export default async function AnalyticsPage({
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {breakdowns.map((b) => (
-          <div key={b.key} className="rounded-xl border bg-card p-4">
-            <h2 className="text-sm font-medium">By {b.label.toLowerCase()}</h2>
-            {b.rows.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">Nothing here.</p>
-            ) : (
-              <ul className="mt-2 space-y-1.5">
-                {b.rows.map((r) => (
-                  <li key={r.value} className="flex items-center justify-between text-sm">
-                    <span className="truncate text-muted-foreground">{r.value}</span>
-                    <span className="ml-3 font-medium">{r.count}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ))}
+        {breakdowns.map((b) => {
+          const max = Math.max(1, ...b.rows.map((r) => r.count));
+          return (
+            <div key={b.key} className="rounded-2xl border bg-card p-5 shadow-sm">
+              <h2 className="text-[13px] font-semibold tracking-tight">By {b.label.toLowerCase()}</h2>
+              {b.rows.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">No data yet.</p>
+              ) : (
+                <ul className="mt-4 space-y-3">
+                  {b.rows.map((r) => (
+                    <li key={r.value} className="group">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate font-medium">{r.value}</span>
+                        <span className="tabular shrink-0 text-xs font-medium text-muted-foreground">{r.count.toLocaleString()}</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all group-hover:bg-primary-hover"
+                          style={{ width: `${Math.round((r.count / max) * 100)}%` }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="mt-6 rounded-xl border bg-card p-4">
