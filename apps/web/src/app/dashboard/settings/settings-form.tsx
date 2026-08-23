@@ -196,7 +196,7 @@ export function SettingsForm({
             defaultValue={frequencyCapDaily}
             className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
           />
-          <p className="text-xs text-muted-foreground">0 = off. LumaPush Business 3/day. Over cap = suppressed (failed, not sent).</p>
+          <p className="text-xs text-muted-foreground">0 = off. Enforced as a calendar-day cap AND a rolling 24h window (whichever bites). Over cap = suppressed, not sent.</p>
         </div>
         <div className="space-y-1">
           <span className="text-sm font-medium">Suppression & Spam Protection</span>

@@ -63,8 +63,15 @@ test("enable 2FA, code-gated sign-in, and disable restores password login", asyn
   await page.getByRole("button", { name: "Verify code" }).click();
   await page.waitForURL(/\/dashboard/);
 
-  // --- disable 2FA ---
+  // --- disable 2FA (now requires current password — hardening) ---
   await page.goto("/dashboard/profile");
+  // wrong password must be rejected
+  const tfaPassword = page.locator("#tfa-disable-password");
+  await tfaPassword.fill("wrong-password-123");
+  await page.getByRole("button", { name: "Disable 2FA" }).click();
+  await expect(page.getByText("Enter your current password to disable 2FA")).toBeVisible();
+  // correct password disables
+  await tfaPassword.fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: "Disable 2FA" }).click();
   await expect(page.getByText("Add a time-based one-time password")).toBeVisible();
   await expect.poll(() => totpEnabled(), { timeout: 10_000 }).toBe(0);

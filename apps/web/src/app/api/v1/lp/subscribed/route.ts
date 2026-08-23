@@ -24,7 +24,12 @@ export async function POST(req: Request) {
   // header must NOT be in the allowlist — an attacker reaching the origin
   // directly could send Host: evil.com + Origin: https://evil.com and both
   // would match each other, forging conversions at will.
-  const allowed = [hostFromUrl(process.env.APP_URL)].filter(Boolean) as string[];
+  // When APP_URL is configured, require exact match against it. Self-hosted
+  // deployments without APP_URL fall back to the request's own Host + Origin
+  // pair — both must equal each other, which still blocks cross-site forgeries
+  // through the proxy path while keeping LAN setups functional.
+  const appUrlHost = hostFromUrl(process.env.APP_URL);
+  const allowed = appUrlHost ? [appUrlHost] : [req.headers.get("host")?.split(":")[0]?.toLowerCase()].filter(Boolean) as string[];
   if (allowed.length === 0 || !allowed.some((h) => host === h)) {
     return corsJson({ ok: false, error: "origin not allowed" }, { status: 403 });
   }

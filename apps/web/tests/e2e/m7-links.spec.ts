@@ -166,6 +166,8 @@ test("deleting a link with a fallback keeps the code redirecting", async ({ page
   const code = await createLinkViaUi(page, { target, deleted_target_url: fallback });
 
   await page.goto("/dashboard/links");
+  // Delete uses window.confirm — accept it (Playwright default-dismisses).
+  page.once("dialog", (d) => d.accept());
   await page.locator("div.rounded-xl.border.bg-card", { hasText: target }).getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText(target)).toHaveCount(0);
 

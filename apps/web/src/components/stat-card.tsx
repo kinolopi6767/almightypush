@@ -55,11 +55,14 @@ export function StatCard({
   const base = "surface group block rounded-2xl p-6 transition-all";
   const hover = href ? " surface-hover hover:border-border-strong" : "";
   const cls = `${base}${hover} ${className}`;
+  const testId = `stat-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   return href ? (
-    <Link href={href} className={cls}>
+    <Link href={href} className={cls} data-testid={testId}>
       {body}
     </Link>
   ) : (
-    <div className={cls}>{body}</div>
+    <div className={cls} data-testid={testId}>
+      {body}
+    </div>
   );
 }

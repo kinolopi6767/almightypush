@@ -87,7 +87,7 @@ test("subscribers: export CSV and import from file", async ({ page, request }) =
     mimeType: "text/csv",
     buffer: Buffer.from(csv),
   });
-  await page.getByRole("button", { name: "Import" }).click();
+  await page.getByRole("button", { name: "Import", exact: true }).click();
   await expect(page.getByText("Imported 0, skipped 1, invalid 0.")).toBeVisible();
   await expect(page.getByText("1 active · 0 unsubscribed · 1 total")).toBeVisible();
 
@@ -103,7 +103,7 @@ test("subscribers: export CSV and import from file", async ({ page, request }) =
     mimeType: "text/csv",
     buffer: Buffer.from(csvImport),
   });
-  await page.getByRole("button", { name: "Import" }).click();
+  await page.getByRole("button", { name: "Import", exact: true }).click();
   await expect(page.getByText("Imported 1, skipped 1, invalid 0.")).toBeVisible();
   await expect(page.getByText("2 active · 0 unsubscribed · 2 total")).toBeVisible();
   await expect(page.getByText("safari · ios · iphone")).toBeVisible();
@@ -118,7 +118,8 @@ test("settings: timezone + retention save and persist", async ({ page }) => {
   await page.getByLabel("Timezone").fill("Asia/Kolkata");
   await page.getByLabel("Unsubscribed retention (days)").fill("45");
   await page.getByRole("button", { name: "Save settings" }).click();
-  await expect(page.getByText("Saved.")).toBeVisible();
+  // First save can compile/flush under load — give it headroom.
+  await expect(page.getByText("Saved.")).toBeVisible({ timeout: 20_000 });
 
   await page.reload();
   await expect(page.getByLabel("Timezone")).toHaveValue("Asia/Kolkata");
@@ -173,11 +174,12 @@ test("profile: update name and password, re-login works", async ({ page }) => {
   await page.getByLabel("Current password").fill(ORIGINAL_PASSWORD);
   await page.getByLabel("New password").fill(NEW_PASSWORD);
   await page.getByRole("button", { name: "Save profile" }).click();
-  await expect(page.getByText("Profile updated.")).toBeVisible();
 
-  // sign out via the UI, log in with the new password
-  await page.getByRole("button", { name: "Sign out" }).click();
+  // Password change invalidates existing sessions by design (credential-
+  // version claim) — the panel force-signs-out to /login immediately.
   await page.waitForURL("**/login");
+  // The success banner lives on the profile page which we just left — the
+  // forced sign-out itself is the assertion.
   await page.getByLabel("Email").fill("e2e-owner@test.io");
   await page.getByLabel("Password").fill(NEW_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -188,7 +190,7 @@ test("profile: update name and password, re-login works", async ({ page }) => {
   await page.getByLabel("Current password").fill(NEW_PASSWORD);
   await page.getByLabel("New password").fill(ORIGINAL_PASSWORD);
   await page.getByRole("button", { name: "Save profile" }).click();
-  await expect(page.getByText("Profile updated.")).toBeVisible();
+  await page.waitForURL("**/login");
 });
 
 test("subscribers: clean requires confirmation (cancel keeps rows)", async ({ page, request }) => {

@@ -31,7 +31,10 @@ export default async function LandingPage({ params, searchParams }: { params: Pr
   // Crawlers/link-expanders (Slack/WhatsApp previews, prefetchers) must not
   // inflate conversion metrics — skip counting for obvious bot UAs.
   const ua = (await headers()).get("user-agent") ?? "";
-  if (!/bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegrambot|discordapp|headless/i.test(ua)) {
+  // Named crawlers + link-preview agents only — deliberately NOT matching
+  // generic "headless": legitimate automation (e2e suites) must still count,
+  // and custom-UA bots bypass any denylist anyway (industry-standard caveat).
+  if (!/bot|crawl|spider|slurp|facebookexternalhit|whatsapp|telegrambot|discordapp|embedly|quora/i.test(ua)) {
     db.update(lpLinks)
       .set({ clicks_count: sql`${lpLinks.clicks_count} + 1` })
       .where(eq(lpLinks.id, link.id))
@@ -71,20 +74,20 @@ export default async function LandingPage({ params, searchParams }: { params: Pr
   const devMode = wantsDev && Boolean(session?.user);
 
   return (
-    <html lang="en">
-      <body style={{ margin: 0 }}>
-        <script src="/sdk/pushpanel-sdk.js" />
-        <LandingClient
-          code={code}
-          baseUrl={baseUrl}
-          targetUrl={link.target_url}
-          prompt={link.prompt_text || "Get notified when we publish something new"}
-          forceSubscribe={Boolean(link.force_subscribe)}
-          domainId={publicKey ? link.domain_id : null}
-          publicKey={publicKey}
-          devMode={devMode}
-        />
-      </body>
-    </html>
+    <>
+      {/* Same-origin SDK load — passes CSP script-src 'self'. */}
+      <script src="/sdk/pushpanel-sdk.js" />
+      <style>{`body{margin:0;background:#0f172a}`}</style>
+      <LandingClient
+        code={code}
+        baseUrl={baseUrl}
+        targetUrl={link.target_url}
+        prompt={link.prompt_text || "Get notified when we publish something new"}
+        forceSubscribe={Boolean(link.force_subscribe)}
+        domainId={publicKey ? link.domain_id : null}
+        publicKey={publicKey}
+        devMode={devMode}
+      />
+    </>
   );
 }

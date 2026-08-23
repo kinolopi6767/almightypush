@@ -21,7 +21,12 @@ export function IosInstallHint() {
   useEffect(() => {
     if (!isIosSafari()) return;
     // Reappear weekly after dismissal (matches the "reappear timer" idea).
-    const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) ?? 0);
+    let dismissedAt = 0;
+    try {
+      dismissedAt = Number(localStorage.getItem(STORAGE_KEY) ?? 0);
+    } catch {
+      dismissedAt = Date.now(); // storage unavailable — behave as dismissed
+    }
     const week = 7 * 24 * 60 * 60 * 1000;
     if (Date.now() - dismissedAt > week) setShow(true);
   }, []);
@@ -38,7 +43,11 @@ export function IosInstallHint() {
       </ol>
       <button
         onClick={() => {
-          localStorage.setItem(STORAGE_KEY, String(Date.now()));
+          try {
+            localStorage.setItem(STORAGE_KEY, String(Date.now()));
+          } catch {
+            void 0;
+          }
           setShow(false);
         }}
         className="mt-3 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"

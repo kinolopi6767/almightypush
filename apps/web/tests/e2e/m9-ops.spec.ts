@@ -6,22 +6,11 @@ import { signInViaUi } from "./helpers";
  * page, and the integration guides page.
  */
 
-test("metrics endpoint reports process and queue state", async ({ request }) => {
+test("metrics endpoint is authenticated (leaks internals otherwise)", async ({ request }) => {
+  // Hardened: /api/metrics exposes DB path + error strings — anonymous
+  // requests must get 401; the authenticated dashboard consumes it directly.
   const res = await request.get("/api/metrics");
-  expect(res.status()).toBe(200);
-  const m = (await res.json()) as {
-    ok: boolean;
-    uptimeSec: number;
-    node: string;
-    memory: { rss: number; heapUsed: number };
-    db: { sizeBytes: number };
-    queue: { queued: number; sending: number };
-  };
-  expect(m.ok).toBe(true);
-  expect(m.uptimeSec).toBeGreaterThan(0);
-  expect(m.node).toMatch(/^v\d+/);
-  expect(m.memory.rss).toBeGreaterThan(0);
-  expect(m.queue).toMatchObject({ queued: expect.any(Number), sending: expect.any(Number) });
+  expect(res.status()).toBe(401);
 });
 
 test("server status page renders live cards", async ({ page }) => {
@@ -31,7 +20,7 @@ test("server status page renders live cards", async ({ page }) => {
   await expect(page.getByText("Uptime")).toBeVisible();
   await expect(page.getByText("Memory (heap)")).toBeVisible();
   await expect(page.getByText("Database", { exact: true })).toBeVisible();
-  await expect(page.getByText("Worker readiness")).toBeVisible();
+  await expect(page.getByText("Database readiness")).toBeVisible();
   await expect(page.getByText(/ready|degraded/)).toBeVisible();
 });
 

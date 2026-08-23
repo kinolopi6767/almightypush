@@ -303,17 +303,20 @@ async function deliverOne(
     return "failed";
   }
 
-  // LumaPush Fatigue Shield: suppress if daily cap reached (0 = disabled) — uses new idx_events_subscriber_type for speed
+  // LumaPush Fatigue Shield (dual window): a CALENDAR-DAY cap and a ROLLING
+  // 24h cap, both driven by `frequency_cap_daily` (0 = disabled). Rolling
+  // catches burst abuse that straddles midnight; calendar matches operator
+  // intuition. Both count via idx_events_subscriber_type — indexed, no scan.
   const fatigueCap = fatigueCapCycle;
   if (fatigueCap > 0 && row.subscriber_id) {
-    const today = new Date().toISOString().slice(0, 10);
-    // Optimized: count via indexed subscriber_id + type + date range (avoids full scan at 1M events)
-    const todayStart = `${today}T00:00:00.000Z`;
-    const todayEnd = `${today}T23:59:59.999Z`;
+    const today = new Date(now).toISOString().slice(0, 10);
+    const dayStart = `${today}T00:00:00.000Z`;
+    const dayEnd = `${today}T23:59:59.999Z`;
+    const rollingStart = new Date(now - 86_400_000).toISOString();
     const [todayCount] = db
       .select({ value: count() })
       .from(events)
-      .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`${events.ts} BETWEEN ${todayStart} AND ${todayEnd}`))
+      .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`${events.ts} BETWEEN ${dayStart} AND ${dayEnd}`))
       .all();
     if ((todayCount?.value ?? 0) >= fatigueCap) {
       const fatWrite = db
@@ -323,6 +326,24 @@ async function deliverOne(
         .run();
       if (fatWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
       return "failed";
+    }
+    // Rolling window only bites when it's stricter than the calendar cap at
+    // this moment (i.e., yesterday's tail-end deliveries still count).
+    if (rollingStart < dayStart) {
+      const [rollCount] = db
+        .select({ value: count() })
+        .from(events)
+        .where(and(eq(events.subscriber_id, row.subscriber_id), eq(events.type, "delivered"), sql`${events.ts} >= ${rollingStart}`))
+        .all();
+      if ((rollCount?.value ?? 0) >= fatigueCap) {
+        const rollWrite = db
+          .update(deliveries)
+          .set({ status: "failed", error: `fatigue shield: rolling 24h cap ${fatigueCap}`, sent_at: now })
+          .where(and(eq(deliveries.id, row.id), owned))
+          .run();
+        if (rollWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
+        return "failed";
+      }
     }
   }
 

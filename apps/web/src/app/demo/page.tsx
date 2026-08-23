@@ -21,7 +21,11 @@ declare global {
 function DemoContent() {
   const searchParams = useSearchParams();
   const domain = Number(searchParams.get("domain") ?? 0);
-  const ep = searchParams.get("ep") ?? undefined;
+  // endpointOverride is a dev/test hook. On any non-localhost origin a
+  // crafted /demo?ep= link would point victims' browsers at an attacker
+  // collector — restrict to localhost where e2e/dev runs happen.
+  const isLocalhost = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+  const ep = isLocalhost ? (searchParams.get("ep") ?? undefined) : undefined;
   const [status, setStatus] = useState("loading");
   const apiRef = useRef<ReturnType<NonNullable<Window["PushPanel"]>["init"]> | null>(null);
 

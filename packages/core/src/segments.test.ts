@@ -74,8 +74,10 @@ describe("compileSegmentWhere", () => {
     const { sql, params } = compileSegmentWhere({
       groups: [{ logic: "AND", conditions: [{ field: "url", op: "contains", value: "100%" }] }],
     });
-    expect(sql).toBe("(s.subscribe_url LIKE ? ESCAPE '\\')");
-    expect(params).toEqual(["%100\\%%"]);
+    // Escape char is bound as a parameter — the inline literal reached SQLite
+    // mangled and threw "ESCAPE expression must be a single character".
+    expect(sql).toBe("(s.subscribe_url LIKE ? ESCAPE ?)");
+    expect(params).toEqual(["%100\\%%", "\\"]);
   });
 
   it("compiles in-lists one placeholder per item", () => {

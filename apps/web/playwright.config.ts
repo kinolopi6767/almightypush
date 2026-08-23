@@ -21,6 +21,9 @@ const appEnv = {
   LOGIN_RATE_LIMIT: "1000",
   ACCOUNT_RATE_LIMIT: "1000",
   SUBSCRIBE_RATE_LIMIT: "1000",
+  // The sandbox loop subscribes endpoints pointing at the local mock push
+  // service (127.0.0.1) — production's SSRF guard would reject them.
+  ALLOW_PRIVATE_UPSTREAM: "1",
 };
 
 export default defineConfig({

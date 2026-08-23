@@ -45,6 +45,9 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
 
   const escapeLike = (value: string) => value.replace(/[\\%_]/g, (m) => `\\${m}`);
+  // Bound as a parameter: an inline `ESCAPE ${likeEscape}` in the drizzle template
+  // reaches SQLite mangled and throws "must be a single character".
+  const likeEscape = "\\";
   const term = q ? `%${escapeLike(q)}%` : undefined;
 
   const where = and(
@@ -53,12 +56,12 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
     status === "unsubscribed" ? isNotNull(subscribers.unsubscribed_at) : undefined,
     q && term
       ? or(
-          sql`${subscribers.browser} LIKE ${term} ESCAPE '\'`,
-          sql`${subscribers.os} LIKE ${term} ESCAPE '\'`,
-          sql`${subscribers.device} LIKE ${term} ESCAPE '\'`,
-          sql`${subscribers.country} LIKE ${term} ESCAPE '\'`,
-          sql`${subscribers.state} LIKE ${term} ESCAPE '\'`,
-          sql`${subscribers.city} LIKE ${term} ESCAPE '\'`,
+          sql`${subscribers.browser} LIKE ${term} ESCAPE ${likeEscape}`,
+          sql`${subscribers.os} LIKE ${term} ESCAPE ${likeEscape}`,
+          sql`${subscribers.device} LIKE ${term} ESCAPE ${likeEscape}`,
+          sql`${subscribers.country} LIKE ${term} ESCAPE ${likeEscape}`,
+          sql`${subscribers.state} LIKE ${term} ESCAPE ${likeEscape}`,
+          sql`${subscribers.city} LIKE ${term} ESCAPE ${likeEscape}`,
         )
       : undefined,
   );

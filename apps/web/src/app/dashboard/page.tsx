@@ -111,7 +111,7 @@ export default async function DashboardPage() {
       {/* Primary metrics — bento: hero + 3 */}
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="rise lg:col-span-5">
-          <div className="surface flex h-full flex-col rounded-2xl p-6">
+          <div className="surface flex h-full flex-col rounded-2xl p-6" data-testid="stat-subscribers">
             <div className="flex items-center justify-between">
               <p className="kicker text-muted-foreground">Total subscribers</p>
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">

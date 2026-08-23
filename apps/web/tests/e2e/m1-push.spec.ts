@@ -95,10 +95,9 @@ test("sandbox push loop: subscribe → test push → worker delivery → click b
 
   // --- dashboard reflects the counts ---
   await page.goto("/dashboard");
-  const cards = page.locator(".grid > div");
-  await expect(cards.filter({ hasText: "Subscribers" })).toContainText("1");
-  await expect(cards.filter({ hasText: "Domains" })).toContainText("1");
-  await expect(cards.filter({ hasText: "Clicks" })).toContainText("1");
+  await expect(page.getByTestId("stat-subscribers")).toContainText("1");
+  await expect(page.getByTestId("stat-domains")).toContainText("1");
+  await expect(page.getByTestId("stat-total-clicks")).toContainText("1");
 });
 
 test("subscribe is rejected for unknown domains", async ({ request }) => {

@@ -77,8 +77,11 @@ export function startWorker(): Promise<{ stop: () => Promise<void> }> {
     ...process.env,
     DATABASE_PATH: process.env.E2E_DB_PATH,
     APP_ENC_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    // Required: push payloads embed this as the click-beacon origin.
+    APP_URL: process.env.APP_URL ?? "http://127.0.0.1:3100",
     WORKER_TICK_MS: "1000",
     WORKER_IDLE_TICK_MS: "1000",
+    ALLOW_PRIVATE_UPSTREAM: "1",
     NODE_TLS_REJECT_UNAUTHORIZED: "0",
   };
   const child: ChildProcess = spawn(process.execPath, [WORKER_ENTRY], {
@@ -176,6 +179,9 @@ export function browserKeys() {
  * in. Idempotent — every e2e test calls this; only the first creates.
  */
 export async function signInViaUi(page: Page): Promise<void> {
+  // NOTE: destructive actions use window.confirm — specs that trigger them
+  // register their own page.once("dialog") handlers. A global accept here
+  // would race those handlers and double-handle the dialog.
   await page.request.post("/api/auth/signout", { form: {} }).catch(() => undefined);
   await page.goto("/setup");
   if (await page.getByRole("heading", { name: /set up pushpanel/i }).isVisible().catch(() => false)) {

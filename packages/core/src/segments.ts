@@ -183,7 +183,7 @@ function compileCondition(cond: SegmentCondition, alias: string, params: unknown
     }
     if (cond.op === "contains") {
       const escaped = String(cond.value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-      return `EXISTS (SELECT 1 FROM subscriber_tags t WHERE t.subscriber_id = ${alias}.id AND t.tag LIKE ${push(params, `%${escaped}%`)} ESCAPE '\\')`;
+      return `EXISTS (SELECT 1 FROM subscriber_tags t WHERE t.subscriber_id = ${alias}.id AND t.tag LIKE ${push(params, `%${escaped}%`)} ESCAPE ${push(params, "\\")})`;
     }
     return `EXISTS (SELECT 1 FROM subscriber_tags t WHERE t.subscriber_id = ${alias}.id AND t.tag = ${push(params, String(cond.value))})`;
   }
@@ -196,15 +196,15 @@ function compileCondition(cond: SegmentCondition, alias: string, params: unknown
     }
     case "contains": {
       const escaped = String(cond.value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-      return `${col} LIKE ${push(params, `%${escaped}%`)} ESCAPE '\\'`;
+      return `${col} LIKE ${push(params, `%${escaped}%`)} ESCAPE ${push(params, "\\")}`;
     }
     case "starts_with": {
       const escaped = String(cond.value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-      return `${col} LIKE ${push(params, `${escaped}%`)} ESCAPE '\\'`;
+      return `${col} LIKE ${push(params, `${escaped}%`)} ESCAPE ${push(params, "\\")}`;
     }
     case "ends_with": {
       const escaped = String(cond.value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-      return `${col} LIKE ${push(params, `%${escaped}`)} ESCAPE '\\'`;
+      return `${col} LIKE ${push(params, `%${escaped}`)} ESCAPE ${push(params, "\\")}`;
     }
     case "in": {
       const list = Array.isArray(cond.value) ? cond.value : [cond.value];

@@ -21,8 +21,11 @@ const loginSchema = z.object({
  * invalidates all previously issued sessions — stolen cookies die with the
  * old credential instead of surviving up to maxAge.
  */
-const credentialVersionOf = (u: { password_hash: string | null; totp_enabled: number | null }) =>
-  createHash("sha256").update(`${u.password_hash ?? ""}:${u.totp_enabled ?? 0}`).digest("hex").slice(0, 16);
+// Password-only on purpose: toggling TOTP must NOT kill the live session
+// (enabling 2FA would otherwise log the user out mid-setup). Disabling TOTP
+// already requires the current password, which covers the theft scenario.
+const credentialVersionOf = (u: { password_hash: string | null }) =>
+  createHash("sha256").update(u.password_hash ?? "").digest("hex").slice(0, 16);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
@@ -70,11 +73,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Bind this JWT to the credential state at sign-in (one extra indexed
         // read per sign-in only).
         const [row] = await db
-          .select({ password_hash: users.password_hash, totp_enabled: users.totp_enabled })
+          .select({ password_hash: users.password_hash })
           .from(users)
           .where(eq(users.id, Number(user.id)))
           .limit(1);
-        token.cv = credentialVersionOf({ password_hash: row?.password_hash ?? null, totp_enabled: row?.totp_enabled ?? null });
+        token.cv = credentialVersionOf({ password_hash: row?.password_hash ?? null });
       }
       return token;
     },
@@ -83,13 +86,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         session.user.role = (token.role as string) ?? "owner";
         const [row] = await db
-          .select({ workspaceId: users.workspace_id, password_hash: users.password_hash, totp_enabled: users.totp_enabled })
+          .select({ workspaceId: users.workspace_id, password_hash: users.password_hash })
           .from(users)
           .where(eq(users.id, Number(token.id)))
           .limit(1);
         // Credential changed (or user deleted) since sign-in → invalidate.
         if (!row) throw new Error("Session invalidated — user missing");
-        if (token.cv !== credentialVersionOf({ password_hash: row.password_hash, totp_enabled: row.totp_enabled })) {
+        if (token.cv !== credentialVersionOf({ password_hash: row.password_hash })) {
           throw new Error("Session invalidated — credentials changed");
         }
         session.user.workspaceId = row?.workspaceId != null ? String(row.workspaceId) : null;

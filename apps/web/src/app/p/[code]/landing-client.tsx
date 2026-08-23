@@ -36,7 +36,9 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
   const finish = useCallback(
     async (ok: boolean) => {
       if (ok) {
-        await fetch(`${baseUrl}/api/v1/lp/subscribed`, {
+        // Relative URL: same-origin by construction — no https-heuristic
+        // breakage on LAN deployments, no cross-origin CORS dependency.
+        await fetch("/api/v1/lp/subscribed", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ code }),
@@ -114,6 +116,9 @@ export function LandingClient({ code, baseUrl, targetUrl, prompt, forceSubscribe
         }
         await new Promise((r) => setTimeout(r, 250));
       }
+      // SDK never loaded (blocked by an extension / network failure) — a
+      // force-subscribe link must still deliver the visitor to the target.
+      if (!cancelled) await finish(false);
     };
     void attempt();
     return () => {

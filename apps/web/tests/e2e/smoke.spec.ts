@@ -24,5 +24,8 @@ test("anonymous visit redirects to login", async ({ page }) => {
 test("owner can sign in and reach the dashboard", async ({ page }) => {
   test.setTimeout(90_000);
   await signInViaUi(page);
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  // The redesigned dashboard uses a greeting masthead rather than a literal
+  // "Dashboard" h1 — assert the greeting + URL instead.
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
 });

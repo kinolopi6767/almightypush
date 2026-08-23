@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import { authConfig } from "@/auth.config";
 
-const PUBLIC_PATHS = ["/login", "/setup", "/demo", "/api/auth", "/api/health", "/api/metrics", "/api/v1", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/sdk/", "/sw.js"];
+const PUBLIC_PATHS = ["/login", "/setup", "/demo", "/api/auth", "/api/health", "/api/metrics", "/api/v1", "/p/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/sdk/", "/sw.js"];
 
 /** Segment-aware public match: "/api/v1" must not match "/api/v1xyz". */
 function isPublicPath(pathname: string): boolean {

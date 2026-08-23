@@ -43,7 +43,7 @@ test("send-now campaign: UI → scheduler → delivery → stats", async ({ page
 
   // --- create the campaign through the UI ---
   await page.goto("/dashboard/campaigns");
-  await page.getByRole("link", { name: /new campaign/i }).click();
+  await page.getByRole("main").getByRole("link", { name: /new campaign/i }).first().click();
   await page.waitForURL(/\/dashboard\/campaigns\/new/);
   await page.getByLabel("Domain", { exact: true }).selectOption(String(domainId));
   await page.getByLabel("Title", { exact: true }).fill("Big sale this weekend");
