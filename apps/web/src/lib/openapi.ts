@@ -116,7 +116,7 @@ export const OPENAPI_SPEC = {
             in: "header",
             required: true,
             schema: { type: "string" },
-            description: "sha256=hex(HMAC-SHA256(secret, rawBody))",
+            description: "sha256=hex(HMAC-SHA256(secret, \"<timestamp>.<rawBody>\")) — timestamp from X-PushPanel-Timestamp (ms), within 5 min",
           },
           {
             name: "X-PushPanel-Timestamp",
@@ -129,7 +129,7 @@ export const OPENAPI_SPEC = {
         responses: {
           "200": { description: "Automation enqueued" },
           "401": { description: "Bad signature" },
-          "404": { description: "Unknown automation" },
+          
           "409": { description: "Automation paused" },
         },
       },

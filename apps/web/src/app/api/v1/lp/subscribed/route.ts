@@ -20,10 +20,11 @@ export async function POST(req: Request) {
   } catch {
     return corsJson({ ok: false, error: "origin not allowed" }, { status: 403 });
   }
-  const allowed = [hostFromUrl(process.env.APP_URL), req.headers.get("host")?.split(":")[0]?.toLowerCase()].filter(Boolean) as string[];
-  // Strict exact-match: subdomains are NOT allowed to report LP conversions.
-  // If you serve the panel behind a subdomain proxy, set APP_URL to the
-  // canonical host and ensure the landing page uses that same host.
+  // Strict exact-match against APP_URL's host ONLY. The request's own Host
+  // header must NOT be in the allowlist — an attacker reaching the origin
+  // directly could send Host: evil.com + Origin: https://evil.com and both
+  // would match each other, forging conversions at will.
+  const allowed = [hostFromUrl(process.env.APP_URL)].filter(Boolean) as string[];
   if (allowed.length === 0 || !allowed.some((h) => host === h)) {
     return corsJson({ ok: false, error: "origin not allowed" }, { status: 403 });
   }

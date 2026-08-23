@@ -103,7 +103,7 @@ export async function createCampaignAction(
         const title = typeof o.title === "string" ? o.title.trim() : "";
         if (!title || title.length > 120) throw new Error(`Variant ${i} title required max 120`);
         return {
-          key: typeof o.key === "string" && o.key ? o.key : String.fromCharCode(65 + i),
+          key: typeof o.key === "string" && o.key ? o.key.trim().slice(0, 12) : String.fromCharCode(65 + i),
           title,
           message: typeof o.message === "string" ? o.message.trim().slice(0, 500) : undefined,
           image_url: typeof o.image_url === "string" ? o.image_url.trim() : undefined,
@@ -111,8 +111,10 @@ export async function createCampaignAction(
         };
       });
       variantsJson = JSON.stringify(cleaned);
-    } catch (e) {
-      return { error: (e as Error).message ?? "Invalid variants JSON" };
+    } catch {
+      // V8 SyntaxError messages leak input fragments + offsets — return a
+      // generic message instead.
+      return { error: "Invalid variants JSON" };
     }
   }
 
@@ -195,7 +197,9 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
   db.transaction((tx) => {
     tx.update(campaigns)
       .set({ status: "cancelled" })
-      .where(eq(campaigns.id, campaignId))
+      // TOCTOU guard: the worker may have finished the send between the check
+      // above and this write — never flip a done/failed/cancelled campaign.
+      .where(and(eq(campaigns.id, campaignId), inArray(campaigns.status, ["draft", "scheduled", "sending"])))
       .run();
     tx.update(deliveries)
       // sent_at stamped so retention pruning (which requires it) can clean

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { createCipher, csvCell, parseCsv, sha256Hex } from "@pushpanel/core";
+import { assertPublicHttpUrl, createCipher, csvCell, parseCsv, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
 
@@ -15,6 +15,7 @@ export type SubscriberActionState =
       imported?: number;
       skipped?: number;
       invalid?: number;
+      optedOut?: number;
       deleted?: number;
       csv?: string;
       filename?: string;
@@ -228,6 +229,7 @@ export async function importSubscribersAction(
   let imported = 0;
   let skipped = 0;
   let invalid = 0;
+  let optedOut = 0;
 
   const valid = (v: string | undefined): v is string => typeof v === "string" && v.trim().length > 0;
 
@@ -247,15 +249,26 @@ export async function importSubscribersAction(
       invalid += 1;
       continue;
     }
+    // SSRF guard — imports ingest third-party lists; the worker will POST to
+    // these endpoints from the server, so apply the same discipline as the
+    // live subscribe API (private/link-local/metadata addresses rejected).
+    const ssrf = await assertPublicHttpUrl(row.endpoint);
+    if (!ssrf.ok) {
+      invalid += 1;
+      continue;
+    }
     const tokenHash = sha256Hex(row.endpoint);
+    // Dedupe on token_hash REGARDLESS of unsubscribed status: re-importing
+    // your own export must never resurrect opt-outs (consent/GDPR).
     const existing = db
-      .select({ id: subscribers.id })
+      .select({ id: subscribers.id, unsubscribed_at: subscribers.unsubscribed_at })
       .from(subscribers)
-      .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, tokenHash), isNull(subscribers.unsubscribed_at)))
+      .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, tokenHash)))
       .limit(1)
       .get();
     if (existing) {
-      skipped += 1;
+      if (existing.unsubscribed_at) optedOut += 1;
+      else skipped += 1;
       continue;
     }
     db.insert(subscribers)
@@ -277,5 +290,5 @@ export async function importSubscribersAction(
 
   db.update(domains).set({ subscribers_count: activeCount(domainId) }).where(eq(domains.id, domainId)).run();
   revalidatePath(`/dashboard/domains/${domainId}/subscribers`);
-  return { ok: true, imported, skipped, invalid };
+  return { ok: true, imported, skipped, invalid, optedOut };
 }

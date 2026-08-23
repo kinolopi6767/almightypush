@@ -31,6 +31,10 @@ export async function createApiKeyAction(
 ): Promise<NonNullable<ApiKeyFormState>> {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
+  // RBAC: API keys grant full v1 write access — viewer/editor must not mint them.
+  if (session.user.role !== "owner" && session.user.role !== "admin") {
+    return { error: "Only owner/admin can manage API keys" };
+  }
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
 
@@ -84,6 +88,9 @@ export async function createApiKeyAction(
 export async function revokeApiKeyAction(keyId: number): Promise<NonNullable<ApiKeyFormState>> {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
+  if (session.user.role !== "owner" && session.user.role !== "admin") {
+    return { error: "Only owner/admin can manage API keys" };
+  }
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
 

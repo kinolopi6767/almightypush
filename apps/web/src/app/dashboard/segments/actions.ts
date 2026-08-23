@@ -20,13 +20,16 @@ const conditionSchema = z.object({
 
 const groupSchema = z.object({
   logic: z.enum(["AND", "OR"]),
-  conditions: z.array(conditionSchema).min(1),
+  // Caps keep total bind parameters far below better-sqlite3's ~32k variable
+  // limit (200 values per IN × conditions × groups) — an uncapped rule set
+  // would throw mid-transaction AFTER the segment row was inserted.
+  conditions: z.array(conditionSchema).min(1).max(25),
 });
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  domainIds: z.array(z.coerce.number().int().positive()).default([]),
-  groups: z.array(groupSchema).min(1),
+  domainIds: z.array(z.coerce.number().int().positive()).max(50).default([]),
+  groups: z.array(groupSchema).min(1).max(20),
 });
 
 /** Shared parse: formData (JSON in hidden fields) → validated rules + domain list. */
@@ -52,13 +55,19 @@ function parseSegmentForm(formData: FormData) {
  * estimate and (before the service-level scope) into resolutions.
  */
 function ownedDomainIds(workspaceId: number, domainIds: number[]): { ok: true; ids: number[] } | { ok: false; error: string } {
-  if (domainIds.length === 0) return { ok: true, ids: [] };
+  // Coerce + filter: raw JSON.parse output can contain strings/objects that
+  // would crash drizzle's inArray binding.
+  const clean = domainIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .slice(0, 50);
+  if (clean.length === 0) return { ok: true, ids: [] };
   const owned = new Set(
-    db.select({ id: domains.id }).from(domains).where(and(eq(domains.workspace_id, workspaceId), inArray(domains.id, domainIds))).all().map((d) => d.id),
+    db.select({ id: domains.id }).from(domains).where(and(eq(domains.workspace_id, workspaceId), inArray(domains.id, clean))).all().map((d) => d.id),
   );
-  const foreign = domainIds.filter((id) => !owned.has(id));
+  const foreign = clean.filter((id) => !owned.has(id));
   if (foreign.length > 0) return { ok: false, error: `Domain not found: ${foreign.join(", ")}` };
-  return { ok: true, ids: domainIds };
+  return { ok: true, ids: clean };
 }
 
 export async function createSegmentAction(_prev: SegmentFormState | undefined, formData: FormData): Promise<SegmentFormState> {
@@ -161,6 +170,13 @@ export async function estimateSegmentDraft(formData: FormData): Promise<SegmentE
   const owned = ownedDomainIds(Number(session.user.workspaceId), domainIds);
   if (!owned.ok) return { count: 0, error: owned.error };
 
-  const count = estimateSegmentRules(db, Number(session.user.workspaceId), rules, owned.ids.length > 0 ? owned.ids : undefined);
+  let count: number;
+  try {
+    // A pathological rule set can still exceed SQLite's bind-parameter limit —
+    // fail gracefully instead of throwing a 500 out of the action.
+    count = estimateSegmentRules(db, Number(session.user.workspaceId), rules, owned.ids.length > 0 ? owned.ids : undefined);
+  } catch {
+    return { count: 0, error: "Segment too complex — reduce conditions" };
+  }
   return { count };
 }

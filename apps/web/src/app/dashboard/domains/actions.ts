@@ -61,7 +61,14 @@ export async function createDomainAction(
   if (existing) return { error: "A domain with this hostname already exists" };
 
   const subject = `mailto:owner@${parsed.data.name}`;
-  const vapid = createVapidConfig(process.env.APP_ENC_KEY, subject);
+  let vapid;
+  try {
+    // keyFrom() throws without a valid APP_ENC_KEY — surface a friendly
+    // error instead of a framework 500.
+    vapid = createVapidConfig(process.env.APP_ENC_KEY, subject);
+  } catch {
+    return { error: "Server encryption key missing or invalid — set APP_ENC_KEY (64 hex chars) and redeploy" };
+  }
   const inserted = db
     .insert(domains)
     .values({

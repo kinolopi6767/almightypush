@@ -49,12 +49,17 @@ export async function GET(req: Request) {
     domainId = auth.context.domainId;
   }
 
-  const wsDomains = db
+  let wsDomains = db
     .select({ id: domains.id, name: domains.name, status: domains.status })
     .from(domains)
     .where(eq(domains.workspace_id, workspaceId))
     .orderBy(domains.name)
     .all();
+
+  // Domain-scoped keys must not learn sibling domain names/status.
+  if (auth.context.domainId !== null) {
+    wsDomains = wsDomains.filter((d) => d.id === auth.context.domainId);
+  }
 
   const wsDomainIds = wsDomains.map((d) => d.id);
 
@@ -181,6 +186,8 @@ export async function GET(req: Request) {
         clicked: clickMap.get(c.id) ?? 0,
       };
     }),
+  }, {
+    headers: { "Cache-Control": "no-store" },
   });
 }
 

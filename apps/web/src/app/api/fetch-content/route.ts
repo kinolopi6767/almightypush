@@ -82,10 +82,25 @@ export async function GET(req: Request) {
   }
 
   const finalUrl = res!.url || current.href;
-  const body = await res!.arrayBuffer();
-  if (body.byteLength > MAX_BYTES) return NextResponse.json({ ok: false, error: "Page too large" }, { status: 413 });
 
-  const html = Buffer.from(body).toString("utf8").slice(0, MAX_BYTES);
+  // Stream with a cumulative byte cap — arrayBuffer() would buffer the whole
+  // body BEFORE any size check, letting a hostile page stream gigabytes
+  // within the timeout window and exhaust memory.
+  const reader = res!.body?.getReader();
+  if (!reader) return NextResponse.json({ ok: false, error: "Empty response" }, { status: 502 });
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BYTES) {
+      void reader.cancel();
+      return NextResponse.json({ ok: false, error: "Page too large" }, { status: 413 });
+    }
+    chunks.push(value);
+  }
+  const html = Buffer.concat(chunks).toString("utf8");
   const out = extractOpenGraph(html);
 
   const absolute = (href: string | undefined): string | undefined => {
@@ -102,5 +117,5 @@ export async function GET(req: Request) {
     description: out.description,
     image: absolute(out.image),
   };
-  return NextResponse.json({ ok: true, ...result });
+  return NextResponse.json({ ok: true, ...result }, { headers: { "Cache-Control": "no-store" } });
 }
