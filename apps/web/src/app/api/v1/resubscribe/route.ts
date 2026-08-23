@@ -1,5 +1,5 @@
 import { corsJson, handlePublicOptions } from "@/lib/cors";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "@/lib/rate-limit";
@@ -88,6 +88,20 @@ export async function POST(req: Request) {
   // …otherwise create it. Losing a race against the partial unique index is
   // success by definition (the concurrent writer inserted the same row).
   try {
+    // Honor the same per-domain cap as subscribe (only enforced when set).
+    const rawCap = Number(process.env.MAX_SUBSCRIBERS_PER_DOMAIN);
+    const cap = Number.isFinite(rawCap) && rawCap > 0 ? Math.min(Math.floor(rawCap), 100_000_000) : Number.POSITIVE_INFINITY;
+    if (Number.isFinite(cap)) {
+      const [active] = db
+        .select({ value: count() })
+        .from(subscribers)
+        .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+        .all();
+      if ((active?.value ?? 0) >= cap) {
+        return corsJson({ ok: false, error: "Subscriber cap reached" }, { status: 403 });
+      }
+    }
+
     db.insert(subscribers)
       .values({
         domain_id: domainId,

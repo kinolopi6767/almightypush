@@ -353,7 +353,7 @@ export async function updateOutboundAction(_prev: SettingsFormState, formData: F
     try {
       // Validate scheme — webhooks must be https in production.
       const u = new URL(d.outbound_webhook_url);
-      if (u.protocol !== "https:" && process.env.NODE_ENV === "production") {
+      if (u.protocol !== "https:") {
         return { error: "Webhook URL must use https://" };
       }
     } catch {

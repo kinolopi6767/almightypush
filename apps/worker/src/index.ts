@@ -102,12 +102,14 @@ function main() {
 
   const loop = () => {
     if (shuttingDown) return;
-    const timer = setTimeout(() => {
+    // NOTE: this timer must stay ref'd — it is the ONLY recurring handle in
+    // the process. unref() here lets Node drain the loop and exit after the
+    // first tick (empirically verified on Node 22).
+    setTimeout(() => {
       pendingTick = tick()
         .catch(() => undefined) // tick already logs its own errors; never let the chain die
         .finally(loop);
     }, nextPollMs(traceActive, WORK_MS, IDLE_MS));
-    timer.unref?.();
   };
   pendingTick = tick().finally(loop);
 

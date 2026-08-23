@@ -37,6 +37,15 @@ const bodySchema = z.object({
  * Subscriptions are encrypted at rest; lookups/dedup run on a sha256 hash.
  */
 export async function POST(req: Request) {
+  // Rate limits BEFORE body parse + DNS-resolving SSRF check: an anonymous
+  // sender must not be able to force unbounded req.json() buffering or
+  // resolver lookups on hostnames they control.
+  const ip = clientIp(req.headers);
+  const rl0 = rateLimitWithHeaders(`subscribe:pre:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000);
+  if (!rl0.allowed) {
+    return corsJson({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl0, 30) });
+  }
+
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());
@@ -52,13 +61,6 @@ export async function POST(req: Request) {
   if (data.timezone && !isValidTimezone(data.timezone)) {
     return corsJson({ ok: false, error: "Invalid timezone" }, { status: 400 });
   }
-  // The endpoint is fetched server-side by the worker on every send — a
-  // private/internal address would turn the panel into an SSRF relay.
-  const endpointCheck = await assertPublicHttpUrl(data.subscription.endpoint);
-  if (!endpointCheck.ok) {
-    return corsJson({ ok: false, error: "Invalid push endpoint" }, { status: 400 });
-  }
-  const ip = clientIp(req.headers);
   const rl1 = rateLimitWithHeaders(`subscribe:${data.domainId}:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000);
   if (!rl1.allowed) {
     return corsJson({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl1, 30) });
@@ -67,6 +69,12 @@ export async function POST(req: Request) {
   const rl2 = rateLimitWithHeaders(`subscribe:dom:${data.domainId}`, 120, 60_000);
   if (!rl2.allowed) {
     return corsJson({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl2, 120) });
+  }
+  // The endpoint is fetched server-side by the worker on every send — a
+  // private/internal address would turn the panel into an SSRF relay.
+  const endpointCheck = await assertPublicHttpUrl(data.subscription.endpoint);
+  if (!endpointCheck.ok) {
+    return corsJson({ ok: false, error: "Invalid push endpoint" }, { status: 400 });
   }
 
   const [domain] = db

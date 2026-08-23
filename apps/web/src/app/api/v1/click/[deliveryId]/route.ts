@@ -161,14 +161,15 @@ function recordEvent(
 /** Tally a per-button click into the campaign's stats_json — atomic single-statement increment (concurrency-safe). */
 function bumpButtonStat(campaignId: number, label: string) {
   try {
-    // json_set on '$.perButton.<key>' with a JSON-encoded path segment; the
-    // read-modify-write JS version dropped increments under concurrent clicks.
-    const path = JSON.stringify(`$.perButton.${label.replace(/["\\]/g, "")}`);
+    // Inner-quoted JSON path: '$.perButton."Buy Now"' — legal for spaces and
+    // punctuation; the strip prevents escaping the quoted label. json_set
+    // auto-vivifies $ → perButton → label, preserving sibling counts.
+    const path = `$.perButton."${label.replace(/["\\]/g, "")}"`;
     db.update(campaigns)
       .set({
-        stats_json: sql`CASE WHEN json_valid(${campaigns.stats_json}) AND json_extract(${campaigns.stats_json}, ${path}) IS NOT NULL
-          THEN json_set(${campaigns.stats_json}, ${path}, json_extract(${campaigns.stats_json}, ${path}) + 1)
-          ELSE json_set(json_set(COALESCE(${campaigns.stats_json}, '{}'), '$.perButton', json_object()), ${path}, 1) END`,
+        stats_json: sql`CASE WHEN json_valid(${campaigns.stats_json})
+          THEN json_set(COALESCE(${campaigns.stats_json}, '{}'), ${path}, COALESCE(json_extract(${campaigns.stats_json}, ${path}), 0) + 1)
+          ELSE ${campaigns.stats_json} END`,
       })
       .where(eq(campaigns.id, campaignId))
       .run();

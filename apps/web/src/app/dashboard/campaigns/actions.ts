@@ -198,7 +198,9 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
       .where(eq(campaigns.id, campaignId))
       .run();
     tx.update(deliveries)
-      .set({ status: "cancelled", error: "cancelled by operator" })
+      // sent_at stamped so retention pruning (which requires it) can clean
+      // these cancelled rows up — otherwise they'd accumulate forever.
+      .set({ status: "cancelled", error: "cancelled by operator", sent_at: Date.now() })
       .where(and(eq(deliveries.campaign_id, campaignId), inArray(deliveries.status, ["queued", "sending"])))
       .run();
   });

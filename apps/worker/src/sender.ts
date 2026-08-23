@@ -326,15 +326,20 @@ async function deliverOne(
     }
   }
 
-  const cipher = createCipher(encKey);
+  let cipher: ReturnType<typeof createCipher>;
   let subscription: { endpoint: string; keys: { p256dh: string; auth: string } };
   try {
+    // Inside the try: without APP_ENC_KEY (dev/test), keyFrom() throws —
+    // outside it would strand every delivery in `sending` forever.
+    cipher = createCipher(encKey);
     subscription = JSON.parse(cipher.decrypt(sub.token));
   } catch (error) {
-    db.update(deliveries)
+    const decWrite = db
+      .update(deliveries)
       .set({ status: "failed", error: `token decrypt: ${(error as Error).message}`, sent_at: now })
       .where(and(eq(deliveries.id, row.id), owned))
       .run();
+    if (decWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
 
@@ -474,7 +479,17 @@ async function deliverOne(
     return "sent";
   }
 
-  const isGoogleEndpoint = /(^|\.)googleapis\.com$/i.test(new URL(subscription.endpoint).hostname);
+  // Provider-aware gone-detection: FCM treats 404 as dead registration;
+  // Mozilla Autopush reserves 404 for wrong-URL (live rows must NOT be
+  // deleted on it). Guard the URL parse — a corrupt legacy endpoint must
+  // never throw here (a throw would strand the row in `sending` forever).
+  let endpointHost = "";
+  try {
+    endpointHost = new URL(subscription.endpoint).hostname;
+  } catch {
+    endpointHost = "";
+  }
+  const isGoogleEndpoint = /(^|\.)googleapis\.com$/i.test(endpointHost);
   const isGone = result.statusCode === 410 || (result.statusCode === 404 && isGoogleEndpoint);
   if (isGone) {
     const reason = result.statusCode === 410 ? "http410" : "http404";

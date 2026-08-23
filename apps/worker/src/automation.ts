@@ -44,6 +44,7 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
       type: automations.type,
       config_json: automations.config_json,
       consecutive_failures: automations.consecutive_failures,
+      next_run_at: automations.next_run_at,
     })
     .from(automations)
     .where(
@@ -56,6 +57,17 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
     .all();
 
   for (const row of rows) {
+    // Multi-worker claim: compare-and-swap next_run_at forward BEFORE doing
+    // any work. Two workers sharing the SQLite file would otherwise both run
+    // the same due automation → duplicate campaigns to the whole audience.
+    // The loser (changes===0) skips — the winner owns this run.
+    const claimed = db
+      .update(automations)
+      .set({ last_run_at: nowIso })
+      .where(and(eq(automations.id, row.id), eq(automations.next_run_at, row.next_run_at ?? "")))
+      .run();
+    if (claimed.changes === 0) continue;
+
     const config = parseAutomationConfig(row.config_json);
     const outcome = await handleAutomation(db, row, config, now);
     stats.ran++;
@@ -340,7 +352,10 @@ async function safeFetch(sourceUrl: string, path: (base: URL) => URL): Promise<{
   for (let hops = 0; ; hops++) {
     const checked = await assertPublicHttpUrl(current.toString());
     if (!checked.ok || !checked.url) throw new Error(checked.error ?? "Invalid source URL");
-    const target = path(checked.url);
+    // Apply the caller's URL transform ONLY on hop 0 — rebuilding from the
+    // original sourceUrl on later hops would refetch hop-0 forever when the
+    // source redirects (http→https, www canonicalization…).
+    const target = hops === 0 ? path(checked.url) : checked.url;
     const res = await fetch(target, { signal: AbortSignal.timeout(10_000), redirect: "manual" });
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get("location");
