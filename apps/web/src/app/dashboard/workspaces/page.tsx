@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { CreateWorkspaceForm } from "./create-form";
+import { WorkspaceSwitchItem } from "./switch-item";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +45,11 @@ export default async function WorkspacesPage() {
                 <p className="text-sm font-medium">{ws.name}</p>
                 <p className="text-xs text-muted-foreground">/{ws.slug ?? "no-slug"} · #{ws.id} {ws.id === currentWorkspaceId && <span className="ml-1 rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">active</span>}</p>
               </div>
-              <Link href={`/dashboard?workspace=${ws.id}`} className="text-xs text-primary hover:underline">
-                Switch
-              </Link>
+              {ws.id === currentWorkspaceId ? (
+                <span className="text-xs font-medium text-primary">Active</span>
+              ) : (
+                <WorkspaceSwitchItem workspaceId={ws.id} />
+              )}
             </li>
           ))}
         </ul>

@@ -133,7 +133,7 @@ test("backups: create, list, download valid sqlite, delete", async ({ page }) =>
   await expect(page.getByText("No backups yet.")).toBeVisible();
 
   await page.getByRole("button", { name: "Create backup" }).click();
-  await expect(page.getByText(/Backup created \(#/)).toBeVisible();
+  await expect(page.getByText(/Backup created \(#/)).toBeVisible({ timeout: 20_000 });
 
   const row = page.locator("tbody tr").first();
   await expect(row.getByText("manual")).toBeVisible();

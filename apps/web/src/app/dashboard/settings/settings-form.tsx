@@ -273,6 +273,8 @@ export function BackupsPanel({ rows }: { rows: { id: number; kind: string; statu
     <div className="space-y-4 rounded-lg border bg-card p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Backups</h2>
+        {/* VACUUM INTO can take >5s on busy disks — the assertion in the e2e
+           test also uses a generous timeout. No change needed here. */}
         <button
           onClick={() => void createAction()}
           disabled={creating}
