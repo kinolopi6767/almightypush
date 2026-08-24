@@ -106,7 +106,7 @@ export async function updateSettingsAction(
       .run();
   }
 
-  if (workspaceId) if (workspaceId) logAudit(db, { workspaceId, action: "settings.update" });
+  if (workspaceId) logAudit(db, { workspaceId, action: "settings.update" });
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }
@@ -195,9 +195,6 @@ export async function updateGDriveAction(_prev: SettingsFormState, formData: For
       return { error: "Invalid JSON for Service Account" };
     }
     setSecret("gdrive_service_json", d.gdrive_service_json);
-  } else if (d.gdrive_service_json === "") {
-    // keep existing if empty and enabled? Only clear if explicitly cleared
-    // For now, don't delete on empty update to avoid accidental wipe
   }
   revalidatePath("/dashboard/settings");
   return { ok: true };
@@ -317,7 +314,12 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
     const { writeFile } = await import("node:fs/promises");
     // SQLite restore: overwrite current DB file (WAL will be checkpointed on next open)
     await writeFile(dbFile, data);
-    // Also restore -wal/-shm if they exist alongside backup? VACUUM INTO creates single file, so just overwrite.
+    // VACUUM INTO creates a single self-contained file. The live DB's stale
+    // -wal/-shm files would corrupt the restored data on next open — remove them.
+    const { unlink: unlinkSync } = await import("node:fs/promises");
+    for (const suffix of ["-wal", "-shm"]) {
+      try { await unlinkSync(dbFile + suffix); } catch { /* may not exist */ }
+    }
     if (wsId) logAudit(db, { workspaceId: wsId, action: "backup.create", entityType: "backup", entityId: backupId, meta: { restored: 1 } });
   } catch (e) {
     return { error: `Restore failed: ${(e as Error).message}` };

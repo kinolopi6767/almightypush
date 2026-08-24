@@ -11,7 +11,7 @@ const MAX_BUTTONS = 3; // W3C spec limit — keep as is for compat
 const MAX_TITLE = 120;
 const MAX_MESSAGE = 500;
 const MAX_MANUAL_IDS = 1_000_000; // personal use: effectively unlimited (was 10k)
-const MAX_VARIANTS = 20; // unlocked from 10 for personal use
+const MAX_VARIANTS = 10; // must match worker scheduler parseVariants cap
 
 interface SendBody {
   domain: string | number;

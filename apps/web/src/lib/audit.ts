@@ -3,6 +3,7 @@ import type { PushDb } from "@pushpanel/db";
 
 export type AuditAction =
   | "domain.create"
+  | "domain.update"
   | "domain.delete"
   | "campaign.create"
   | "campaign.cancel"

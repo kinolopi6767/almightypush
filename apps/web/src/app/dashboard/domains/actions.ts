@@ -220,6 +220,6 @@ export async function updateDomainPromptAction(
   // White-label: if customCss contains branding removal, keep as is; UI handles
 
   db.update(domains).set({ app_config_json: JSON.stringify(cfg) }).where(eq(domains.id, domainId)).run();
-  logAudit(db, { workspaceId, action: "domain.create", entityType: "domain", entityId: domainId, meta: { prompt: parsed.data.kind } });
+  logAudit(db, { workspaceId, action: "domain.update", entityType: "domain", entityId: domainId, meta: { prompt: parsed.data.kind } });
   return { ok: true, id: domainId };
 }

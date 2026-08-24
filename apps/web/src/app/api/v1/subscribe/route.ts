@@ -178,7 +178,11 @@ export async function POST(req: Request) {
     subscriberId = Number(inserted.lastInsertRowid);
   }
 
-  db.insert(events).values({ domain_id: domain.id, subscriber_id: subscriberId, type: "subscribed" }).run();
+  // Growth charts count these events — re-subscribes (device updates) must
+  // not inflate the series.
+  if (!existing) {
+    db.insert(events).values({ domain_id: domain.id, subscriber_id: subscriberId, type: "subscribed" }).run();
+  }
   db.update(domains).set({ subscribers_count: activeSubscribers(domain.id) }).where(eq(domains.id, domain.id)).run();
 
   if (!existing) {
