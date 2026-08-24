@@ -81,6 +81,13 @@ export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "aut
 async function tryUploadToDrive(db: PushDb, filePath: string): Promise<void> {
   const { enabled, folderId, serviceJson } = getGDriveConfig(db);
   if (!enabled || !serviceJson) return;
+  // Guard: uploadToGDrive buffers the file in RAM — a multi-GB backup would
+  // OOM the worker. Skip oversized snapshots (local copy still exists).
+  const limit = 350 * 1024 * 1024;
+  if (statSync(filePath).size > limit) {
+    console.error("[backup] Drive upload skipped — file exceeds 350MB in-memory limit");
+    return;
+  }
   try {
     const buf = readFileSync(filePath);
     const token = await getGDriveAccessToken(serviceJson);

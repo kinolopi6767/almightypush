@@ -66,11 +66,9 @@ export function isPrivateIp(ip: string): boolean {
     const lower = ip.toLowerCase();
     // Fully-expanded forms of loopback / unspecified.
     if (lower === "0:0:0:0:0:0:0:1" || lower === "0:0:0:0:0:0:0:0") return true;
-    // IPv4-mapped (::ffff:192.168.1.1), IPv4 hex-mapped (::ffff:7f00:1) and
-    // IPv4-embedded (::127.0.0.1) forms classify as their IPv4 counterpart.
-    const v4form = extractEmbeddedV4(lower);
-    if (v4form) return isPrivateIp(v4form);
     if (lower === "::" || lower === "::1") return true;
+    // Explicit v6 ranges FIRST — a link-local like fe80::ffff:8.8.8.8 must be
+    // classified by its fe80 prefix, not by its embedded (public) v4 tail.
     if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA fc00::/7
     if (/^fe[89ab]/.test(lower)) return true; // link-local fe80::/10
     if (lower.startsWith("2001:db8")) return true; // documentation ::/32
@@ -80,6 +78,10 @@ export function isPrivateIp(ip: string): boolean {
     if (lower.startsWith("2002:")) return true; // 6to4 2002::/16 (v4 tunnel reach)
     if (lower.startsWith("64:ff9b")) return true; // NAT64 well-known prefix
     if (lower.startsWith("100:")) return true; // discard-only 100::/64
+    // IPv4-mapped (::ffff:192.168.1.1), IPv4 hex-mapped (::ffff:7f00:1) and
+    // IPv4-embedded (::127.0.0.1) forms classify as their IPv4 counterpart.
+    const v4form = extractEmbeddedV4(lower);
+    if (v4form) return isPrivateIp(v4form);
     return false;
   }
   return false;

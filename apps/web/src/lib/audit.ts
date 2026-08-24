@@ -54,7 +54,10 @@ export function logAudit(
         meta_json: opts.meta ? JSON.stringify(opts.meta) : null,
       })
       .run();
-  } catch {
-    // audit logging must never break the underlying operation
+  } catch (err) {
+    // audit logging must never break the underlying operation — but a failing
+    // insert (disk full, locked DB) silently loses the security trail, so
+    // surface it on stderr for ops to notice.
+    console.error("[audit] insert failed:", err);
   }
 }

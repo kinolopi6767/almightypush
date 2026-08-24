@@ -10,7 +10,9 @@ export function GET() {
     const row = db.get<{ n: number }>(sql`SELECT 1 AS n`);
     const applied = row?.n === 1;
     return NextResponse.json({ ok: applied, db: "sqlite" }, { status: applied ? 200 : 503 });
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 503 });
+  } catch {
+    // Public endpoint — never leak internal error details (stack traces,
+    // file paths); operators check server logs for the actual cause.
+    return NextResponse.json({ ok: false, error: "not ready" }, { status: 503 });
   }
 }
