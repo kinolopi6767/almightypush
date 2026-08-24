@@ -133,6 +133,7 @@ const secretsSchema = z.object({
   ai_api_key: z.string().max(500).optional().or(z.literal("")),
   ai_model: z.string().max(100).optional().or(z.literal("")),
   ai_base_url: z.string().url().max(500).optional().or(z.literal("")),
+  ydc_api_key: z.string().max(500).optional().or(z.literal("")),
   mail_provider: z.enum(["resend", "brevo", "ses", "smtp", ""]).optional().or(z.literal("")),
   mail_api_key: z.string().max(500).optional().or(z.literal("")),
   mail_from: z.string().email().max(200).optional().or(z.literal("")),
@@ -148,6 +149,7 @@ export async function updateSecretsAction(_prev: SettingsFormState, formData: Fo
     ai_api_key: formData.get("ai_api_key") ?? "",
     ai_model: formData.get("ai_model") ?? "",
     ai_base_url: formData.get("ai_base_url") ?? "",
+    ydc_api_key: formData.get("ydc_api_key") ?? "",
     mail_provider: formData.get("mail_provider") ?? "",
     mail_api_key: formData.get("mail_api_key") ?? "",
     mail_from: formData.get("mail_from") ?? "",
@@ -159,6 +161,7 @@ export async function updateSecretsAction(_prev: SettingsFormState, formData: Fo
   if (d.ai_api_key) setSecret("ai_api_key", d.ai_api_key);
   if (d.ai_model) setSecret("ai_model", d.ai_model);
   if (d.ai_base_url) setSecret("ai_base_url", d.ai_base_url);
+  if (d.ydc_api_key) setSecret("ydc_api_key", d.ydc_api_key);
   if (d.mail_provider) setSecret("mail_provider", d.mail_provider);
   if (d.mail_api_key) setSecret("mail_api_key", d.mail_api_key);
   if (d.mail_from) setSecret("mail_from", d.mail_from);

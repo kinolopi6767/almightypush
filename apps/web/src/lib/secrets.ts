@@ -71,3 +71,7 @@ export function getGDriveConfig(): { enabled: boolean; folderId: string | null; 
   const serviceJson = getSecretWithEnvFallback("gdrive_service_json", "GDRIVE_SERVICE_JSON");
   return { enabled, folderId, serviceJson };
 }
+
+export function getYouConfig(): { apiKey: string | null } {
+  return { apiKey: getSecretWithEnvFallback("ydc_api_key", "YDC_API_KEY") ?? getSecretWithEnvFallback("ydc_api_key", "YOU_API_KEY") };
+}

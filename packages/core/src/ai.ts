@@ -55,7 +55,22 @@ export async function generateHookAnglesAI(topic: string, count = 3, config?: Ai
   const { key, model, baseUrl } = resolveAiConfig(config);
   if (!key) return generateHookAngles(topic, count);
 
-  const prompt = `Generate ${count} high-converting push notification hook angles for topic "${topic}".
+  // Web grounding via you.com when YDC_API_KEY is set: enrich hooks with live trends
+  let grounding = "";
+  try {
+    const ydcKey = process.env.YDC_API_KEY ?? process.env.YOU_API_KEY;
+    if (ydcKey) {
+      const { youSearch } = await import("./you.js");
+      const hits = await youSearch(topic, { count: 3 });
+      if (hits.length > 0) {
+        grounding = `\nLive web context for "${topic}":\n` + hits.map((h) => `- ${h.title ?? ""}: ${(h.snippets ?? h.highlights ?? []).slice(0, 1).join(" ")}`.slice(0, 200)).join("\n");
+      }
+    }
+  } catch {
+    // grounding is optional — fall through to plain generation
+  }
+
+  const prompt = `Generate ${count} high-converting push notification hook angles for topic "${topic}".${grounding}
 Angles must be one of: curiosity, contrast, proof, pain, outcome.
 Return JSON array of {angle, title, message} where title 30-45 chars, message 50-90 chars, on-brand, no spam words.`;
 

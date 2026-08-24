@@ -413,6 +413,21 @@ export function SecretsForm({
             className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
           />
         </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label htmlFor="ydc_api_key" className="text-sm font-medium">
+            You.com API Key <span className="font-normal text-muted-foreground">(optional — web grounding)</span>
+          </label>
+          <input
+            id="ydc_api_key"
+            name="ydc_api_key"
+            type="password"
+            placeholder="ydc_... — leave blank to keep · free tier works without key"
+            className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            Powers URL→Campaign enrichment + hook research via you.com Search. Get free 200 credits at you.com. Leave blank to use heuristic fallback.
+          </p>
+        </div>
         <div className="space-y-1">
           <label htmlFor="mail_provider" className="text-sm font-medium">
             Mail Provider

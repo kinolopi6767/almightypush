@@ -28,6 +28,10 @@ export const baseEnvSchema = z
     DEFAULT_TIMEZONE: z.string().default("UTC"),
     /** When 1, X-Forwarded-For is trusted for rate limiting (behind reverse proxy). */
     TRUST_PROXY: z.enum(["0", "1"]).optional(),
+    /** You.com API key for web-grounded AI (Search + Research). Free tier works without it. */
+    YDC_API_KEY: z.string().min(1).optional(),
+    YOU_API_KEY: z.string().min(1).optional(),
+    YDC_API_BASE_URL: z.string().url().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === "production") {

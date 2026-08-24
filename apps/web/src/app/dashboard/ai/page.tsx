@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { aiGenerations } from "@pushpanel/db/schema";
+import { aiGenerations, settings } from "@pushpanel/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
@@ -12,11 +12,18 @@ export default async function AIStudioPage() {
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : 0;
   const gens = wsId ? db.select().from(aiGenerations).where(eq(aiGenerations.workspace_id, wsId)).orderBy(desc(aiGenerations.id)).limit(20).all() : [];
 
+  // Check if you.com grounding is available (env or panel secret)
+  const hasYdcKey =
+    !!process.env.YDC_API_KEY ||
+    !!process.env.YOU_API_KEY ||
+    !!db.select().from(settings).where(eq(settings.key, "secret:ydc_api_key")).get?.();
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">AI Studio</h1>
-        <p className="mt-1 text-sm text-muted-foreground">8 tools · heuristic offline + LLM when <code className="rounded bg-muted px-1 font-mono text-xs">AI_API_KEY</code> set in Settings → personal unlimited.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          9 tools · heuristic offline + LLM when <code className="rounded bg-muted px-1 font-mono text-xs">AI_API_KEY</code> set · {hasYdcKey ? "you.com web grounding active" : "add YDC_API_KEY for live web grounding"} · personal unlimited.
+        </p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
@@ -58,6 +65,11 @@ export default async function AIStudioPage() {
           <h3 className="font-medium">Image</h3>
           <p className="mt-1 text-xs text-muted-foreground">POST <code className="font-mono">/api/v1/ai/image</code> {`{prompt}`}</p>
           <p className="mt-1 text-xs text-muted-foreground">Placeholder picsum until API key set</p>
+        </div>
+        <div className="rounded-xl border bg-card p-4 shadow-[var(--shadow-card)] ring-1 ring-primary/10">
+          <h3 className="font-medium">Web Research <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">you.com</span></h3>
+          <p className="mt-1 text-xs text-muted-foreground">POST <code className="font-mono">/api/v1/ai/research</code> {`{query, mode: search|research}`}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Live web snippets or deep cited research — powers hook grounding + URL→Campaign</p>
         </div>
       </div>
       <div className="rounded-xl border bg-card p-5">

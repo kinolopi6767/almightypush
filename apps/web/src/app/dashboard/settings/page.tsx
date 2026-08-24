@@ -30,6 +30,7 @@ const SETTING_KEYS = [
   "secret:mail_provider",
   "secret:mail_api_key",
   "secret:mail_from",
+  "secret:ydc_api_key",
   "secret:gdrive_service_json",
 ] as const;
 
