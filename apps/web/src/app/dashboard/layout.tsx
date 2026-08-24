@@ -33,16 +33,35 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <aside className="sidebar-panel sticky top-0 hidden h-svh w-[260px] shrink-0 flex-col md:flex">
         {/* Brand */}
         <div className="flex h-[56px] shrink-0 items-center gap-2.5 border-b border-[var(--sidebar-border)] px-4">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-foreground text-[13px] font-bold tracking-tight text-background dark:bg-white dark:text-zinc-900">
-            P
-          </span>
-          <div className="leading-none">
-            <p className="text-[13.5px] font-semibold tracking-tight text-foreground dark:text-white">PushPanel</p>
-            <p className="text-[11px] font-medium text-muted-foreground">Personal · Unlimited</p>
-          </div>
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-foreground text-[13px] font-bold tracking-tight text-background dark:bg-white dark:text-zinc-900">
+              P
+            </span>
+            <div className="leading-none">
+              <p className="text-[13.5px] font-semibold tracking-tight text-foreground dark:text-white">PushPanel</p>
+              <p className="text-[11px] font-medium text-muted-foreground">Personal · Unlimited</p>
+            </div>
+          </Link>
           <span className="ml-auto hidden rounded-full border bg-card px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground lg:inline-flex">
             v1
           </span>
+        </div>
+        {/* Workspace switcher — quick profile switch for agencies */}
+        <div className="border-b border-[var(--sidebar-border)] px-3 py-2.5">
+          <Link
+            href="/dashboard/workspaces"
+            className="flex items-center justify-between rounded-lg border bg-card px-2.5 py-2 text-xs transition-colors hover:bg-accent"
+          >
+            <span className="flex items-center gap-2 truncate">
+              <span className="flex size-6 items-center justify-center rounded-md bg-primary text-[10px] font-bold text-primary-foreground">
+                {(session.user.workspaceId ? `W${String(session.user.workspaceId).slice(-2)}` : "WS")}
+              </span>
+              <span className="truncate font-medium">Workspace #{session.user.workspaceId ?? "—"}</span>
+            </span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-3 shrink-0 text-muted-foreground" aria-hidden>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </Link>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4">
@@ -160,6 +179,7 @@ const MOBILE_LINKS = [
   ["/dashboard/journeys", "Journeys"],
   ["/dashboard/email", "Email"],
   ["/dashboard/ai", "AI Studio"],
+  ["/dashboard/workspaces", "Workspaces"],
   ["/dashboard/status", "Status"],
   ["/dashboard/api", "API"],
   ["/dashboard/guides", "Guides"],

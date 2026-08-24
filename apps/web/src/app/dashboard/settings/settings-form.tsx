@@ -1,9 +1,42 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createBackupAction, deleteBackupAction, restoreBackupAction, updateGDriveAction, updateOutboundAction, updateSecretsAction, updateSettingsAction, type SettingsFormState } from "./actions";
+
+function TestConnectionButton({ provider, label }: { provider: "ai" | "you" | "mail" | "drive"; label: string }) {
+  const [state, setState] = useState<{ ok?: boolean; msg?: string; loading?: boolean } | null>(null);
+  const test = async () => {
+    setState({ loading: true });
+    try {
+      const res = await fetch("/api/v1/test-connection", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: string; error?: string };
+      setState({ ok: data.ok, msg: data.ok ? data.message : data.error, loading: false });
+    } catch (e) {
+      setState({ ok: false, msg: e instanceof Error ? e.message : "Failed", loading: false });
+    }
+  };
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        onClick={test}
+        disabled={state?.loading}
+        className="inline-flex h-7 items-center rounded-md border bg-card px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+      >
+        {state?.loading ? "Testing…" : label}
+      </button>
+      {state && !state.loading && (
+        <span className={`text-xs ${state.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>{state.msg}</span>
+      )}
+    </span>
+  );
+}
 
 function Status({ state }: { state: SettingsFormState }) {
   if (!state) return null;
@@ -459,9 +492,14 @@ export function SecretsForm({
           <input id="mail_from" name="mail_from" type="email" defaultValue={mailFrom} placeholder="news@yourdomain.com" className="h-9 w-full rounded-md border bg-transparent px-3 text-sm" />
         </div>
       </div>
-      <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-        {pending ? "Saving…" : "Save API Keys"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          {pending ? "Saving…" : "Save API Keys"}
+        </button>
+        <TestConnectionButton provider="ai" label="Test AI" />
+        <TestConnectionButton provider="you" label="Test You.com" />
+        <TestConnectionButton provider="mail" label="Test Mail" />
+      </div>
       <Status state={state} />
     </form>
   );
@@ -510,9 +548,12 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
           <li>Paste JSON above → Save → Test with “Create backup” → check Drive</li>
         </ol>
       </div>
-      <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-        {pending ? "Saving…" : "Save Drive Settings"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          {pending ? "Saving…" : "Save Drive Settings"}
+        </button>
+        <TestConnectionButton provider="drive" label="Test Drive" />
+      </div>
       <Status state={state} />
     </form>
   );
