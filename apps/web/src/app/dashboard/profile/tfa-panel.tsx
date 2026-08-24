@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { CopyButton } from "@/components/copy-button";
 import { disableTfaAction, enableTfaConfirmAction, enableTfaStartAction } from "./tfa-actions";
 
 export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
@@ -62,9 +63,13 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
           <p className="text-sm text-muted-foreground">
             Scan this URI with your authenticator app (or enter the secret manually):
           </p>
-          <code className="block break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">{pendingUri}</code>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">{pendingUri}</code>
+            <CopyButton value={pendingUri ?? ""} label="Copy" />
+          </div>
           <p className="text-xs text-muted-foreground">
             Secret: <code className="rounded bg-muted px-1 py-0.5 font-mono">{pendingSecret}</code>
+            <CopyButton value={pendingSecret ?? ""} label="Copy secret" className="ml-1.5" />
           </p>
           <form action={confirmAction} className="flex items-end gap-2">
             <div className="flex-1">

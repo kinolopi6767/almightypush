@@ -31,21 +31,30 @@ const nextConfig: NextConfig = {
           { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
           // HSTS only on HTTPS — browsers ignore on HTTP, safe to send always when behind proxy that terminates TLS
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-          // Minimal CSP that still allows Next.js inline styles/scripts:Next requires 'unsafe-inline' for hydration
+          // CSP: production drops 'unsafe-eval' and the blanket https: script
+          // source (the app loads zero third-party scripts — everything is
+          // same-origin). 'unsafe-inline' stays for Next's bootstrap/hydration
+          // inline scripts; img/connect keep https: because campaign icons and
+          // customer-site SDK traffic legitimately reach any origin.
           {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
-              "style-src 'self' 'unsafe-inline' https:",
+              process.env.NODE_ENV === "production"
+                ? "script-src 'self' 'unsafe-inline'"
+                : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https: blob:",
-              "font-src 'self' data: https:",
+              "font-src 'self' data:",
               "connect-src 'self' https:",
               "frame-ancestors 'self'",
               "base-uri 'self'",
               "form-action 'self'",
+              "object-src 'none'",
             ].join("; "),
           },
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
         ],
       },
       {

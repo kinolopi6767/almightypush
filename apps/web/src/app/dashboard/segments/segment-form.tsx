@@ -145,13 +145,20 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
     initial?.groups ?? [{ logic: "AND", conditions: [emptyCondition()] }],
   );
   const [estimate, setEstimate] = useState<{ count: number; error?: string } | null>(null);
+  const [estimating, setEstimating] = useState(false);
 
   const runEstimate = useCallback(async () => {
-    const fd = new FormData();
-    fd.set("domainIds", JSON.stringify(domainIds));
-    fd.set("groups", JSON.stringify({ groups }));
-    setEstimate(await estimateSegmentDraft(fd));
-  }, [domainIds, groups]);
+    if (estimating) return;
+    setEstimating(true);
+    try {
+      const fd = new FormData();
+      fd.set("domainIds", JSON.stringify(domainIds));
+      fd.set("groups", JSON.stringify({ groups }));
+      setEstimate(await estimateSegmentDraft(fd));
+    } finally {
+      setEstimating(false);
+    }
+  }, [domainIds, groups, estimating]);
 
   const submitLabel = initial ? "Save segment" : "Create segment";
 
@@ -318,9 +325,11 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
           <button
             type="button"
             onClick={runEstimate}
-            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+            disabled={estimating}
+            aria-busy={estimating}
+            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
           >
-            Estimate
+            {estimating ? "Estimating…" : "Estimate"}
           </button>
           {estimate && (
             <span className="text-sm text-muted-foreground" aria-live="polite">
