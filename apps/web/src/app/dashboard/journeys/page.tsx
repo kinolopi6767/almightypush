@@ -39,7 +39,10 @@ export default async function JourneysPage() {
               </div>
               <details className="mt-3">
                 <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">View canvas JSON</summary>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs leading-relaxed break-words whitespace-pre-wrap">{JSON.stringify(JSON.parse(r.canvas_json || "{}"), null, 2)}</pre>
+                <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs leading-relaxed break-words whitespace-pre-wrap">{(() => {
+                  try { return JSON.stringify(JSON.parse(r.canvas_json || "{}"), null, 2); }
+                  catch { return r.canvas_json; }
+                })()}</pre>
               </details>
             </div>
           ))}

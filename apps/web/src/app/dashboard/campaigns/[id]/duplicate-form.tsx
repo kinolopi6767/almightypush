@@ -38,7 +38,7 @@ export function DuplicateCampaignForm({ campaignId, canRetarget }: { campaignId:
           name="intent"
           value="duplicate"
           disabled={pending}
-          className="inline-flex h-9 flex-1 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-9 flex-1 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Working…" : "Send again"}
         </button>

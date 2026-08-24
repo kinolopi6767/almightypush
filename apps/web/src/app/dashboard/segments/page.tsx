@@ -72,7 +72,7 @@ export default async function SegmentsPage() {
                     Edit
                   </Link>
                   <form action={deleteSegmentAction.bind(null, row.id)}>
-                    <SubmitButton confirm={`Delete segment "${row.name}"?`} pendingLabel="…" title={`Delete segment ${row.name}`} className="inline-flex h-7 items-center rounded-md border border-destructive/20 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50">
+                    <SubmitButton confirm={`Delete segment "${row.name}"?`} pendingLabel="Deleting…" title={`Delete segment ${row.name}`} className="inline-flex h-7 items-center rounded-md border border-destructive/20 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50">
                       Delete
                     </SubmitButton>
                   </form>

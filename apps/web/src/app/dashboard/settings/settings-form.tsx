@@ -8,16 +8,16 @@ import { createBackupAction, deleteBackupAction, restoreBackupAction, updateGDri
 function Status({ state }: { state: SettingsFormState }) {
   if (!state) return null;
   if (state.error) {
-    return <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>;
+    return <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>;
   }
   if (state.backupId !== undefined) {
     return (
-      <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+      <p role="status" className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
         Backup created (#{state.backupId}).
       </p>
     );
   }
-  if (state.ok) return <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">Saved.</p>;
+  if (state.ok) return <p role="status" className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">Saved.</p>;
   return null;
 }
 

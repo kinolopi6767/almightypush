@@ -56,7 +56,7 @@ export default async function TemplatesPage() {
                 <form action={deleteTemplateAction.bind(null, row.id)}>
                   <SubmitButton
                     confirm={`Delete template "${row.name}"?`}
-                    pendingLabel="…"
+                    pendingLabel="Deleting…"
                     className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                   >
                     Delete

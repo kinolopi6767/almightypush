@@ -71,7 +71,7 @@ export default async function CampaignsPage() {
             </a>
             <Link
               href="/dashboard/campaigns/new"
-              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98]"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
             >
               New campaign
             </Link>
@@ -79,7 +79,7 @@ export default async function CampaignsPage() {
         }
       />
 
-      <div className="mt-8 space-y-3">
+      <div className="mt-8 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_120px]">
         {rows.length === 0 && (
           <EmptyState
             icon={<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />}

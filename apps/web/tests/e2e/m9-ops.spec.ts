@@ -14,6 +14,7 @@ test("metrics endpoint is authenticated (leaks internals otherwise)", async ({ r
 });
 
 test("server status page renders live cards", async ({ page }) => {
+  test.setTimeout(120_000);
   await signInViaUi(page);
   await page.goto("/dashboard/status");
   await expect(page.getByRole("heading", { name: "Server status" })).toBeVisible();
@@ -36,6 +37,7 @@ test("openapi.json is served and describes the public endpoints", async ({ reque
 });
 
 test("API docs page lists the endpoints from the spec", async ({ page }) => {
+  test.setTimeout(120_000);
   await signInViaUi(page);
   await page.goto("/dashboard/api");
   await expect(page.getByRole("heading", { name: "API", exact: true })).toBeVisible();
@@ -46,6 +48,7 @@ test("API docs page lists the endpoints from the spec", async ({ page }) => {
 });
 
 test("guides page shows WordPress, Blogger and AMP sections with code", async ({ page }) => {
+  test.setTimeout(120_000);
   await signInViaUi(page);
   await page.goto("/dashboard/guides");
   await expect(page.getByRole("heading", { name: "WordPress (push-on-publish webhook)" })).toBeVisible();

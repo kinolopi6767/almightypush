@@ -188,7 +188,7 @@ export default async function AnalyticsPage({
                       </div>
                       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-primary transition-all group-hover:bg-primary-hover"
+                          className="h-full rounded-full bg-primary transition-colors group-hover:bg-primary-hover"
                           style={{ width: `${Math.round((r.count / max) * 100)}%` }}
                         />
                       </div>

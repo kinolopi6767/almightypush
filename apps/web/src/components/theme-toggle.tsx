@@ -16,11 +16,13 @@ export function ThemeToggle() {
       aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
       title={dark ? "Light mode" : "Dark mode"}
       onClick={() => setTheme(dark ? "light" : "dark")}
+      role="switch"
+      aria-checked={dark}
       className="relative inline-flex h-8 w-[52px] items-center rounded-full border bg-muted p-1 transition-colors dark:border-white/10 dark:bg-white/10"
     >
       <span
         aria-hidden
-        className={`inline-flex size-6 items-center justify-center rounded-full bg-card text-foreground shadow-sm transition-all ${dark ? "translate-x-6" : "translate-x-0"}`}
+        className={`inline-flex size-6 items-center justify-center rounded-full bg-card text-foreground shadow-sm transition-colors ${dark ? "translate-x-6" : "translate-x-0"}`}
       >
         {dark ? (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="size-3.5">

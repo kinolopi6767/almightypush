@@ -194,7 +194,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
               return (
                 <label
                   key={d.id}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm has-focus-visible:ring-2 has-focus-visible:ring-ring ${
                     checked ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"
                   }`}
                 >
@@ -338,7 +338,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Saving…" : submitLabel}
         </button>

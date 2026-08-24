@@ -61,7 +61,7 @@ export default async function ChannelsPage() {
               <div className="flex shrink-0 items-center gap-2 self-start">
                 <form action={toggleChannelAction.bind(null, row.id)}>
                   <SubmitButton
-                    pendingLabel="…"
+                    pendingLabel="Deleting…"
                     className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
                     {row.status === "active" ? "Pause" : "Resume"}
@@ -70,7 +70,7 @@ export default async function ChannelsPage() {
                 <form action={deleteChannelAction.bind(null, row.id)}>
                   <SubmitButton
                     confirm={`Delete channel "${row.title}"? This cannot be undone.`}
-                    pendingLabel="…"
+                    pendingLabel="Deleting…"
                     className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10 disabled:opacity-50"
                   >
                     Delete

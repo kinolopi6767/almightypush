@@ -52,7 +52,7 @@ export function StatCard({
     </>
   );
 
-  const base = "surface group block rounded-2xl p-6 transition-all";
+  const base = "surface group block rounded-2xl p-6 transition-colors";
   const hover = href ? " surface-hover hover:border-border-strong" : "";
   const cls = `${base}${hover} ${className}`;
   const testId = `stat-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;

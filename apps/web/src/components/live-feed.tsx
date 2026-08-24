@@ -45,7 +45,7 @@ export function LiveFeed({ limit = 20 }: { limit?: number }) {
     <div className="rounded-xl border bg-card p-5">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">Live activity</h2>
-        <span
+        <span role="status"
           className={`inline-flex items-center gap-1.5 text-xs ${
             connected ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
           }`}

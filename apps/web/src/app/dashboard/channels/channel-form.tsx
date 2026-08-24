@@ -25,15 +25,23 @@ export function ChannelForm() {
     <form action={action}>
       <button
         type="button"
+        aria-expanded={open}
+        aria-haspopup="dialog"
         onClick={() => setOpen(!open)}
-        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-all hover:bg-primary-hover active:scale-[0.98]"
+        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
       >
         {open ? "Cancel" : "Add channel"}
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={() => setOpen(false)}>
-          <div className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Add YouTube channel">
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/40 p-4"
+          onClick={() => setOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+          }}
+        >
+          <div className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add YouTube channel">
             <h2 className="text-lg font-semibold">Add YouTube channel</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Creates a landing page that captures push subscribers before sending visitors to your channel.

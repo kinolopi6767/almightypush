@@ -22,6 +22,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="app-shell flex min-h-svh">
+      {/* Skip link: first focusable element, visible on focus */}
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        Skip to content
+      </a>
       {/* ── Sidebar ─────────────────────────────── */}
       <aside className="sidebar-panel sticky top-0 hidden h-svh w-[260px] shrink-0 flex-col md:flex">
         {/* Brand */}
@@ -78,15 +85,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* ── Main ─────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Desktop topbar */}
-        <header className="sticky top-0 z-40 hidden h-[56px] items-center justify-between gap-4 border-b bg-card/80 px-6 backdrop-blur-xl md:flex">
+        <header className="sticky top-0 z-40 hidden h-[56px] items-center justify-between gap-4 border-b bg-card/80 px-6 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:flex">
           <div className="flex items-center gap-2 text-xs">
-            <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground shadow-xs">
-              <span aria-hidden className="relative flex size-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-                <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-              </span>
-              All systems operational
-            </span>
+            <Link
+              href="/dashboard/status"
+              className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              System status
+            </Link>
             <span className="hidden text-border-strong lg:inline">·</span>
             <Link href="/dashboard/guides" className="hidden rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex">
               Guides
@@ -130,7 +136,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
         <MobileNav />
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-6 md:py-8">{children}</main>
+        <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-6 md:py-8">{children}</main>
 
         <footer className="border-t py-4 text-center text-[11px] tracking-wide text-muted-foreground/60">
           PushPanel · self-hosted · data stays on your server
@@ -164,7 +170,7 @@ const MOBILE_LINKS = [
 
 function MobileNav() {
   return (
-    <nav className="sticky top-14 z-30 overflow-x-auto border-b bg-card/80 backdrop-blur-xl md:hidden">
+    <nav aria-label="Sections" className="sticky top-14 z-30 overflow-x-auto border-b bg-card/80 backdrop-blur-xl md:hidden">
       <div className="flex items-center gap-1 px-3 py-2 text-[13px]">
         {MOBILE_LINKS.map(([href, label]) => (
           <Link

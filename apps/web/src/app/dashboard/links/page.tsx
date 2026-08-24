@@ -66,7 +66,7 @@ export default async function LinksPage() {
                   <span className="whitespace-nowrap">{row.clicks_count.toLocaleString()} clicks</span>
                   <span className="whitespace-nowrap">{row.subscribers_count.toLocaleString()} subs</span>
                   <form action={deleteLinkAction.bind(null, row.id)}>
-                    <SubmitButton confirm={`Delete link ${row.code}?`} pendingLabel="…" className="rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={`Delete link ${row.code}`}>Delete</SubmitButton>
+                    <SubmitButton confirm={`Delete link ${row.code}?`} pendingLabel="Deleting…" className="rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={`Delete link ${row.code}`}>Delete</SubmitButton>
                   </form>
                 </div>
               </div>
