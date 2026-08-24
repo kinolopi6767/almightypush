@@ -7,6 +7,7 @@ import { automations } from "@pushpanel/db/schema";
 import { AUTOMATION_TYPE_LABEL } from "@pushpanel/core";
 import { AutomationForm } from "./automation-form";
 import { AutomationRow } from "./row-actions";
+import { EmptyState } from "@/components/empty-state";
 
 export const metadata = { title: "Automations" };
 
@@ -57,10 +58,11 @@ export default async function AutomationsPage() {
 
       <div className="mt-8 space-y-3">
         {rows.length === 0 && (
-          <div className="rounded-xl border border-dashed p-8 text-center">
-            <p className="text-sm font-medium">No automations yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">Create one to push automatically — welcome, publish hook, AutoMagic, or drip.</p>
-          </div>
+          <EmptyState
+            icon={<path d="M13 2 3 14h9l-1 8 10-12h-9z" />}
+            title="No automations yet"
+            description="Create one to push automatically — welcome messages, publish hooks, AutoMagic or drip sequences."
+          />
         )}
         {rows.map((row) => (
           <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">

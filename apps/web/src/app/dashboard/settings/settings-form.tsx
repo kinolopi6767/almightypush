@@ -332,24 +332,30 @@ function RestoreBackup({ id }: { id: number }) {
   const [state, action, pending] = useActionState(() => restoreBackupAction(id), undefined);
 
   useEffect(() => {
-    if (state?.ok) {
-      alert("Backup restored — restart may be needed for WAL. Refreshing...");
-      router.refresh();
-    } else if (state?.error) {
-      alert(state.error);
-    }
+    if (state?.ok || state?.error) router.refresh();
   }, [state, router]);
 
   return (
-    <button
-      onClick={() => {
-        if (window.confirm("Restore this backup? Current DB will be overwritten. Continue?")) void action();
-      }}
-      disabled={pending}
-      className="rounded-md px-2 py-1 text-sm text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 disabled:opacity-50 dark:text-amber-400 dark:hover:text-amber-300"
-    >
-      {pending ? "…" : "Restore"}
-    </button>
+    <span className="inline-flex items-center gap-2">
+      {state?.ok && (
+        <span role="status" className="text-xs text-emerald-600 dark:text-emerald-400">
+          Restored — restart recommended.
+        </span>
+      )}
+      {state?.error && (
+        <span role="alert" className="text-xs text-destructive">{state.error}</span>
+      )}
+      <button
+        onClick={() => {
+          if (window.confirm("Restore this backup? Current data will be overwritten. Continue?")) void action();
+        }}
+        disabled={pending}
+        aria-busy={pending}
+        className="rounded-md px-2 py-1 text-sm text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 disabled:opacity-50 dark:text-amber-400 dark:hover:text-amber-300"
+      >
+        {pending ? "Restoring…" : "Restore"}
+      </button>
+    </span>
   );
 }
 

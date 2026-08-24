@@ -92,7 +92,7 @@ function main() {
       if (backupMade) logger.info({ interval: readSetting(db, "backup_auto_interval") }, "auto backup snapshot created");
       const pruned = runRetentionPruning(db, new Date(), logger);
       if (pruned.deliveries > 0 || pruned.events > 0) logger.info(pruned, "retention pruning");
-      traceActive = sched.campaignsStarted > 0 || auto.ran > 0 || journey.ran > 0 || stats.claimed > 0 || cleaned > 0 || pruned.deliveries > 0;
+      traceActive = sched.campaignsStarted > 0 || auto.ran > 0 || journey.ran > 0 || email.started > 0 || stats.claimed > 0 || cleaned > 0 || pruned.deliveries > 0;
     } catch (error) {
       logger.error({ err: error }, "tick failed");
     } finally {

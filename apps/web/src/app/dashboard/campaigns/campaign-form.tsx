@@ -7,6 +7,7 @@ const nextRid = () => `row-${Date.now().toString(36)}-${++__rowSeq}`;
 import { Fragment, useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createCampaignAction, type CampaignFormState } from "./actions";
+import { UseDirtyGuard } from "@/components/use-dirty-guard";
 
 export function CampaignForm({
   domains,
@@ -97,8 +98,12 @@ export function CampaignForm({
   const addVariant = () =>
     setVariants((prev) => (prev.length >= 20 ? prev : [...prev, { rid: nextRid(), title: "", weight: 10 }]));
 
+  const isDirty =
+    Boolean(title) || Boolean(message) || Boolean(launchUrl) || variants.length > 0;
+
   return (
     <form action={formAction} className="rounded-xl border bg-card p-5">
+      <UseDirtyGuard dirty={() => isDirty} />
       {/* Hidden fields for advanced variant/ delivery plumbing */}
       <input type="hidden" name="channel" value={channel} />
       <input type="hidden" name="topic" value={topic} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   cleanUnsubscribedAction,
   exportSubscribersAction,
@@ -11,7 +11,7 @@ import {
 function Result({ state }: { state: SubscriberActionState }) {
   if (!state) return null;
   if (state.error) {
-    return <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>;
+    return <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>;
   }
   if (state.imported !== undefined) {
     return (
@@ -33,6 +33,7 @@ function Result({ state }: { state: SubscriberActionState }) {
 export function SubscribersTools({ domainId }: { domainId: number }) {
   const [importState, importAction, importing] = useActionState(importSubscribersAction.bind(null, domainId), undefined);
   const [cleanState, cleanAction, cleaning] = useActionState(() => cleanUnsubscribedAction(domainId), undefined);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const download = async () => {
     try {
@@ -48,15 +49,18 @@ export function SubscribersTools({ domainId }: { domainId: number }) {
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else if (result?.error) {
-        alert(result.error);
+        setExportError(result.error);
       }
     } catch {
-      alert("Export failed — try again");
+      setExportError("Export failed — try again.");
     }
   };
 
   return (
     <div className="space-y-3">
+      {exportError && (
+        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{exportError}</p>
+      )}
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => void download()}

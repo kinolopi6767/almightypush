@@ -53,12 +53,20 @@ function resolveEmailAudience(db: PushDb, workspaceId: number, audienceJson: str
     const parsed = JSON.parse(audienceJson) as { kind?: string; ids?: number[] };
     if (parsed.kind === "manual" && Array.isArray(parsed.ids)) {
       const ids = parsed.ids.filter((n) => Number.isInteger(n) && n > 0);
-      if (!suppressionOn || ids.length === 0) return ids;
-      // filter suppressed (bounced/unsubscribed) when suppression on
+      // Always scope to the workspace, even with suppression off — raw
+      // operator-authored ids must not resolve contacts in other workspaces.
+      const scoped = db
+        .select({ id: emailContacts.id })
+        .from(emailContacts)
+        .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`))
+        .all()
+        .map((r) => r.id);
+      if (!suppressionOn || scoped.length === 0) return scoped;
+      // Filter the workspace-scoped list against suppressed contacts.
       const rows = db
         .select({ id: emailContacts.id })
         .from(emailContacts)
-        .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`, sql`${emailContacts.status} NOT IN ('bounced','unsubscribed')`))
+        .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.id} IN (${sql.join(scoped.map((id) => sql`${id}`), sql`, `)})`, sql`${emailContacts.status} NOT IN ('bounced','unsubscribed')`))
         .all();
       return rows.map((r) => r.id);
     }

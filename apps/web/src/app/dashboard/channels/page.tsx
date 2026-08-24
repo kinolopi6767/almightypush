@@ -1,6 +1,7 @@
 import { ChannelForm } from "./channel-form";
 import { deleteChannelAction, listChannels, toggleChannelAction, type Channel } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
+import { EmptyState } from "@/components/empty-state";
 
 export const metadata = { title: "YouTube channels" };
 
@@ -21,9 +22,11 @@ export default async function ChannelsPage() {
 
       <div className="mt-8 space-y-3">
         {rows.length === 0 && (
-          <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-            No channels yet — add one to start capturing subscribers.
-          </div>
+          <EmptyState
+            icon={<path d="M22.54 6.42a2.78 2.78 0 0 1-1.94 2C18.88 9 12 9 12 9s-6.88 0-8.6-.46a2.78 2.78 0 0 1-1.94-2A29 29 0 0 1 1 11.75a29 29 0 0 1 .46-5.33A2.78 2.78 0 0 1 3.4 2c1.72-.46 8.6-.46 8.6-.46z" />}
+            title="No channels yet"
+            description="Add a YouTube channel to create a landing page that captures push subscribers before sending visitors to YouTube."
+          />
         )}
         {rows.map((row) => (
           <div key={row.id} className="card-lift rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/30">

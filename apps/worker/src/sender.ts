@@ -610,12 +610,14 @@ function finalizeCampaigns(db: PushDb, campaignIds: number[]) {
       .all();
     const anySent = (sentRow?.value ?? 0) > 0;
     const status = anySent ? "done" : "failed";
-    db.update(campaigns)
+    const finWrite = db
+      .update(campaigns)
       .set({ status, sent_at: new Date().toISOString() })
       // Never clobber an operator's `cancelled` (or a fresh `scheduled`)
       // written while this cycle was in flight.
       .where(and(eq(campaigns.id, id), inArray(campaigns.status, ["scheduled", "sending"])))
       .run();
+    if (finWrite.changes === 0) continue;
     if (webhookConfig) {
       emitWebhookEvent(webhookConfig, "campaign_done", { campaign_id: id, status });
     }
