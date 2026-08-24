@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import path from "node:path";
 import { stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { auth } from "@/auth";
@@ -43,7 +44,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const dbFile = resolveDbPath(process.env.DATABASE_PATH);
     const allowedDir = resolve(dbFile, "..", "backups");
     const resolved = resolve(row.location);
-    if (!resolved.startsWith(allowedDir)) return new Response("Forbidden", { status: 403 });
+    if (!resolved.startsWith(allowedDir + path.sep) && resolved !== allowedDir) return new Response("Forbidden", { status: 403 });
   } catch {
     return new Response("Forbidden", { status: 403 });
   }

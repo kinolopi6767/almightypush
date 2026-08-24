@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { workspaces, users } from "@pushpanel/db/schema";
