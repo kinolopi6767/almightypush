@@ -22,13 +22,13 @@ export function CreateWorkspaceForm() {
           <label htmlFor="ws-name" className="text-sm font-medium">
             Name
           </label>
-          <input id="ws-name" name="name" required placeholder="Acme Inc" className="h-9 w-full rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          <input id="ws-name" name="name" required placeholder="Acme Inc" className="h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
         </div>
         <div className="space-y-1">
           <label htmlFor="ws-slug" className="text-sm font-medium">
             Slug <span className="font-normal text-muted-foreground">(optional)</span>
           </label>
-          <input id="ws-slug" name="slug" placeholder="acme" className="h-9 w-full rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          <input id="ws-slug" name="slug" placeholder="acme" className="h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
         </div>
       </div>
       {(state as { error?: string })?.error && <p className="text-sm text-destructive">{(state as { error?: string }).error}</p>}

@@ -50,7 +50,7 @@ export function CreateApiKeyForm({
           maxLength={64}
           placeholder="Production"
           disabled={disabled}
-          className="mt-1 h-9 w-full rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="mt-1 h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
       <div>

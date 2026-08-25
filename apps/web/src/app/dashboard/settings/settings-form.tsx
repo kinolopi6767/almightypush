@@ -97,7 +97,7 @@ export function SettingsForm({
           name="timezone"
           defaultValue={timezone}
           placeholder="UTC (e.g. America/New_York)"
-          className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">Display timezone for the dashboard.</p>
       </div>
@@ -113,7 +113,7 @@ export function SettingsForm({
           min={0}
           max={36500}
           defaultValue={retentionDays}
-          className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">
           Purge unsubscribed subscribers older than this. The worker cleanup job reads this value; 0 disables it.
@@ -131,7 +131,7 @@ export function SettingsForm({
           min={1}
           max={1000}
           defaultValue={sendingSpeed}
-          className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">
           How many pushes the worker has in flight per cycle. Lower it to be gentler to the push service; raise it to
@@ -167,7 +167,7 @@ export function SettingsForm({
             id="backupInterval"
             name="backupInterval"
             defaultValue={backupInterval}
-            className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+            className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
           >
             <option value="off">Off</option>
             <option value="daily">Daily</option>
@@ -187,7 +187,7 @@ export function SettingsForm({
             min={1}
             max={365}
             defaultValue={backupRetention}
-            className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+            className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">Newest N automated snapshots kept; older ones are pruned.</p>
         </div>
@@ -210,7 +210,7 @@ export function SettingsForm({
           name="cdnUrl"
           defaultValue={cdnUrl}
           placeholder="https://cdn.example.com"
-          className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">Dedicated Enterprise CDN for SDK delivery (empty = self-host).</p>
       </div>
@@ -227,7 +227,7 @@ export function SettingsForm({
             min={0}
             max={1000}
             defaultValue={frequencyCapDaily}
-            className="h-9 w-full max-w-xs rounded-md border bg-transparent px-3 text-sm"
+            className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">0 = off. Enforced as a calendar-day cap AND a rolling 24h window (whichever bites). Over cap = suppressed, not sent.</p>
         </div>
@@ -426,7 +426,7 @@ export function SecretsForm({
             name="ai_api_key"
             type="password"
             placeholder={hasAiKey ? "•••••••• (set) — leave blank to keep" : "sk-..."}
-            className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">Powers AI Studio: hook angles, spam score, translate, URL→campaign, image.</p>
         </div>
@@ -434,7 +434,7 @@ export function SecretsForm({
           <label htmlFor="ai_model" className="text-sm font-medium">
             AI Model
           </label>
-          <input id="ai_model" name="ai_model" defaultValue={aiModel} placeholder="gpt-4o-mini" className="h-9 w-full rounded-md border bg-transparent px-3 text-sm" />
+          <input id="ai_model" name="ai_model" defaultValue={aiModel} placeholder="gpt-4o-mini" className="h-9 w-full rounded-md border bg-card px-3 text-sm" />
         </div>
         <div className="space-y-1 sm:col-span-2">
           <label htmlFor="ai_base_url" className="text-sm font-medium">
@@ -445,7 +445,7 @@ export function SecretsForm({
             name="ai_base_url"
             defaultValue={aiBaseUrl}
             placeholder="https://api.openai.com/v1"
-            className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
           />
         </div>
         <div className="space-y-1 sm:col-span-2">
@@ -457,7 +457,7 @@ export function SecretsForm({
             name="ydc_api_key"
             type="password"
             placeholder="ydc_... — leave blank to keep · free tier works without key"
-            className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">
             Powers URL→Campaign enrichment + hook research via you.com Search. Get free 200 credits at you.com. Leave blank to use heuristic fallback.
@@ -467,7 +467,7 @@ export function SecretsForm({
           <label htmlFor="mail_provider" className="text-sm font-medium">
             Mail Provider
           </label>
-          <select id="mail_provider" name="mail_provider" defaultValue={mailProvider} className="h-9 w-full rounded-md border bg-transparent px-3 text-sm">
+          <select id="mail_provider" name="mail_provider" defaultValue={mailProvider} className="h-9 w-full rounded-md border bg-card px-3 text-sm">
             <option value="">— none —</option>
             <option value="resend">Resend</option>
             <option value="brevo">Brevo</option>
@@ -484,14 +484,14 @@ export function SecretsForm({
             name="mail_api_key"
             type="password"
             placeholder={hasMailKey ? "•••••••• (set)" : "re_... / xkeysib-..."}
-            className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
           />
         </div>
         <div className="space-y-1 sm:col-span-2">
           <label htmlFor="mail_from" className="text-sm font-medium">
             Mail From (verified domain)
           </label>
-          <input id="mail_from" name="mail_from" type="email" defaultValue={mailFrom} placeholder="news@yourdomain.com" className="h-9 w-full rounded-md border bg-transparent px-3 text-sm" />
+          <input id="mail_from" name="mail_from" type="email" defaultValue={mailFrom} placeholder="news@yourdomain.com" className="h-9 w-full rounded-md border bg-card px-3 text-sm" />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -525,7 +525,7 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
         <label htmlFor="gdrive_folder_id" className="text-sm font-medium">
           Drive Folder ID (optional)
         </label>
-        <input id="gdrive_folder_id" name="gdrive_folder_id" defaultValue={folderId} placeholder="1aB2cDeFgHiJkL — leave empty for My Drive root" className="h-9 w-full rounded-md border bg-transparent px-3 text-sm" />
+        <input id="gdrive_folder_id" name="gdrive_folder_id" defaultValue={folderId} placeholder="1aB2cDeFgHiJkL — leave empty for My Drive root" className="h-9 w-full rounded-md border bg-card px-3 text-sm" />
         <p className="text-xs text-muted-foreground">Find in Drive URL: https://drive.google.com/drive/folders/{"<ID>"}</p>
       </div>
       <div className="space-y-1">
@@ -537,7 +537,7 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
           name="gdrive_service_json"
           rows={4}
           placeholder='{"type":"service_account","project_id":"...","private_key":"-----BEGIN PRIVATE KEY-----...","client_email":"...@...iam.gserviceaccount.com"}'
-          className="w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs"
+          className="w-full rounded-md border bg-card px-3 py-2 font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">Stored encrypted. Share your Drive folder with the service account email (Viewer or Editor).</p>
       </div>
@@ -585,7 +585,7 @@ export function OutboundWebhookForm({ url, hasSecret }: { url: string; hasSecret
           type="url"
           defaultValue={url}
           placeholder="https://n8n.example.com/webhook/pushpanel"
-          className="h-9 w-full rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
       <div className="space-y-1">
@@ -598,7 +598,7 @@ export function OutboundWebhookForm({ url, hasSecret }: { url: string; hasSecret
           type="password"
           autoComplete="off"
           placeholder={hasSecret ? "••••••••" : "whsec_..."}
-          className="h-9 w-full rounded-md border bg-transparent px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
         <p className="text-xs text-muted-foreground">
           Verify header <code className="rounded bg-muted px-1">X-PushPanel-Signature</code> as{" "}

@@ -20,7 +20,7 @@ export function ProfileForm({ name }: { name: string }) {
           name="name"
           defaultValue={name}
           required
-          className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-full rounded-md border bg-card px-3 text-sm"
         />
       </div>
 
@@ -34,7 +34,7 @@ export function ProfileForm({ name }: { name: string }) {
           type="password"
           required
           autoComplete="current-password"
-          className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-full rounded-md border bg-card px-3 text-sm"
         />
       </div>
 
@@ -48,7 +48,7 @@ export function ProfileForm({ name }: { name: string }) {
           type="password"
           autoComplete="new-password"
           placeholder="Leave blank to keep current"
-          className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 w-full rounded-md border bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">At least 10 characters.</p>
       </div>
