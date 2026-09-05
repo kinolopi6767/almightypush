@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { createCipher, emitWebhookEvent, type OutboundWebhookConfig } from "@pushpanel/core";
+import { createCipher, type OutboundWebhookConfig } from "@pushpanel/core";
 import { settings, type allTables } from "@pushpanel/db";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
@@ -21,10 +21,4 @@ export function getOutboundConfig(db: PushDb): OutboundWebhookConfig | null {
     }
   }
   return { url, secret };
-}
-
-/** Fire-and-forget lifecycle event to the configured webhook (no-op when unset). */
-export function emitEvent(db: PushDb, event: string, data: Record<string, unknown>): void {
-  const config = getOutboundConfig(db);
-  if (config) emitWebhookEvent(config, event, data);
 }

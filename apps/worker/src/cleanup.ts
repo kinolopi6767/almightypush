@@ -1,10 +1,22 @@
-import { and, count, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
-import { deliveries, domains, events, settings, subscribers } from "@pushpanel/db/schema";
+import { and, count, eq, inArray, isNotNull, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { deliveries, domains, events, settings, subscribers, subscriberTags } from "@pushpanel/db/schema";
 import { automationRuns, journeyRuns } from "@pushpanel/db/schema";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
 
 const CLEANUP_HOUR_MS = 3_600_000;
+/** Rows per delete transaction — bounds write-lock hold time so the web
+ * process never hits SQLITE_BUSY storms during the daily prune. */
+const PRUNE_BATCH = 10_000;
+
+/** Guard timestamps from corrupt settings markers: NaN must fail CLOSED
+ * ("due"), not open (skip), or a garbage marker would stall the job forever. */
+export function markerIsRecent(marker: string | null, now: number, intervalMs: number): boolean {
+  if (!marker) return false;
+  const t = new Date(marker).getTime();
+  if (!Number.isFinite(t)) return false;
+  return now - t < intervalMs;
+}
 
 /**
  * Housekeeping job: purge unsubscribed subscribers after a retention window.
@@ -22,7 +34,7 @@ export function runCleanup(
   // Hourly guard — the marker lives in settings (shared key namespace is fine
   // for a single-writer SQLite file).
   const lastRunAt = opts.lastRunAt ?? readSetting(db, "last_cleanup_at");
-  if (lastRunAt && now.getTime() - new Date(lastRunAt).getTime() < CLEANUP_HOUR_MS) {
+  if (markerIsRecent(lastRunAt, now.getTime(), CLEANUP_HOUR_MS)) {
     return { deleted: 0, ran: false };
   }
 
@@ -36,6 +48,15 @@ export function runCleanup(
     // The purge bypassed the per-subscriber paths that maintain
     // domains.subscribers_count — recompute it for every domain.
     recomputeSubscriberCounts(db);
+    // subscriber_tags has no FK cascade — tags of purged subscribers would
+    // otherwise accumulate forever.
+    try {
+      db.delete(subscriberTags)
+        .where(notInArray(subscriberTags.subscriber_id, db.select({ id: subscribers.id }).from(subscribers)))
+        .run();
+    } catch {
+      /* non-fatal — cosmetic storage leak only */
+    }
   }
 
   writeSetting(db, "last_cleanup_at", now.toISOString());
@@ -66,7 +87,7 @@ function recomputeSubscriberCounts(db: BetterSQLite3Database<typeof allTables>):
  */
 export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>, now: Date = new Date(), logger?: { warn: (o: unknown, m: string) => void }): { deliveries: number; events: number } {
   const lastPrune = readSetting(db, "last_prune_at");
-  if (lastPrune && now.getTime() - new Date(lastPrune).getTime() < 24 * 60 * 60 * 1000) return { deliveries: 0, events: 0 };
+  if (markerIsRecent(lastPrune, now.getTime(), 24 * 60 * 60 * 1000)) return { deliveries: 0, events: 0 };
 
   const delDays = Number(readSetting(db, "retention_deliveries_days") ?? process.env.RETENTION_DELIVERIES_DAYS ?? 7);
   const evtDays = Number(readSetting(db, "retention_events_days") ?? process.env.RETENTION_EVENTS_DAYS ?? 30);
@@ -78,8 +99,27 @@ export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>,
   if (delDays > 0) {
     const cutoff = now.getTime() - delDays * 86_400_000;
     try {
-      const res = db.delete(deliveries).where(and(inArray(deliveries.status, ["sent", "failed", "cancelled", "unsubscribed"]), isNotNull(deliveries.sent_at), lt(deliveries.sent_at, cutoff))).run();
-      prunedDel = res.changes;
+      // Batched by rowid range: one DELETE over tens of millions of rows
+      // would hold SQLite's write lock for the whole statement and starve
+      // the web process with SQLITE_BUSY. 10k-row transactions keep each
+      // lock window short.
+      for (;;) {
+        const batch = db
+          .select({ id: deliveries.id })
+          .from(deliveries)
+          .where(and(inArray(deliveries.status, ["sent", "failed", "cancelled", "unsubscribed"]), isNotNull(deliveries.sent_at), lt(deliveries.sent_at, cutoff)))
+          .orderBy(deliveries.id)
+          .limit(PRUNE_BATCH)
+          .all();
+        if (batch.length === 0) break;
+        const maxId = batch[batch.length - 1]!.id;
+        const res = db
+          .delete(deliveries)
+          .where(and(inArray(deliveries.status, ["sent", "failed", "cancelled", "unsubscribed"]), isNotNull(deliveries.sent_at), lt(deliveries.sent_at, cutoff), sql`${deliveries.id} <= ${maxId}`))
+          .run();
+        prunedDel += res.changes;
+        if (batch.length < PRUNE_BATCH) break;
+      }
     } catch (err) {
       failed = true;
       logger?.warn({ err }, "retention pruning failed for deliveries");
@@ -88,8 +128,20 @@ export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>,
   if (evtDays > 0) {
     const cutoffIso = new Date(now.getTime() - evtDays * 86_400_000).toISOString();
     try {
-      const res = db.delete(events).where(lt(events.ts, cutoffIso)).run();
-      prunedEvt = res.changes;
+      for (;;) {
+        const batch = db
+          .select({ id: events.id })
+          .from(events)
+          .where(lt(events.ts, cutoffIso))
+          .orderBy(events.id)
+          .limit(PRUNE_BATCH)
+          .all();
+        if (batch.length === 0) break;
+        const maxId = batch[batch.length - 1]!.id;
+        const res = db.delete(events).where(and(lt(events.ts, cutoffIso), sql`${events.id} <= ${maxId}`)).run();
+        prunedEvt += res.changes;
+        if (batch.length < PRUNE_BATCH) break;
+      }
     } catch (err) {
       failed = true;
       logger?.warn({ err }, "retention pruning failed for events");

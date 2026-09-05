@@ -1,10 +1,9 @@
 import path from "node:path";
-import { mkdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
-import { sql } from "drizzle-orm";
-import { backups, type allTables } from "@pushpanel/db/schema";
+import { chmodSync, mkdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { backups, type allTables, backupDatabase } from "@pushpanel/db";
 import { desc, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "@pushpanel/db";
-import { readSetting, writeSetting } from "./cleanup";
+import { readSetting, writeSetting, markerIsRecent } from "./cleanup";
 import { getGDriveAccessToken, uploadToGDrive } from "@pushpanel/core";
 import { getGDriveConfig } from "./secrets";
 
@@ -22,7 +21,7 @@ const INTERVALS_MS: Record<string, number> = {
  * backups enabled (`backup_auto_interval` = daily/weekly/monthly), snapshot
  * the live SQLite file into `data/backups/` once per interval.
  */
-export function runBackupScheduler(db: PushDb, dbFile: string, nowMs: number = Date.now()): boolean {
+export async function runBackupScheduler(db: PushDb, dbFile: string, nowMs: number = Date.now()): Promise<boolean> {
   if (!dbFile || dbFile === ":memory:") return false;
   const interval = readSetting(db, "backup_auto_interval");
   if (!interval || interval === "off") return false;
@@ -31,15 +30,17 @@ export function runBackupScheduler(db: PushDb, dbFile: string, nowMs: number = D
   if (!intervalMs) return false;
 
   const lastRunAt = readSetting(db, "last_backup_at");
-  if (lastRunAt && nowMs - new Date(lastRunAt).getTime() < intervalMs) return false;
+  // Corrupt marker (NaN) must fail "due", or a garbage value would silently
+  // skip backups forever.
+  if (markerIsRecent(lastRunAt, nowMs, intervalMs)) return false;
 
-  const created = createSnapshot(db, dbFile, "auto", nowMs);
+  const created = await createSnapshot(db, dbFile, "auto", nowMs);
   if (created) pruneBackups(db, resolveRetention(db));
   return created;
 }
 
-/** Create a VACUUM INTO snapshot row + file. */
-export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "auto" = "manual", nowMs: number = Date.now()): boolean {
+/** Create a consistent snapshot row + file (non-blocking backup API). */
+export async function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "auto" = "manual", nowMs: number = Date.now()): Promise<boolean> {
   if (!dbFile || dbFile === ":memory:") return false;
   const backupDir = path.join(path.dirname(dbFile), "backups");
   try {
@@ -52,7 +53,14 @@ export function createSnapshot(db: PushDb, dbFile: string, kind: "manual" | "aut
   const target = path.join(backupDir, `backup-${kind}-${stamp}.db`);
 
   try {
-    db.run(sql.raw(`VACUUM INTO '${target.replace(/'/g, "''")}'`));
+    await backupDatabase(db, target);
+    // Snapshots contain password hashes + encrypted subscriber tokens — owner
+    // -read-only so other users/processes on a shared host cannot read them.
+    try {
+      chmodSync(target, 0o600);
+    } catch {
+      /* non-fatal — e.g. exotic filesystems */
+    }
   } catch {
     // Failed attempt still counts: record it and mark last_backup_at so the
     // scheduler backs off for the whole interval instead of hammering the

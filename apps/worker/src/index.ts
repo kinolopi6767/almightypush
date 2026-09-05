@@ -1,5 +1,7 @@
 import "dotenv/config";
 
+import { writeFileSync } from "node:fs";
+import nodePath from "node:path";
 import { sql } from "drizzle-orm";
 import { pino } from "pino";
 import { createDb, resolveDbPath } from "@pushpanel/db";
@@ -88,7 +90,7 @@ function main() {
           logger.info({ deleted: cleanup.deleted }, "cleanup purged unsubscribed subscribers");
         }
       }
-      const backupMade = runBackupScheduler(db, path);
+      const backupMade = await runBackupScheduler(db, path);
       if (backupMade) logger.info({ interval: readSetting(db, "backup_auto_interval") }, "auto backup snapshot created");
       const pruned = runRetentionPruning(db, new Date(), logger);
       if (pruned.deliveries > 0 || pruned.events > 0) logger.info(pruned, "retention pruning");
@@ -102,6 +104,13 @@ function main() {
 
   const loop = () => {
     if (shuttingDown) return;
+    // Liveness heartbeat: compose healthcheck reads this file's mtime — a
+    // hung (not exited) worker is otherwise never restarted.
+    try {
+      writeFileSync(nodePath.join(nodePath.dirname(path), "worker-heartbeat"), new Date().toISOString());
+    } catch {
+      /* best-effort — read-only volumes etc. */
+    }
     // NOTE: this timer must stay ref'd — it is the ONLY recurring handle in
     // the process. unref() here lets Node drain the loop and exit after the
     // first tick (empirically verified on Node 22).

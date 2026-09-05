@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { automations } from "@pushpanel/db";
-import { assertPublicHttpUrl, hasCronSchedule, nextCronRun, parseAutomationConfig, sha256Hex, type AutomationConfig } from "@pushpanel/core";
+import { assertPublicHttpUrl, hasCronSchedule, nextCronRun, parseAutomationConfig, sha256Hex, ssrfDispatcher, type AutomationConfig } from "@pushpanel/core";
 import { enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
 import Parser from "rss-parser";
 
@@ -356,7 +356,13 @@ async function safeFetch(sourceUrl: string, path: (base: URL) => URL): Promise<{
     // original sourceUrl on later hops would refetch hop-0 forever when the
     // source redirects (http→https, www canonicalization…).
     const target = hops === 0 ? path(checked.url) : checked.url;
-    const res = await fetch(target, { signal: AbortSignal.timeout(10_000), redirect: "manual" });
+    const res = await fetch(target, {
+      signal: AbortSignal.timeout(10_000),
+      redirect: "manual",
+      // Connect-time IP re-validation (DNS-rebinding guard on top of the
+      // per-hop pre-check above).
+      dispatcher: ssrfDispatcher(),
+    } as RequestInit);
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get("location");
       if (!location) throw new Error("Redirect without location");

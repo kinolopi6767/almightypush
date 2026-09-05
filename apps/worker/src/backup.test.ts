@@ -5,22 +5,22 @@ import { createSnapshot, pruneBackups, resolveRetention, runBackupScheduler } fr
 import { writeSetting } from "./cleanup";
 
 describe("backup scheduler", () => {
-  it("does nothing when auto backups are off", () => {
+  it("does nothing when auto backups are off", async () => {
     const { db, client } = createMemoryDb();
-    const made = runBackupScheduler(db, "/tmp/nowhere/app.db");
+    const made = await runBackupScheduler(db, "/tmp/nowhere/app.db");
     expect(made).toBe(false);
     expect(db.select({ id: backups.id }).from(backups).all()).toHaveLength(0);
     client.close();
   });
 
-  it("creates a snapshot when an interval has elapsed (or none before)", () => {
+  it("creates a snapshot when an interval has elapsed (or none before)", async () => {
     const { db, client } = createMemoryDb();
     db.insert(settings).values({ key: "backup_auto_interval", value: "daily" }).run();
-    const made = runBackupScheduler(db, "/tmp/backup-sched-test/app.db");
+    const made = await runBackupScheduler(db, "/tmp/backup-sched-test/app.db");
     expect(made).toBe(true);
     expect(db.select({ id: backups.id, kind: backups.kind }).from(backups).all()).toHaveLength(1);
     // no second snapshot until the interval passes
-    expect(runBackupScheduler(db, "/tmp/backup-sched-test/app.db")).toBe(false);
+    expect(await runBackupScheduler(db, "/tmp/backup-sched-test/app.db")).toBe(false);
     client.close();
   });
 
@@ -46,9 +46,9 @@ describe("backup scheduler", () => {
     client.close();
   });
 
-  it("createSnapshot tolerates a missing/unwritable directory silently", () => {
+  it("createSnapshot tolerates a missing/unwritable directory silently", async () => {
     const { db, client } = createMemoryDb();
-    expect(createSnapshot(db, "/dev/null/definitely-not-a-dir/app.db", "manual")).toBe(false);
+    expect(await createSnapshot(db, "/dev/null/definitely-not-a-dir/app.db", "manual")).toBe(false);
     expect(db.select({ id: backups.id }).from(backups).all()).toHaveLength(0);
     client.close();
   });

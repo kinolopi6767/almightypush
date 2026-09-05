@@ -35,7 +35,9 @@ describe("db", () => {
   it("is configured with WAL-compatible pragmas", () => {
     const { client } = createMemoryDb();
     expect(client.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect(client.pragma("busy_timeout", { simple: true })).toBe(5000);
+    // 15s: web-side writes wait out retention-prune/backup lock windows
+    // (batched 10k-row transactions) instead of failing with SQLITE_BUSY.
+    expect(client.pragma("busy_timeout", { simple: true })).toBe(15_000);
   });
 
   it("inserts and reads back a workspace + user in a transaction", async () => {
