@@ -26,7 +26,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Strict YYYY-MM-DD: anchored shape + real calendar date (rejects 2026-13-99). */
 function isValidDateParam(v: string): boolean {
   if (!DATE_RE.test(v)) return false;
-  const [y, m, d] = v.split("-").map(Number);
+  const parts = v.split("-").map(Number);
+  const y = parts[0];
+  const m = parts[1];
+  const d = parts[2];
+  if (y === undefined || m === undefined || d === undefined) return false;
   if (m < 1 || m > 12 || d < 1 || d > 31) return false;
   const dt = new Date(Date.UTC(y, m - 1, d));
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;

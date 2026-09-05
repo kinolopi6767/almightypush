@@ -341,7 +341,7 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
     // Checkpoint the live DB so no WAL frames survive the swap, then
     // overwrite the current DB file (WAL will be checkpointed on next open).
     try {
-      (db.$client as { pragma?: (s: string) => unknown }).pragma?.("wal_checkpoint(TRUNCATE)");
+      db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`);
     } catch {
       // best effort — the -wal/-shm removal below is the real guard
     }

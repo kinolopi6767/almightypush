@@ -27,6 +27,7 @@ export type AuditAction =
   | "settings.update"
   | "backup.create"
   | "backup.delete"
+  | "backup.restore"
   | "profile.update"
   | "profile.totp.enabled"
   | "profile.totp.disabled"
