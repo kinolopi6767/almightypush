@@ -21,7 +21,16 @@ export interface SubscriberFilter {
   showOnly: "active" | "unsubscribed" | "all";
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Strict YYYY-MM-DD: anchored shape + real calendar date (rejects 2026-13-99). */
+function isValidDateParam(v: string): boolean {
+  if (!DATE_RE.test(v)) return false;
+  const [y, m, d] = v.split("-").map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
 
 export function parseSubscriberFilterValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -39,9 +48,9 @@ export function parseSubscriberFilters(
   const domainId = get("domain");
   if (domainId && /^\d+$/.test(domainId)) filter.domainId = Number(domainId);
   const from = get("from");
-  if (from && DATE_RE.test(from)) filter.from = from;
+  if (from && isValidDateParam(from)) filter.from = from;
   const to = get("to");
-  if (to && DATE_RE.test(to)) filter.to = to;
+  if (to && isValidDateParam(to)) filter.to = to;
   for (const key of FILTER_KEYS) {
     const v = get(key);
     if (v) filter[key] = v;

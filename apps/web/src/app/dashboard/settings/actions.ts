@@ -62,18 +62,21 @@ export async function updateSettingsAction(
   }
   const workspaceId = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : 0;
 
+  // FormData quirk: a cleared numeric input submits "" — z.coerce.number()
+  // turns "" into 0, silently zeroing retention/speed caps. "" means "keep".
+  const numOrUndef = (v: FormDataEntryValue | null) => (v === "" || v === null ? undefined : v);
   const parsed = generalSchema.safeParse({
     timezone: formData.get("timezone") ?? undefined,
-    cleanupRetentionDays: formData.get("cleanupRetentionDays") ?? undefined,
-    sendingSpeed: formData.get("sendingSpeed") ?? undefined,
+    cleanupRetentionDays: numOrUndef(formData.get("cleanupRetentionDays")),
+    sendingSpeed: numOrUndef(formData.get("sendingSpeed")),
     utmEnabled: formData.get("utmEnabled") ?? "off",
     // Checkbox quirk: an unchecked box submits no field — that IS the "off" state.
     apiAccess: formData.get("apiAccess") ?? "off",
     backupInterval: formData.get("backupInterval") ?? "off",
-    backupRetention: formData.get("backupRetention") ?? undefined,
+    backupRetention: numOrUndef(formData.get("backupRetention")),
     whiteLabel: formData.get("whiteLabel") ?? "off",
     cdnUrl: formData.get("cdnUrl") ?? "",
-    frequencyCapDaily: formData.get("frequencyCapDaily") ?? undefined,
+    frequencyCapDaily: numOrUndef(formData.get("frequencyCapDaily")),
     suppressionEnabled: formData.get("suppressionEnabled") ?? "on",
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -137,6 +140,10 @@ const secretsSchema = z.object({
   mail_provider: z.enum(["resend", "brevo", "ses", "smtp", ""]).optional().or(z.literal("")),
   mail_api_key: z.string().max(500).optional().or(z.literal("")),
   mail_from: z.string().email().max(200).optional().or(z.literal("")),
+  // Explicit clear checkboxes — blank input alone means "keep existing".
+  clear_ai_api_key: z.enum(["on"]).optional(),
+  clear_ydc_api_key: z.enum(["on"]).optional(),
+  clear_mail_api_key: z.enum(["on"]).optional(),
 });
 
 export async function updateSecretsAction(_prev: SettingsFormState, formData: FormData): Promise<NonNullable<SettingsFormState>> {
@@ -153,17 +160,25 @@ export async function updateSecretsAction(_prev: SettingsFormState, formData: Fo
     mail_provider: formData.get("mail_provider") ?? "",
     mail_api_key: formData.get("mail_api_key") ?? "",
     mail_from: formData.get("mail_from") ?? "",
+    clear_ai_api_key: formData.get("clear_ai_api_key") ?? undefined,
+    clear_ydc_api_key: formData.get("clear_ydc_api_key") ?? undefined,
+    clear_mail_api_key: formData.get("clear_mail_api_key") ?? undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
   // The UI promises "leave blank to keep the existing value" — empty fields
-  // must be skipped, not treated as deletion.
-  if (d.ai_api_key) setSecret("ai_api_key", d.ai_api_key);
+  // must be skipped, not treated as deletion. Deletion is explicit via the
+  // per-key "Clear" checkbox; a pasted replacement value always wins.
+  const saveOrClear = (key: "ai_api_key" | "ydc_api_key" | "mail_api_key", value: string | undefined, clear: "on" | undefined) => {
+    if (value) setSecret(key, value);
+    else if (clear === "on") setSecret(key, null);
+  };
+  saveOrClear("ai_api_key", d.ai_api_key, d.clear_ai_api_key);
   if (d.ai_model) setSecret("ai_model", d.ai_model);
   if (d.ai_base_url) setSecret("ai_base_url", d.ai_base_url);
-  if (d.ydc_api_key) setSecret("ydc_api_key", d.ydc_api_key);
+  saveOrClear("ydc_api_key", d.ydc_api_key, d.clear_ydc_api_key);
   if (d.mail_provider) setSecret("mail_provider", d.mail_provider);
-  if (d.mail_api_key) setSecret("mail_api_key", d.mail_api_key);
+  saveOrClear("mail_api_key", d.mail_api_key, d.clear_mail_api_key);
   if (d.mail_from) setSecret("mail_from", d.mail_from);
   revalidatePath("/dashboard/settings");
   return { ok: true };
@@ -317,8 +332,19 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
   const dbFile = resolveDbPath(process.env.DATABASE_PATH);
   try {
     const data = await readFile(row.location);
+    // Validate before touching the live DB: a corrupt/truncated backup must
+    // never replace a working database. SQLite files start with a 16-byte magic.
+    if (data.length < 100 || data.subarray(0, 16).toString("binary") !== "SQLite format 3\0") {
+      return { error: "Restore failed: backup file is not a valid SQLite database" };
+    }
     const { writeFile } = await import("node:fs/promises");
-    // SQLite restore: overwrite current DB file (WAL will be checkpointed on next open)
+    // Checkpoint the live DB so no WAL frames survive the swap, then
+    // overwrite the current DB file (WAL will be checkpointed on next open).
+    try {
+      (db.$client as { pragma?: (s: string) => unknown }).pragma?.("wal_checkpoint(TRUNCATE)");
+    } catch {
+      // best effort — the -wal/-shm removal below is the real guard
+    }
     await writeFile(dbFile, data);
     // VACUUM INTO creates a single self-contained file. The live DB's stale
     // -wal/-shm files would corrupt the restored data on next open — remove them.
@@ -326,7 +352,7 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
     for (const suffix of ["-wal", "-shm"]) {
       try { await unlinkSync(dbFile + suffix); } catch { /* may not exist */ }
     }
-    if (wsId) logAudit(db, { workspaceId: wsId, action: "backup.create", entityType: "backup", entityId: backupId, meta: { restored: 1 } });
+    if (wsId) logAudit(db, { workspaceId: wsId, action: "backup.restore", entityType: "backup", entityId: backupId, meta: { restored: 1 } });
   } catch (e) {
     return { error: `Restore failed: ${(e as Error).message}` };
   }

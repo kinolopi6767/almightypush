@@ -22,10 +22,10 @@ const createCampaignSchema = z.object({
     .array(z.object({ label: z.string().trim().min(1, "Button label is required").max(24), url: z.string().trim().url("Button URL must be valid") }))
     .max(3, "At most 3 action buttons")
     .default([]),
-  schedule: z.string().trim().optional().or(z.literal("")),
+  schedule: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, "Invalid schedule time").optional().or(z.literal("")),
   audienceKind: z.enum(["all", "segment"]).default("all"),
-  segmentId: z.coerce.number().int().positive().optional(),
-  templateId: z.coerce.number().int().positive().optional(),
+  segmentId: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.coerce.number().int().positive().optional()),
+  templateId: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.coerce.number().int().positive().optional()),
   topic: z.string().trim().max(64).optional().or(z.literal("")),
   ttl: z.coerce.number().int().min(0).max(2419200).optional(),
   urgency: z.enum(["very-low", "low", "normal", "high"]).optional(),
@@ -141,11 +141,16 @@ export async function createCampaignAction(
       t = naiveLocalToUtcMs(parsed.data.schedule, tzRow?.value || undefined);
     } catch (error) {
       // a legacy/bad stored timezone must not brick scheduling — fall back
-      // to the server's local interpretation and surface a warning
+      // to the server's local interpretation and surface a warning.
+      // Any other parse failure is user input error, never a 500.
       if (error instanceof InvalidTimezoneError) {
-        t = naiveLocalToUtcMs(parsed.data.schedule, undefined);
+        try {
+          t = naiveLocalToUtcMs(parsed.data.schedule, undefined);
+        } catch {
+          return { error: "Invalid schedule time" };
+        }
       } else {
-        throw error;
+        return { error: "Invalid schedule time" };
       }
     }
     if (Number.isNaN(t)) return { error: "Invalid schedule time" };

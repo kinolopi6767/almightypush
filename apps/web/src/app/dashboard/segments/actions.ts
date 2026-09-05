@@ -13,7 +13,7 @@ import { normalizeRules } from "@pushpanel/core";
 export type SegmentFormState = { ok?: boolean; error?: string };
 
 const conditionSchema = z.object({
-  field: z.enum(["url", "country", "state", "device", "os", "browser", "subscribed_after", "subscribed_before", "last_active_after", "opened_campaign", "campaign_total_opens"]),
+  field: z.enum(["url", "country", "state", "city", "device", "os", "browser", "subscribed_after", "subscribed_before", "last_active_after", "opened_campaign", "campaign_total_opens", "tag"]),
   op: z.enum(["equals", "contains", "starts_with", "ends_with", "in", "gt", "gte", "lt", "lte"]),
   value: z.union([z.string(), z.number(), z.array(z.union([z.string(), z.number()]))]),
 });
@@ -116,7 +116,7 @@ export async function updateSegmentAction(id: number, formData: FormData): Promi
   const rules = normalizeRules({ groups: data.groups });
   if (!rules) return { error: "Invalid conditions" };
 
-  db.update(segments)
+  const result = db.update(segments)
     .set({
       domain_ids_json: owned.ids.length > 0 ? JSON.stringify(owned.ids) : null,
       name: data.name,
@@ -124,6 +124,9 @@ export async function updateSegmentAction(id: number, formData: FormData): Promi
     })
     .where(and(eq(segments.id, id), eq(segments.workspace_id, workspaceId)))
     .run();
+
+  // Guard: updating a foreign/missing id otherwise returns ok:true silently.
+  if (result.changes === 0) return { error: "Segment not found" };
 
   refreshSegmentEstimate(db, id, workspaceId);
   logAudit(db, { workspaceId, action: "segment.update", entityType: "segment", entityId: id, meta: { name: data.name } });
@@ -164,7 +167,7 @@ export async function estimateSegmentDraft(formData: FormData): Promise<SegmentE
   } catch {
     groups = [];
   }
-  const rules = normalizeRules(groups);
+  const rules = normalizeRules({ groups });
   if (!rules) return { count: 0, error: "Invalid conditions" };
 
   const owned = ownedDomainIds(Number(session.user.workspaceId), domainIds);

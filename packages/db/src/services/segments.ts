@@ -116,7 +116,13 @@ function parseDomainFilter(json: string | null, override?: number): number[] | n
     fromStore = null;
   }
   if (override) {
-    return fromStore ? fromStore.filter((id) => id === override) : [override];
+    // Disjoint intersection must match NOTHING — returning [] would be
+    // treated as "no filter" downstream and match the whole workspace.
+    if (fromStore) {
+      const hit = fromStore.filter((id) => id === override);
+      return hit.length > 0 ? hit : [-1];
+    }
+    return [override];
   }
   return fromStore;
 }

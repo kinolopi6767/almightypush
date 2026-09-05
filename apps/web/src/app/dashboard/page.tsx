@@ -19,12 +19,30 @@ const ICONS = {
   cloud: "M17.5 19H9a4 4 0 0 1 0-8 5 5 0 0 1 9.5-1.5A3.5 3.5 0 0 1 17.5 19z",
 };
 
-function greeting(): string {
-  const h = new Date().getHours();
+function greeting(timeZone?: string): string {
+  let h = new Date().getHours();
+  if (timeZone) {
+    try {
+      // Panel-timezone hour, not server-local — scheduling uses settings.timezone.
+      const parts = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone }).formatToParts(new Date());
+      const hh = Number(parts.find((p) => p.type === "hour")?.value);
+      if (Number.isFinite(hh)) h = hh % 24;
+    } catch {
+      // unknown tz (legacy stored value) — fall back to server-local hour
+    }
+  }
   if (h < 5) return "Burning the midnight oil";
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
   return "Good evening";
+}
+
+function todayLabel(timeZone?: string): string {
+  try {
+    return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", ...(timeZone ? { timeZone } : {}) });
+  } catch {
+    return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }
 }
 
 /** Backup kind enum → human label for the services card. */
@@ -33,10 +51,6 @@ const KIND_LABEL: Record<string, string> = {
   auto: "Auto snapshot",
   gdrive: "Drive snapshot",
 };
-
-function todayLabel(): string {
-  return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-}
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -70,6 +84,7 @@ export default async function DashboardPage() {
     ? db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_enabled")).get()?.value === "1"
     : false;
   const hasAiKey = wsId ? !!db.select({ value: settings.value }).from(settings).where(eq(settings.key, "secret:ai_api_key")).get()?.value : false;
+  const panelTz = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "timezone")).get()?.value || undefined;
 
   const firstName = (session.user.name ?? session.user.email ?? "").split(/[\s@]/)[0];
 
@@ -79,9 +94,9 @@ export default async function DashboardPage() {
       <div className="rise border-b pb-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2.5">
-            <p className="kicker text-muted-foreground">{todayLabel()}</p>
+            <p className="kicker text-muted-foreground">{todayLabel(panelTz)}</p>
             <h1 className="text-[30px] font-semibold leading-none tracking-tight md:text-[34px]">
-              {greeting()}
+              {greeting(panelTz)}
               <span className="font-light text-muted-foreground">{firstName ? `, ${firstName}` : ""}</span>
             </h1>
             <p className="max-w-xl text-[15px] leading-relaxed text-muted-foreground">

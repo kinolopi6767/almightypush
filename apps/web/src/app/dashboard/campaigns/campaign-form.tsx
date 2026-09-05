@@ -90,8 +90,6 @@ export function CampaignForm({
 
   const addButton = () => setButtons((prev) => (prev.length >= 3 ? prev : [...prev, { rid: nextRid(), label: "", url: "" }]));
 
-  const filledButtons = buttons.filter((b) => b.label.trim() || b.url.trim());
-
   const updateVariant = (i: number, patch: Partial<(typeof variants)[number]>) =>
     setVariants((prev) => prev.map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
   const removeVariant = (i: number) => setVariants((prev) => prev.filter((_, idx) => idx !== i));
@@ -161,6 +159,15 @@ export function CampaignForm({
             <label htmlFor="domainId" className="text-sm font-medium">
               Domain
             </label>
+            {domains.length === 0 ? (
+              <p role="alert" className="mt-1 rounded-lg border border-dashed border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                No domains yet —{" "}
+                <a href="/dashboard/domains" className="font-medium text-primary underline underline-offset-2">
+                  add a domain first
+                </a>
+                , then come back to create a campaign.
+              </p>
+            ) : (
             <select
               id="domainId"
               name="domainId"
@@ -174,6 +181,7 @@ export function CampaignForm({
                 </option>
               ))}
             </select>
+            )}
           </div>
           <div>
             <label htmlFor="channel" className="text-sm font-medium">
@@ -320,7 +328,7 @@ export function CampaignForm({
               {fetching ? "Fetching…" : "Fetch from URL"}
             </button>
           </div>
-          {fetchError && <p className="mt-1 text-xs text-destructive">{fetchError}</p>}
+          {fetchError && <p role="alert" className="mt-1 text-xs text-destructive">{fetchError}</p>}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -355,7 +363,7 @@ export function CampaignForm({
         <div className="border-t border-border/70 pt-5">
           <p className="kicker text-muted-foreground">Action buttons</p>
           <p className="mt-1 text-xs text-muted-foreground">Shown below the notification on desktop. Up to 3.</p>
-          {filledButtons.map((b, i) => (
+          {buttons.map((b, i) => (
             <div key={b.rid} className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
               <input
                 aria-label={`Button ${i + 1} label`}
@@ -392,12 +400,20 @@ export function CampaignForm({
               + Add button
             </button>
           )}
-          {buttons.filter((b) => b.label.trim() && b.url.trim()).map((b) => (
+          {/* Submit every touched row (even half-filled) so the server can
+              reject incomplete buttons with a visible error instead of
+              silently dropping what the user typed. */}
+          {buttons.filter((b) => b.label.trim() || b.url.trim()).map((b) => (
             <Fragment key={b.rid}>
               <input type="hidden" name="buttonLabel" value={b.label} />
               <input type="hidden" name="buttonUrl" value={b.url} />
             </Fragment>
           ))}
+          {buttons.some((b) => Boolean(b.label.trim()) !== Boolean(b.url.trim())) && (
+            <p role="alert" className="mt-1 text-xs text-destructive">
+              Each button needs both a label and a URL.
+            </p>
+          )}
         </div>
         <div className="border-t border-border/70 pt-5">
           <p className="kicker text-muted-foreground">Delivery</p>

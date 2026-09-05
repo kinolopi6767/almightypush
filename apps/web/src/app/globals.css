@@ -228,7 +228,7 @@
   h3 { font-weight: 600; }
   code, pre, .font-mono { font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-ligatures: none; }
   ::selection { background: color-mix(in oklab, var(--primary) 24%, transparent); }
-  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   /* Premium focus for interactive elements */
   button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
     outline: 2px solid var(--primary);
@@ -571,8 +571,11 @@
 
   /* ── Accessibility & interaction ─────────────────────────── */
   button, a, [role="button"], input[type="submit"] { touch-action: manipulation; }
-  /* Minimum touch target for premium accessibility */
-  button, [role="button"] { min-height: 2.25rem; }
+  /* Minimum touch target — coarse pointers only. A global min-height distorts
+     compact desktop controls (icon ✕ buttons, toggles, table row actions). */
+  @media (pointer: coarse) {
+    button, [role="button"] { min-height: 2.25rem; }
+  }
   a { text-underline-offset: 3px; }
   a:hover { text-decoration-thickness: 1.5px; }
 

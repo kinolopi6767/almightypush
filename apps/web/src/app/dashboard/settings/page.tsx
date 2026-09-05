@@ -95,6 +95,7 @@ export default async function SettingsPage() {
 
       <SecretsForm
         hasAiKey={!!valueOf("secret:ai_api_key")}
+        hasYdcKey={!!valueOf("secret:ydc_api_key")}
         aiModel={aiConfig.model}
         aiBaseUrl={aiConfig.baseUrl}
         mailProvider={mailConfig.provider}

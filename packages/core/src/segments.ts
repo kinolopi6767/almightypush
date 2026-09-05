@@ -112,6 +112,17 @@ export function normalizeCondition(input: unknown): SegmentCondition | null {
   ) {
     if (typeof value === "string" && value.trim() === "") return null;
   }
+  // Numeric-id/count fields must be finite numbers — "abc" -> NaN would
+  // compile to `= NaN` and silently match nothing.
+  if (c.field === "opened_campaign" || c.field === "campaign_total_opens") {
+    const n = Array.isArray(value) ? value[0] : value;
+    if (typeof n !== "number" || !Number.isFinite(n)) {
+      if (typeof n === "string" && n.trim() !== "" && Number.isFinite(Number(n))) {
+        return { field: c.field, op: c.op, value: Number(n) };
+      }
+      return null;
+    }
+  }
   return { field: c.field, op: c.op, value };
 }
 

@@ -396,6 +396,7 @@ function RestoreBackup({ id }: { id: number }) {
 
 export function SecretsForm({
   hasAiKey,
+  hasYdcKey,
   aiModel,
   aiBaseUrl,
   mailProvider,
@@ -403,6 +404,7 @@ export function SecretsForm({
   mailFrom,
 }: {
   hasAiKey: boolean;
+  hasYdcKey: boolean;
   aiModel: string;
   aiBaseUrl: string;
   mailProvider: string;
@@ -428,6 +430,12 @@ export function SecretsForm({
             placeholder={hasAiKey ? "•••••••• (set) — leave blank to keep" : "sk-..."}
             className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm"
           />
+          {hasAiKey && (
+            <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <input type="checkbox" name="clear_ai_api_key" value="on" className="h-3.5 w-3.5" />
+              Clear this key on save
+            </label>
+          )}
           <p className="text-xs text-muted-foreground">Powers AI Studio: hook angles, spam score, translate, URL→campaign, image.</p>
         </div>
         <div className="space-y-1">
@@ -459,6 +467,12 @@ export function SecretsForm({
             placeholder="ydc_... — leave blank to keep · free tier works without key"
             className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm"
           />
+          {hasYdcKey && (
+            <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <input type="checkbox" name="clear_ydc_api_key" value="on" className="h-3.5 w-3.5" />
+              Clear this key on save
+            </label>
+          )}
           <p className="text-xs text-muted-foreground">
             Powers URL→Campaign enrichment + hook research via you.com Search. Get free 200 credits at you.com. Leave blank to use heuristic fallback.
           </p>
@@ -486,6 +500,12 @@ export function SecretsForm({
             placeholder={hasMailKey ? "•••••••• (set)" : "re_... / xkeysib-..."}
             className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm"
           />
+          {hasMailKey && (
+            <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <input type="checkbox" name="clear_mail_api_key" value="on" className="h-3.5 w-3.5" />
+              Clear this key on save
+            </label>
+          )}
         </div>
         <div className="space-y-1 sm:col-span-2">
           <label htmlFor="mail_from" className="text-sm font-medium">
