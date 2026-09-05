@@ -33,7 +33,6 @@ export const dripStepSchema = z.object({
   message: z.string().trim().max(1000).optional().or(z.literal("")),
   launch_url: z.string().trim().url().max(500).optional().or(z.literal("")),
 });
-export type DripStep = z.infer<typeof dripStepSchema>;
 export const MAX_DRIP_STEPS = 10;
 
 export const automationConfigSchema = z.object({

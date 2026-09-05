@@ -243,4 +243,3 @@ export const OPENAPI_SPEC = {
   },
 } as const;
 
-export type OpenApiSpec = typeof OPENAPI_SPEC;

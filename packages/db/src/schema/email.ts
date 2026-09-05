@@ -67,7 +67,11 @@ export const emailCampaigns = sqliteTable(
     sent_at: text("sent_at"),
     ...timestamps(),
   },
-  (t) => [index("idx_email_campaigns_ws").on(t.workspace_id, t.status, t.sent_at)],
+  (t) => [
+    index("idx_email_campaigns_ws").on(t.workspace_id, t.status, t.sent_at),
+    // Migration-only (0012) — worker due-campaign poll (status-first).
+    index("idx_email_campaigns_status_sched").on(t.status, t.schedule_at),
+  ],
 );
 
 /** Subscriber tags (custom attributes, LumaPush 1→unlimited, EngageLab alias) */
@@ -105,7 +109,11 @@ export const journeys = sqliteTable(
     next_run_at: text("next_run_at"),
     ...timestamps(),
   },
-  (t) => [index("idx_journeys_ws_status").on(t.workspace_id, t.status)],
+  (t) => [
+    index("idx_journeys_ws_status").on(t.workspace_id, t.status),
+    // Migration-only (0009) — worker due-journeys poll.
+    index("idx_journeys_next").on(t.status, t.next_run_at),
+  ],
 );
 
 export const journeyRuns = sqliteTable(
@@ -123,7 +131,11 @@ export const journeyRuns = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [index("idx_journey_runs_journey").on(t.journey_id, t.created_at)],
+  (t) => [
+    index("idx_journey_runs_journey").on(t.journey_id, t.created_at),
+    // Migration-only (0012) — run-history pruning.
+    index("idx_journey_runs_created").on(t.created_at),
+  ],
 );
 
 /** AI generations (Command Studio, Hook, Spam Score, Translate, AutoMagic) */

@@ -90,10 +90,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .from(users)
           .where(eq(users.id, Number(token.id)))
           .limit(1);
-        // Credential changed (or user deleted) since sign-in → invalidate.
-        if (!row) throw new Error("Session invalidated — user missing");
-        if (token.cv !== credentialVersionOf({ password_hash: row.password_hash })) {
-          throw new Error("Session invalidated — credentials changed");
+        // Credential changed (or user deleted) since sign-in → force a clean
+        // logout. Throwing here would 500 every authed page; returning a
+        // user-less session makes every page's `!session?.user` guard
+        // redirect to /login instead.
+        if (!row || token.cv !== credentialVersionOf({ password_hash: row.password_hash })) {
+          return { ...session, user: undefined, expires: session.expires } as unknown as typeof session;
         }
         session.user.workspaceId = row?.workspaceId != null ? String(row.workspaceId) : null;
       }

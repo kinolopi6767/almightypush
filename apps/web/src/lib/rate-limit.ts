@@ -19,6 +19,11 @@ interface Bucket {
 const buckets = new Map<string, Bucket>();
 const CLEANUP_EVERY = 1_000;
 const MAX_BUCKETS = 20_000;
+/** Minimum wall-clock gap between O(n) sweeps — the modulo trigger alone
+ * can go long between cleanups under low key churn, and running the sweep
+ * inline on a request should stay rare. */
+const CLEANUP_MIN_GAP_MS = 60_000;
+let lastCleanupAt = 0;
 
 const MAX_WINDOW_MS = 15 * 60_000;
 
@@ -50,8 +55,10 @@ export interface RateLimitResult {
 
 export function rateLimitWithHeaders(key: string, limit: number, windowMs: number): RateLimitResult {
   const now = Date.now();
-  if (buckets.size === 0 || buckets.size % CLEANUP_EVERY === 0) cleanup(now);
-  if (buckets.size >= MAX_BUCKETS) cleanup(now);
+  if ((buckets.size >= CLEANUP_EVERY && now - lastCleanupAt >= CLEANUP_MIN_GAP_MS) || buckets.size >= MAX_BUCKETS) {
+    lastCleanupAt = now;
+    cleanup(now);
+  }
   // Hard bound: cleanup is age-based and can still lose the race under key
   // rotation (spoofed XFF with TRUST_PROXY=1 misconfig). Evict the
   // oldest-inserted bucket — Map preserves insertion order — so memory stays

@@ -112,6 +112,10 @@ export const deliveries = sqliteTable(
   (t) => [
     index("idx_deliv_camp_status").on(t.campaign_id, t.status, t.next_attempt_at),
     index("idx_deliv_domain").on(t.domain_id, t.status),
+    // Migration-only indexes (0009/0012) declared here so `drizzle-kit
+    // generate` diffs against reality instead of emitting DROP INDEX.
+    index("idx_deliveries_status_next").on(t.status, t.next_attempt_at),
+    index("idx_deliveries_sent_at").on(t.sent_at),
   ],
 );
 
@@ -136,6 +140,10 @@ export const events = sqliteTable(
   (t) => [
     index("idx_events_domain_ts").on(t.domain_id, t.ts),
     index("idx_events_camp").on(t.campaign_id, t.type),
+    // Migration-only indexes (0009/0012) — retention pruning + SSE/analytics.
+    index("idx_events_subscriber_type").on(t.subscriber_id, t.type),
+    index("idx_events_type_ts").on(t.type, t.ts),
+    index("idx_events_ts").on(t.ts),
     // One clicked event per delivery — replay beacons can't double-count.
     uniqueIndex("idx_events_clicked_delivery")
       .on(t.delivery_id)

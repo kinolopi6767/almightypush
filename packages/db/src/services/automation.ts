@@ -76,27 +76,37 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
   let subscriberIds = opts.subscriberIds;
   if (subscriberIds === undefined) subscriberIds = activeSubscriberIds(db, opts.domainId);
 
-  return db.transaction((tx) => {
-    const inserted = tx.insert(campaigns).values(values).run();
-    const campaignId = Number(inserted.lastInsertRowid);
-    if (delayed) return { campaignId, queued: 0, delayed: subscriberIds.length };
-    if (subscriberIds.length === 0) {
-      // Empty audience: finish immediately. A `sending` campaign with zero
-      // deliveries would never be finalized (nothing transitions it), so it
-      // would sit "sending" forever.
-      tx.update(campaigns)
-        .set({ status: "done", sent_at: now.toISOString() })
-        .where(eq(campaigns.id, campaignId))
-        .run();
-      return { campaignId, queued: 0, delayed: 0 };
-    }
-    for (const subscriberId of subscriberIds) {
-      tx.insert(deliveries)
-        .values({ campaign_id: campaignId, subscriber_id: subscriberId, domain_id: opts.domainId, requested_at: now.getTime() })
-        .run();
-    }
-    return { campaignId, queued: subscriberIds.length, delayed: 0 };
-  });
+  // Campaign row + delivery inserts. Deliveries are written in bounded
+  // chunks (mirroring the scheduler) instead of one transaction over the
+  // whole audience — a single multi-minute transaction would hold SQLite's
+  // write lock and starve the web process with SQLITE_BUSY.
+  const CHUNK = 500;
+  const inserted = db.insert(campaigns).values(values).run();
+  const campaignId = Number(inserted.lastInsertRowid);
+  if (delayed) return { campaignId, queued: 0, delayed: subscriberIds.length };
+  if (subscriberIds.length === 0) {
+    // Empty audience: finish immediately. A `sending` campaign with zero
+    // deliveries would never be finalized (nothing transitions it), so it
+    // would sit "sending" forever.
+    db.update(campaigns)
+      .set({ status: "done", sent_at: now.toISOString() })
+      .where(eq(campaigns.id, campaignId))
+      .run();
+    return { campaignId, queued: 0, delayed: 0 };
+  }
+  let queued = 0;
+  for (let i = 0; i < subscriberIds.length; i += CHUNK) {
+    const chunk = subscriberIds.slice(i, i + CHUNK);
+    db.transaction((tx) => {
+      for (const subscriberId of chunk) {
+        tx.insert(deliveries)
+          .values({ campaign_id: campaignId, subscriber_id: subscriberId, domain_id: opts.domainId, requested_at: now.getTime() })
+          .run();
+      }
+    });
+    queued += chunk.length;
+  }
+  return { campaignId, queued, delayed: 0 };
 }
 
 /** All active (never unsubscribed) subscriber ids of a domain, oldest first. */

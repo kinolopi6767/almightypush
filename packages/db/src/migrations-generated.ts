@@ -67,5 +67,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0011_drop_unused_tables",
     "idx": 11,
     "sql": "-- 0011: drop never-used tables from the LumaPush feature import.\n-- `campaign_variants`: A/B variants shipped via campaigns.variants_json instead.\n-- `frequency_caps`: fatigue shield ships via indexed events counting instead.\n-- Both had zero application read/write paths (verified by repo-wide grep).\n-- Kept: subscriber_tags (read by the segment compiler's tag conditions).\n\nDROP TABLE IF EXISTS `campaign_variants`;\nDROP TABLE IF EXISTS `frequency_caps`;\n"
+  },
+  {
+    "tag": "0012_retention_indexes",
+    "idx": 12,
+    "sql": "-- 0012: retention-prune + email-poller coverage (idempotent).\n-- The daily retention job deletes deliveries by sent_at and events by ts —\n-- both were full table scans holding SQLite's write lock for the whole\n-- statement (web-side writes hit SQLITE_BUSY for the duration). The email\n-- poller filters (status, schedule_at) with no leading index, and the\n-- automation/journey run-history prunes scan created_at.\n\nCREATE INDEX IF NOT EXISTS idx_deliveries_sent_at ON deliveries (sent_at);\nCREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts);\nCREATE INDEX IF NOT EXISTS idx_email_campaigns_status_sched ON email_campaigns (status, schedule_at);\nCREATE INDEX IF NOT EXISTS idx_automation_runs_created ON automation_runs (created_at);\nCREATE INDEX IF NOT EXISTS idx_journey_runs_created ON journey_runs (created_at);\n"
   }
 ];

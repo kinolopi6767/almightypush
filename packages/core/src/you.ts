@@ -97,7 +97,3 @@ export async function youResearch(
   const data = (await res.json()) as { answer?: string; sources?: unknown[]; result?: string };
   return { answer: data.answer ?? data.result ?? "", sources: data.sources };
 }
-
-export function isYouEnabled(config?: Partial<YouConfig>): boolean {
-  return !!resolveYouConfig(config).apiKey;
-}

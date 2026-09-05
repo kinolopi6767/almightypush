@@ -11,7 +11,14 @@ type PushDb = BetterSQLite3Database<typeof allTables>;
  */
 export const db = new Proxy({} as PushDb, {
   get(_target, prop) {
-    return Reflect.get(getDb(), prop);
+    try {
+      return Reflect.get(getDb(), prop);
+    } catch (err) {
+      // Premium fatal-error hardening: never crash the process on DB open failure.
+      // Log and rethrow with a user-friendly message so error boundaries can render.
+      console.error("[pushpanel:db] failed to get DB connection:", err);
+      throw err;
+    }
   },
 });
 

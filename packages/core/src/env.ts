@@ -41,8 +41,6 @@ export const baseEnvSchema = z
     }
   });
 
-export type BaseEnv = z.infer<typeof baseEnvSchema>;
-
 export function parseEnv(schema: z.ZodType, raw: NodeJS.ProcessEnv = process.env) {
   const result = schema.safeParse(raw);
   if (!result.success) {

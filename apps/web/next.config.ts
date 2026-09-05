@@ -3,18 +3,23 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: [],
-  // Cache dynamic (auth-gated) RSC payloads client-side so sidebar navigation
-  // between already-visited pages is instant instead of a server roundtrip.
+  // Premium performance: cache + compression + optimized RSC streaming
   experimental: {
     staleTimes: { dynamic: 30, static: 180 },
+    optimizePackageImports: ["recharts", "drizzle-orm"],
+  },
+  compress: true,
+  // Premium: reduce JS payload via modularizeImports for heavy libs
+  modularizeImports: {
+    recharts: { transform: "recharts/{{member}}" },
   },
   serverExternalPackages: [
     "@pushpanel/db",
     "@pushpanel/core",
     "better-sqlite3",
     "drizzle-orm",
-    "drizzle-kit",
     "@node-rs/argon2",
+    "undici",
   ],
   reactStrictMode: true,
   poweredByHeader: false,
@@ -29,6 +34,7 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "X-DNS-Prefetch-Control", value: "off" },
           { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
+          { key: "X-XSS-Protection", value: "0" },
           // HSTS only on HTTPS — browsers ignore on HTTP, safe to send always when behind proxy that terminates TLS
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
           // CSP: production drops 'unsafe-eval' and the blanket https: script
@@ -58,9 +64,11 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Cache SDK and SW correctly: immutable for versioned assets, no-cache for dynamic
+        // SDK is served unversioned — a year-long immutable cache would pin
+        // visitor browsers to whatever engine shipped when they first hit
+        // the snippet. Revalidate hourly; SW stays must-revalidate.
         source: "/sdk/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+        headers: [{ key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" }],
       },
       {
         source: "/sw.js",

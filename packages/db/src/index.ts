@@ -23,11 +23,16 @@ export interface DbOptions {
 
 const DEFAULT_PRAGMAS: Record<string, string | number> = {
   journal_mode: "WAL",
-  busy_timeout: 5000,
+  // 15s: retention pruning / backup windows hold the write lock in short
+  // batches; web-side writes should wait them out instead of erroring.
+  busy_timeout: 15_000,
   foreign_keys: "ON",
   synchronous: "NORMAL",
   // VPS tune: 64MB default for AWS t2.micro 1GB, 256MB for 2GB+ VPS via SQLITE_CACHE_MB env
   cache_size: -(Number(process.env.SQLITE_CACHE_MB ?? 64) * 1024),
+  // Cap WAL regrowth after checkpoints (the always-writing worker +
+  // pinned reader snapshots during backups would otherwise grow it unbounded).
+  journal_size_limit: 134_217_728,
 };
 
 /**
@@ -124,6 +129,20 @@ export function runMigrations(db: BetterSQLite3Database<typeof allTables>, clien
 
   // WAL checkpoint so the -wal file doesn't linger on a fresh run.
   client.pragma("wal_checkpoint(TRUNCATE)");
+}
+
+/**
+ * Non-blocking consistent snapshot via better-sqlite3's backup API: pages
+ * are copied in steps on the libuv pool, so the process stays responsive —
+ * unlike a synchronous `VACUUM INTO`, which stalls the event loop for the
+ * whole copy and pins the WAL read snapshot while sends continue.
+ */
+export async function backupDatabase(
+  db: BetterSQLite3Database<typeof allTables>,
+  target: string,
+): Promise<void> {
+  const client = (db as unknown as { $client: Database.Database }).$client;
+  await client.backup(target);
 }
 
 /** Fresh in-memory DB with migrations applied — for tests. */

@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { promises as dns } from "node:dns";
+import { Agent } from "undici";
 
 /**
  * SSRF guard for outbound fetches (automation source/feed URLs).
@@ -43,6 +44,79 @@ export async function assertPublicHttpUrl(raw: string): Promise<UrlCheckResult> 
     return { ok: false, url, error: "DNS lookup failed" };
   }
   return { ok: true, url };
+}
+
+/**
+ * Connect-time SSRF pinning. `assertPublicHttpUrl` validates a URL, but the
+ * subsequent fetch performs a SECOND DNS resolution — an authoritative DNS
+ * server can answer different addresses per query (DNS rebinding / TOCTOU),
+ * so the pre-check alone is advisory. This dispatcher re-validates every
+ * address at the moment the connection is actually established, closing the
+ * gap: the socket can only ever open to an IP that passed the private-range
+ * check. When ALLOW_PRIVATE_UPSTREAM=1 (dev/e2e) no validation is applied.
+ */
+let validatingAgent: Agent | null = null;
+export function ssrfDispatcher(): Agent {
+  if (validatingAgent) return validatingAgent;
+  validatingAgent = new Agent({
+    connect: {
+      timeout: 10_000,
+      lookup: (hostname, opts, cb) => {
+        if (process.env.ALLOW_PRIVATE_UPSTREAM === "1") {
+          dns.lookup(hostname, { ...opts, all: true }).then((addrs) => cb(null, addrs)).catch((err) => cb(err as Error, []));
+          return;
+        }
+        dns
+          .lookup(hostname, { ...opts, all: true })
+          .then((addrs) => {
+            for (const { address } of addrs) {
+              if (isPrivateIp(address)) {
+                cb(new Error(`Host resolves to a private address (${address})`), []);
+                return;
+              }
+            }
+            cb(null, addrs);
+          })
+          .catch((err) => cb(err as Error, []));
+      },
+    },
+  });
+  return validatingAgent;
+}
+
+/**
+ * Hardened fetch for attacker-influenced URLs (feeds, source URLs, imports,
+ * webhook targets): pre-validates the URL, then fetches with the
+ * connect-time-validating dispatcher and manual redirects — each hop is
+ * re-validated before it is followed (capped at `maxRedirects`).
+ * `init.signal` and `init.headers`/`method`/`body` pass through.
+ */
+export async function ssrfFetch(
+  raw: string,
+  init: RequestInit = {},
+  opts: { maxRedirects?: number } = { maxRedirects: 3 },
+): Promise<Response> {
+  let current = raw;
+  for (let hop = 0; hop <= (opts.maxRedirects ?? 3); hop++) {
+    const check = await assertPublicHttpUrl(current);
+    if (!check.ok || !check.url) throw new Error(check.error ?? "URL rejected by SSRF guard");
+    const res = await fetch(check.url, { ...init, redirect: "manual", dispatcher: ssrfDispatcher() } as RequestInit);
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location");
+      // Drain the body so the socket is released back to the pool.
+      try {
+        await res.arrayBuffer();
+      } catch {
+        /* ignore drain errors */
+      }
+      if (!location) throw new Error(`Redirect ${res.status} without Location`);
+      if (hop === (opts.maxRedirects ?? 3)) throw new Error("Too many redirects");
+      current = new URL(location, check.url).toString();
+      continue;
+    }
+    return res;
+  }
+  throw new Error("Too many redirects");
 }
 
 /** True when the IP is in a non-public range (loopback, private, link-local, reserved). */

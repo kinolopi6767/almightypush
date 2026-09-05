@@ -45,6 +45,8 @@ export function logAudit(
   },
 ): void {
   try {
+    // Premium: truncate meta to avoid SQLITE_TOOBIG on large payloads
+    const metaJson = opts.meta ? JSON.stringify(opts.meta).slice(0, 4000) : null;
     db.insert(auditLog)
       .values({
         workspace_id: opts.workspaceId,
@@ -52,7 +54,7 @@ export function logAudit(
         action: opts.action,
         entity_type: opts.entityType ?? null,
         entity_id: opts.entityId ?? null,
-        meta_json: opts.meta ? JSON.stringify(opts.meta) : null,
+        meta_json: metaJson,
       })
       .run();
   } catch (err) {

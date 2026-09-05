@@ -17,8 +17,6 @@ export const emailCampaignSchema = z.object({
   audience_json: z.string().optional(),
   schedule_at: z.string().optional().or(z.literal("")),
 });
-export type EmailCampaignInput = z.infer<typeof emailCampaignSchema>;
-
 /** Very small MJML-like render: blocks → HTML */
 export function renderBlocksToHtml(blocks: EmailBlock[]): string {
   const parts: string[] = ['<div style="font-family:system-ui;max-width:600px;margin:0 auto">'];
@@ -49,9 +47,4 @@ function isSafeEmailUrl(url: string | undefined): boolean {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-/** SPF/DKIM simple check */
-export function isValidDomain(domain: string): boolean {
-  return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain);
 }

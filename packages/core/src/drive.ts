@@ -27,7 +27,18 @@ export interface GDriveServiceJson {
 }
 
 export async function getGDriveAccessToken(saJson: string | GDriveServiceJson): Promise<string> {
-  const sa: GDriveServiceJson = typeof saJson === "string" ? JSON.parse(saJson) : saJson;
+  // Corrupt vault ciphertext / truncated JSON must throw a clear error here —
+  // callers (backup upload) treat any throw as best-effort skip + log.
+  let sa: GDriveServiceJson;
+  if (typeof saJson === "string") {
+    try {
+      sa = JSON.parse(saJson) as GDriveServiceJson;
+    } catch {
+      throw new Error("Service account JSON is not valid JSON");
+    }
+  } else {
+    sa = saJson;
+  }
   if (!sa.client_email || !sa.private_key) throw new Error("Invalid service account JSON: missing client_email/private_key");
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };

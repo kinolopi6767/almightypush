@@ -132,9 +132,6 @@ importers:
       rss-parser:
         specifier: ^3.13.0
         version: 3.13.0
-      zod:
-        specifier: ^3.24.1
-        version: 3.25.76
     devDependencies:
       '@pushpanel/tsconfig':
         specifier: workspace:*
@@ -157,6 +154,9 @@ importers:
       cron-parser:
         specifier: ^5.8.1
         version: 5.8.1
+      undici:
+        specifier: ^6.28.0
+        version: 6.28.0
       web-push:
         specifier: ^3.6.7
         version: 3.6.7
@@ -191,9 +191,6 @@ importers:
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)
-      zod:
-        specifier: ^3.24.1
-        version: 3.25.76
     devDependencies:
       '@pushpanel/tsconfig':
         specifier: workspace:*
@@ -3071,6 +3068,10 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  undici@6.28.0:
+    resolution: {integrity: sha512-LIY910g9TI13YS95lrMFrs8Rm/u/irgHeTWoKCoteeJ04CUJ92eEfj0rVn+7VKMPBpUPiUoBKfhNyLI23EE/KA==}
+    engines: {node: '>=18.17'}
+
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
@@ -5454,6 +5455,8 @@ snapshots:
   ufo@1.6.4: {}
 
   undici-types@6.21.0: {}
+
+  undici@6.28.0: {}
 
   uri-js@4.4.1:
     dependencies:

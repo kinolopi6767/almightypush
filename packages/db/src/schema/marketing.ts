@@ -117,7 +117,11 @@ export const automationRuns = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [index("idx_automation_runs_auto").on(t.automation_id, t.created_at)],
+  (t) => [
+    index("idx_automation_runs_auto").on(t.automation_id, t.created_at),
+    // Migration-only (0012) — run-history pruning.
+    index("idx_automation_runs_created").on(t.created_at),
+  ],
 );
 
 /** Collection links with redirect + optional force-subscribe. */

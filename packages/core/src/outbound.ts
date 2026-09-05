@@ -1,4 +1,5 @@
 import { signWebhook } from "./webhook.js";
+import { ssrfFetch } from "./net.js";
 
 export interface OutboundWebhookConfig {
   url: string;
@@ -32,7 +33,9 @@ export function emitWebhookEvent(
     if (config.secret) {
       headers["x-pushpanel-signature"] = `sha256=${signWebhook(config.secret, body, timestamp)}`;
     }
-    void fetch(target.toString(), {
+    // ssrfFetch: connect-time IP re-validation + per-hop redirect validation
+    // (a configured endpoint must never bounce onto a private address).
+    void ssrfFetch(target.toString(), {
       method: "POST",
       headers,
       body,

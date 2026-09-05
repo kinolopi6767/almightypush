@@ -164,24 +164,3 @@ export async function translateText(text: string, targetLang: string, config?: A
   }
   return `[${targetLang}] ${text}`;
 }
-
-export interface SmartSendSlot {
-  hour: number; // 0-23 local
-  score: number;
-}
-
-/** LumaPush Smart Send: histogram of last_active hour → best slot */
-export function smartSendSlot(hours: number[]): SmartSendSlot | null {
-  if (hours.length === 0) return null;
-  const hist = new Array(24).fill(0) as number[];
-  for (const h of hours) if (h >= 0 && h < 24) hist[h]!++;
-  let best = 0;
-  for (let i = 1; i < 24; i++) if (hist[i]! > hist[best]!) best = i;
-  return { hour: best, score: hist[best]! / hours.length };
-}
-
-/** Fatigue shield: should we suppress this send? */
-export function shouldSuppressByFatigue(sentToday: number, dailyCap = 3, isTransactional = false): boolean {
-  if (isTransactional) return false;
-  return sentToday >= dailyCap;
-}

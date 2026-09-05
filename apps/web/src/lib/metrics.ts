@@ -60,7 +60,7 @@ export async function collectMetrics(): Promise<MetricsPayload> {
     .select({ error: automations.error })
     .from(automations)
     .where(sql`${automations.error} IS NOT NULL`)
-    .orderBy(automations.updated_at)
+    .orderBy(sql`${automations.updated_at} DESC`)
     .limit(1)
     .all();
 
