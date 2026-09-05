@@ -2,22 +2,20 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  transpilePackages: [],
-  // Premium performance: cache + compression + optimized RSC streaming
+  // Premium performance: cache + compression + optimized RSC streaming.
+  // NOTE: drizzle-orm stays bundled (optimizePackageImports) — it must NOT
+  // also be listed in serverExternalPackages/webpack externals, which Next
+  // 15 rejects as a transpile-vs-external conflict and which would defeat
+  // tree-shaking. Only native/binding packages go external.
   experimental: {
     staleTimes: { dynamic: 30, static: 180 },
     optimizePackageImports: ["recharts", "drizzle-orm"],
   },
   compress: true,
-  // Premium: reduce JS payload via modularizeImports for heavy libs
-  modularizeImports: {
-    recharts: { transform: "recharts/{{member}}" },
-  },
   serverExternalPackages: [
     "@pushpanel/db",
     "@pushpanel/core",
     "better-sqlite3",
-    "drizzle-orm",
     "@node-rs/argon2",
     "undici",
   ],
@@ -83,12 +81,12 @@ const nextConfig: NextConfig = {
   webpack(config, { isServer }) {
     if (isServer) {
       // pnpm store symlinks defeat Next's package-name externals resolution;
-      // force native-binding / driver packages out of the bundle explicitly.
+      // force native-binding packages out of the bundle explicitly.
+      // (drizzle-orm is intentionally bundled — see note above.)
       config.externals = [
         ...(config.externals ?? []),
         { "@node-rs/argon2": "commonjs @node-rs/argon2" },
         { "better-sqlite3": "commonjs better-sqlite3" },
-        { "drizzle-orm": "commonjs drizzle-orm" },
       ];
     }
     return config;
