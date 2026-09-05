@@ -20,7 +20,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @pushpanel/db migrate",
-    "db:generate": "pnpm --filter @pushpanel/db generate"
+    "db:generate": "pnpm --filter @pushpanel/db generate",
+    "cleanup:e2e": "node scripts/prune-e2e-data.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

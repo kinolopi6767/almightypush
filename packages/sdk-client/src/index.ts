@@ -228,6 +228,18 @@ function idbSet(key: string, value: unknown): void {
 }
 
 const SYNC_THROTTLE_KEY = "__pushpanel_last_sync__";
+export const SYNC_THROTTLE_INTERVAL_MS = 12 * 3_600_000;
+
+/** Per-domain throttle storage key — exported for unit tests. */
+export function syncThrottleKey(domain: number): string {
+  return `${SYNC_THROTTLE_KEY}_${domain}`;
+}
+
+/** Pure throttle decision — exported for unit tests. */
+export function shouldPeriodicSync(last: number, now: number = Date.now()): boolean {
+  if (!Number.isFinite(last) || last <= 0) return true;
+  return now - last >= SYNC_THROTTLE_INTERVAL_MS;
+}
 
 /** Auto-resync (OneSignal "auto-resubscribe"): while permission is granted,
  * periodically re-post the CURRENT browser subscription so endpoint rotations
@@ -237,10 +249,10 @@ function schedulePeriodicSync(
   api: { state: () => PushPanelState },
   opts: { domain: number; baseUrl?: string; serviceWorkerPath?: string },
 ): void {
-  const throttleKey = `${SYNC_THROTTLE_KEY}_${opts.domain}`;
+  const throttleKey = syncThrottleKey(opts.domain);
   try {
     const last = Number(localStorage.getItem(throttleKey) ?? 0);
-    if (Date.now() - last < 12 * 3_600_000) return;
+    if (!shouldPeriodicSync(last)) return;
     localStorage.setItem(throttleKey, String(Date.now()));
   } catch {
     return; // no storage — skip sync rather than hammering
