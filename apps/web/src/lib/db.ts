@@ -1,5 +1,6 @@
 import { getDb, setDbForTests, type BetterSQLite3Database } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
+import { logger } from "./logger";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
 
@@ -14,9 +15,9 @@ export const db = new Proxy({} as PushDb, {
     try {
       return Reflect.get(getDb(), prop);
     } catch (err) {
-      // Premium fatal-error hardening: never crash the process on DB open failure.
-      // Log and rethrow with a user-friendly message so error boundaries can render.
-      console.error("[pushpanel:db] failed to get DB connection:", err);
+      // Never crash the process on DB open failure — log structurally so
+      // error boundaries can render while ops still see the trail.
+      logger.error("db connection failed", { route: "lib/db", error: err });
       throw err;
     }
   },

@@ -1,5 +1,6 @@
 import { auditLog } from "@pushpanel/db/schema";
 import type { PushDb } from "@pushpanel/db";
+import { logger } from "./logger";
 
 export type AuditAction =
   | "domain.create"
@@ -58,9 +59,9 @@ export function logAudit(
       })
       .run();
   } catch (err) {
-    // audit logging must never break the underlying operation — but a failing
-    // insert (disk full, locked DB) silently loses the security trail, so
-    // surface it on stderr for ops to notice.
-    console.error("[audit] insert failed:", err);
+    // Audit must never break the underlying operation, but a failing insert
+    // (disk full, locked DB) silently loses the security trail — log
+    // structurally so ops notice while the caller proceeds.
+    logger.error("audit insert failed", { action: opts.action, workspaceId: opts.workspaceId, error: err });
   }
 }

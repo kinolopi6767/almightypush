@@ -111,6 +111,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
     if (status !== "all") p.set("status", status);
     for (const [k, v] of Object.entries(extra)) {
       if (v) p.set(k, v);
+      // eslint-disable-next-line drizzle/enforce-delete-with-where -- p is URLSearchParams, not a Drizzle table.
       else p.delete(k);
     }
     const s = p.toString();

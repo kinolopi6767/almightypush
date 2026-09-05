@@ -32,6 +32,7 @@ function cleanup(now: number): void {
     // Retain hits for the longest window we use (15 min account limit) so
     // longer windows are not under-counted by premature eviction.
     bucket.hits = bucket.hits.filter((t) => now - t < MAX_WINDOW_MS);
+    // eslint-disable-next-line drizzle/enforce-delete-with-where -- buckets is an in-memory Map, not a Drizzle table.
     if (bucket.hits.length === 0) buckets.delete(key);
   }
 }
@@ -67,6 +68,7 @@ export function rateLimitWithHeaders(key: string, limit: number, windowMs: numbe
   while (buckets.size >= MAX_BUCKETS && !buckets.has(key)) {
     const oldest = buckets.keys().next().value;
     if (oldest === undefined) break;
+    // eslint-disable-next-line drizzle/enforce-delete-with-where -- buckets is an in-memory Map, not a Drizzle table.
     buckets.delete(oldest);
   }
 

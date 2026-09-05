@@ -86,6 +86,7 @@ describe("runScheduler", () => {
   it("finishes campaigns whose audience is empty", () => {
     const { db, client } = createMemoryDb();
     const { workspaceId, domainId } = seed(db);
+    // eslint-disable-next-line drizzle/enforce-delete-with-where -- intentional full-table reset in test setup.
     db.delete(subscribers).run();
     insertCampaign(db, workspaceId, domainId);
 
