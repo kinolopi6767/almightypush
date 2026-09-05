@@ -21,8 +21,11 @@ var PushPanel = (() => {
   // src/index.ts
   var index_exports = {};
   __export(index_exports, {
+    SYNC_THROTTLE_INTERVAL_MS: () => SYNC_THROTTLE_INTERVAL_MS,
     init: () => init,
-    isInstalledPwa: () => isInstalledPwa
+    isInstalledPwa: () => isInstalledPwa,
+    shouldPeriodicSync: () => shouldPeriodicSync,
+    syncThrottleKey: () => syncThrottleKey
   });
   var PROMPT_STORAGE_KEY = "__pushpanel_prompt_dismissed__";
   var pendingSubKey = (domain) => `__pushpanel_pending_sub_${domain}__`;
@@ -133,12 +136,20 @@ ${customCss != null ? customCss : ""}
     }
   }
   var SYNC_THROTTLE_KEY = "__pushpanel_last_sync__";
+  var SYNC_THROTTLE_INTERVAL_MS = 12 * 36e5;
+  function syncThrottleKey(domain) {
+    return `${SYNC_THROTTLE_KEY}_${domain}`;
+  }
+  function shouldPeriodicSync(last, now = Date.now()) {
+    if (!Number.isFinite(last) || last <= 0) return true;
+    return now - last >= SYNC_THROTTLE_INTERVAL_MS;
+  }
   function schedulePeriodicSync(api, opts) {
     var _a;
-    const throttleKey = `${SYNC_THROTTLE_KEY}_${opts.domain}`;
+    const throttleKey = syncThrottleKey(opts.domain);
     try {
       const last = Number((_a = localStorage.getItem(throttleKey)) != null ? _a : 0);
-      if (Date.now() - last < 12 * 36e5) return;
+      if (!shouldPeriodicSync(last)) return;
       localStorage.setItem(throttleKey, String(Date.now()));
     } catch (e) {
       return;
