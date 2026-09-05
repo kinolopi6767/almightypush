@@ -29,7 +29,7 @@ const bodySchema = z.object({
     .string()
     .trim()
     .max(500)
-    .refine((u) => u === "" || /^https?:\/\/[^/\s]+\//.test(u) || /^https?:\/\/[^/\s]+$/.test(u), "subscribeUrl must be an http(s) URL")
+    .refine((u) => u === "" || /^https?:\/\/[^/\s]+/.test(u), "subscribeUrl must be an http(s) URL")
     .optional()
     .or(z.literal("")),
   city: z.string().trim().max(80).optional().or(z.literal("")),
