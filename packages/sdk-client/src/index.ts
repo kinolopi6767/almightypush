@@ -231,15 +231,17 @@ const SYNC_THROTTLE_KEY = "__pushpanel_last_sync__";
 
 /** Auto-resync (OneSignal "auto-resubscribe"): while permission is granted,
  * periodically re-post the CURRENT browser subscription so endpoint rotations
- * and server-side drift self-heal. Throttled to once per 12h per domain. */
+ * and server-side drift self-heal. Throttled to once per 12h per domain —
+ * the throttle key is per-domain so a multi-domain site syncs each of them. */
 function schedulePeriodicSync(
   api: { state: () => PushPanelState },
   opts: { domain: number; baseUrl?: string; serviceWorkerPath?: string },
 ): void {
+  const throttleKey = `${SYNC_THROTTLE_KEY}_${opts.domain}`;
   try {
-    const last = Number(localStorage.getItem(SYNC_THROTTLE_KEY) ?? 0);
+    const last = Number(localStorage.getItem(throttleKey) ?? 0);
     if (Date.now() - last < 12 * 3_600_000) return;
-    localStorage.setItem(SYNC_THROTTLE_KEY, String(Date.now()));
+    localStorage.setItem(throttleKey, String(Date.now()));
   } catch {
     return; // no storage — skip sync rather than hammering
   }
