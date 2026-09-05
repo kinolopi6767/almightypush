@@ -1,6 +1,6 @@
-import { and, count, eq, inArray, isNotNull, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { deliveries, domains, events, settings, subscribers, subscriberTags } from "@pushpanel/db/schema";
-import { automationRuns, journeyRuns } from "@pushpanel/db/schema";
+import { automationRuns, journeyRuns, teamInvites } from "@pushpanel/db/schema";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
 
@@ -156,6 +156,19 @@ export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>,
   } catch { /* table may not exist in very old DBs — non-fatal */ }
   try {
     db.delete(journeyRuns).where(lt(journeyRuns.created_at, runsCutoff)).run();
+  } catch { /* ditto */ }
+  // Stale invites: consumed or long-expired rows are dead weight (and a
+  // lingering accepted-invite row is confusing in the team panel).
+  try {
+    const staleCutoff = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+    db.delete(teamInvites)
+      .where(
+        or(
+          and(isNotNull(teamInvites.accepted_at), lt(teamInvites.accepted_at, staleCutoff)),
+          and(isNull(teamInvites.accepted_at), isNotNull(teamInvites.expires_at), lt(teamInvites.expires_at, staleCutoff)),
+        ),
+      )
+      .run();
   } catch { /* ditto */ }
 
   // Only advance the daily guard when pruning succeeded — a persistent

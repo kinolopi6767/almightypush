@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryDb } from "@pushpanel/db";
-import { domains, subscribers, workspaces } from "@pushpanel/db/schema";
-import { runCleanup, readSetting, writeSetting } from "./cleanup";
+import { domains, subscribers, teamInvites, workspaces } from "@pushpanel/db/schema";
+import { runCleanup, runRetentionPruning, readSetting, writeSetting } from "./cleanup";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
 
@@ -94,5 +94,24 @@ describe("settings", () => {
     writeSetting(db, "timezone", "UTC");
     expect(readSetting(db, "timezone")).toBe("UTC");
     expect(readSetting(db, "missing")).toBeNull();
+  });
+});
+
+describe("runRetentionPruning stale invites", () => {
+  it("prunes accepted and long-expired invites, keeps live ones", () => {
+    const { db } = createMemoryDb();
+    const ws = Number(db.insert(workspaces).values({ name: "WS", slug: "ws-inv" }).run().lastInsertRowid);
+    const now = new Date("2026-08-15T00:00:00.000Z");
+    const old = new Date(now.getTime() - 60 * 86_400_000).toISOString();
+    const recent = new Date(now.getTime() - 2 * 86_400_000).toISOString();
+    db.insert(teamInvites).values([
+      { workspace_id: ws, email: "used@test.io", role: "viewer", token_hash: "h1", accepted_at: old },
+      { workspace_id: ws, email: "expired@test.io", role: "viewer", token_hash: "h2", expires_at: old },
+      { workspace_id: ws, email: "fresh@test.io", role: "viewer", token_hash: "h3", expires_at: recent },
+      { workspace_id: ws, email: "noexpiry@test.io", role: "viewer", token_hash: "h4" },
+    ]).run();
+    runRetentionPruning(db, now);
+    const left = db.select({ email: teamInvites.email }).from(teamInvites).all().map((r) => r.email).sort();
+    expect(left).toEqual(["fresh@test.io", "noexpiry@test.io"]);
   });
 });

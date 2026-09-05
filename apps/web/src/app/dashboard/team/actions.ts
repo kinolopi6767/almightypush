@@ -43,11 +43,18 @@ export async function inviteTeamMemberAction(_prev: TeamFormState, formData: For
     return { error: "Only the owner can grant owner access" };
   }
 
+  // Noisy-but-harmless otherwise: inviting an address that already has an
+  // account can never be redeemed (accept rejects existing emails), so fail
+  // fast with a clear message instead of minting a dead invite.
+  const emailLower = parsed.data.email.toLowerCase();
+  const [existing] = db.select({ id: users.id }).from(users).where(eq(users.email, emailLower)).limit(1).all();
+  if (existing) return { error: "An account with this email already exists" };
+
   const token = randomBytes(24).toString("hex");
   const tokenHash = sha256Hex(token);
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  db.insert(teamInvites).values({ workspace_id: workspaceId, email: parsed.data.email.toLowerCase(), role: parsed.data.role, token_hash: tokenHash, expires_at: expiresAt }).run();
+  db.insert(teamInvites).values({ workspace_id: workspaceId, email: emailLower, role: parsed.data.role, token_hash: tokenHash, expires_at: expiresAt }).run();
   logAudit(db, { workspaceId, action: "settings.update", entityType: "team_invite", meta: { email: parsed.data.email, role: parsed.data.role, invited: true } });
 
   return { ok: true, token };
