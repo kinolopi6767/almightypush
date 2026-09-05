@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { CreateWorkspaceForm } from "./create-form";
 import { WorkspaceSwitchItem } from "./switch-item";
+import { PageHeader } from "@/components/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -23,35 +24,39 @@ export default async function WorkspacesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Manage client profiles — each workspace has isolated domains, campaigns, and subscribers. Perfect for agencies.</p>
-      </div>
+      <PageHeader
+        title="Workspaces"
+        description="Manage client profiles — each workspace has isolated domains, campaigns, and subscribers. Perfect for agencies."
+      />
 
-      <div className="rounded-xl border bg-card p-5">
+      <div className="surface rounded-xl p-5">
         <h2 className="font-medium">Active workspace</h2>
         <div className="mt-3">
           <WorkspaceSwitcher workspaces={allWorkspaces} currentId={currentWorkspaceId} currentUserWorkspaceId={currentUser?.workspace_id ?? null} />
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card p-5">
-        <h2 className="font-medium">All workspaces ({allWorkspaces.length})</h2>
-        <ul className="mt-3 space-y-2">
-          {allWorkspaces.map((ws) => (
-            <li key={ws.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
-              <div>
-                <p className="text-sm font-medium">{ws.name}</p>
-                <p className="text-xs text-muted-foreground">/{ws.slug ?? "no-slug"} · #{ws.id} {ws.id === currentWorkspaceId && <span className="ml-1 rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">active</span>}</p>
-              </div>
-              {ws.id === currentWorkspaceId ? (
-                <span className="text-xs font-medium text-primary">Active</span>
-              ) : (
-                <WorkspaceSwitchItem workspaceId={ws.id} />
-              )}
-            </li>
-          ))}
-        </ul>
+      <div className="surface rounded-xl p-5">
+        <h2 className="text-[15px] font-semibold tracking-tight">All workspaces ({allWorkspaces.length})</h2>
+        {allWorkspaces.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">No workspaces yet — create one below.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {allWorkspaces.map((ws) => (
+              <li key={ws.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">{ws.name}</p>
+                  <p className="text-xs text-muted-foreground">/{ws.slug ?? "no-slug"} · #{ws.id} {ws.id === currentWorkspaceId && <span className="ml-1 rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">active</span>}</p>
+                </div>
+                {ws.id === currentWorkspaceId ? (
+                  <span className="text-xs font-medium text-primary">Active</span>
+                ) : (
+                  <WorkspaceSwitchItem workspaceId={ws.id} />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <CreateWorkspaceForm />

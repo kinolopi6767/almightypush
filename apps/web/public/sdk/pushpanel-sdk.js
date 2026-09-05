@@ -135,10 +135,11 @@ ${customCss != null ? customCss : ""}
   var SYNC_THROTTLE_KEY = "__pushpanel_last_sync__";
   function schedulePeriodicSync(api, opts) {
     var _a;
+    const throttleKey = `${SYNC_THROTTLE_KEY}_${opts.domain}`;
     try {
-      const last = Number((_a = localStorage.getItem(SYNC_THROTTLE_KEY)) != null ? _a : 0);
+      const last = Number((_a = localStorage.getItem(throttleKey)) != null ? _a : 0);
       if (Date.now() - last < 12 * 36e5) return;
-      localStorage.setItem(SYNC_THROTTLE_KEY, String(Date.now()));
+      localStorage.setItem(throttleKey, String(Date.now()));
     } catch (e) {
       return;
     }

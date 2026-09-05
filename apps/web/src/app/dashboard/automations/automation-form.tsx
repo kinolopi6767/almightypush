@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDialogA11y } from "@/components/use-dialog";
 import { useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { createAutomationAction, type AutomationFormState } from "./actions";
@@ -60,6 +61,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
   const [cron, setCron] = useState<string>("");
   const [steps, setSteps] = useState<DripRow[]>([{ rid: nextStepId(), delay_days: "0", title: "", message: "", launch_url: "" }]);
   const [open, setOpen] = useState(false);
+  const dialogRef = useDialogA11y(open, () => setOpen(false));
 
   useEffect(() => {
     if (state?.ok) {
@@ -69,7 +71,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
   }, [state, router]);
 
   const inputCls =
-    "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus:border-primary";
+    "flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus:border-primary";
   const label = "text-sm font-medium";
 
   return (
@@ -79,7 +81,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {open ? "Cancel" : "New automation"}
       </button>
@@ -92,8 +94,8 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
             if (e.key === "Escape") setOpen(false);
           }}
         >
-          <div className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="New automation">
-            <h2 className="text-lg font-semibold">New automation</h2>
+          <div ref={dialogRef} tabIndex={-1} className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl outline-none" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="New automation">
+            <h2 className="text-[15px] font-semibold tracking-tight">New automation</h2>
             <p className="mt-1 text-sm text-muted-foreground">Run one or more sub-types below.</p>
 
             <div className="mt-5 space-y-4">
@@ -128,7 +130,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
 
               <div>
                 <label className={label} htmlFor="automation-message">Message</label>
-                <textarea id="automation-message" name="message" rows={2} className={`mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm`} placeholder="Optional body text" />
+                <textarea id="automation-message" name="message" rows={2} className={`mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm`} placeholder="Optional body text" />
               </div>
 
               <div>
@@ -199,7 +201,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
               {type === "automagic_static" && (
                 <div>
                   <label className={label} htmlFor="automation-rotation">Rotation list (JSON)</label>
-                  <textarea id="automation-rotation" name="rotation_json" rows={4} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" placeholder='[{"title":"Tip 1"},{"title":"Tip 2","message":"…"}]' />
+                  <textarea id="automation-rotation" name="rotation_json" rows={4} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono" placeholder='[{"title":"Tip 1"},{"title":"Tip 2","message":"…"}]' />
                 </div>
               )}
 
@@ -232,7 +234,7 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
                   <input type="hidden" name="step_count" value={steps.length} />
                   <div className="mt-2 space-y-3">
                     {steps.map((step, i) => (
-                      <div key={step.rid} className="rounded-lg border p-3">
+                      <div key={step.rid} className="rounded-lg border bg-muted/30 p-3.5">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium text-muted-foreground">Step {i + 1}</span>
                           {steps.length > 1 && (
@@ -272,11 +274,11 @@ export function AutomationForm({ domains }: { domains: DomainOption[] }) {
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setOpen(false)} className="inline-flex h-9 items-center rounded-md border px-4 text-sm">Cancel</button>
+              <button type="button" onClick={() => setOpen(false)} className="inline-flex h-9 items-center rounded-lg border border-input px-4 text-sm">Cancel</button>
               <button
                 type="submit"
                 disabled={pending}
-                className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
               >
                 {pending ? "Creating…" : "Create automation"}
               </button>

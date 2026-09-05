@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useActionState } from "react";
+import { useEffect, useActionState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteAutomationAction, runAutomationNowAction, toggleAutomationAction } from "./actions";
 
@@ -23,10 +23,15 @@ export function AutomationRow({
         <WebhookBadge automationId={id} secret={secret} />
       )}
       {type !== "welcome_push" && status === "active" && (
-        <ActionButton label="Run now" onClick={async () => { await runAutomationNowAction(id); router.refresh(); }} />
+        <ActionButton
+          label="Run now"
+          pendingLabel="Running…"
+          onClick={async () => { await runAutomationNowAction(id); router.refresh(); }}
+        />
       )}
       <ActionButton
         label={status === "active" ? "Pause" : "Resume"}
+        pendingLabel={status === "active" ? "Pausing…" : "Resuming…"}
         onClick={async () => { await toggleAutomationAction(id); router.refresh(); }}
       />
       <DeleteButton id={id} />
@@ -37,7 +42,7 @@ export function AutomationRow({
 function WebhookBadge({ automationId, secret }: { automationId: number; secret: string }) {
   const url = `/api/v1/automations/${automationId}/trigger`;
   return (
-    <details className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+    <details className="rounded-lg bg-muted px-2 py-1 text-xs text-muted-foreground">
       <summary className="cursor-pointer">Webhook</summary>
       <p className="mt-1 break-all font-mono">POST {url}</p>
       <p className="mt-1 break-all font-mono">X-PushPanel-Signature: sha256=…</p>
@@ -46,14 +51,26 @@ function WebhookBadge({ automationId, secret }: { automationId: number; secret: 
   );
 }
 
-function ActionButton({ label, onClick }: { label: string; onClick: () => void }) {
+/**
+ * Pending-guarded action button. Without it, a rapid double-click on
+ * "Pause" fires the toggle twice: the second call reads the NEW status and
+ * flips it right back — the click appears to do nothing.
+ */
+function ActionButton({ label, pendingLabel, onClick }: { label: string; pendingLabel: string; onClick: () => Promise<void> }) {
+  const [pending, startTransition] = useTransition();
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors hover:bg-muted"
+      disabled={pending}
+      aria-busy={pending}
+      onClick={() => {
+        startTransition(async () => {
+          await onClick();
+        });
+      }}
+      className="inline-flex h-8 items-center rounded-lg border border-input px-3 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
     >
-      {label}
+      {pending ? pendingLabel : label}
     </button>
   );
 }
@@ -74,7 +91,7 @@ function DeleteButton({ id }: { id: number }) {
         void action();
       }}
       disabled={pending}
-      className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-destructive transition-colors hover:bg-muted disabled:opacity-50"
+      className="inline-flex h-8 items-center rounded-lg border border-input px-3 text-xs font-medium text-destructive transition-colors hover:bg-muted disabled:opacity-50"
     >
       Delete
     </button>

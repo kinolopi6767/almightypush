@@ -55,6 +55,13 @@ export async function switchWorkspaceAction(workspaceId: number) {
   if (!session?.user) return { error: "Not signed in" };
   const wsId = Number(workspaceId);
   if (!Number.isInteger(wsId) || wsId <= 0) return { error: "Invalid workspace" };
+  // Ownership gate: without a membership table, only the instance owner may
+  // move between workspaces. Invited members (admin/editor/viewer) must stay
+  // in the workspace they were invited to — otherwise any invited user could
+  // reassign themselves into an unrelated client workspace (IDOR).
+  if ((session.user.role ?? "owner").toLowerCase() !== "owner") {
+    return { error: "Only the workspace owner can switch workspaces" };
+  }
   const [ws] = db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, wsId)).limit(1).all();
   if (!ws) return { error: "Workspace not found" };
   db.update(users).set({ workspace_id: wsId }).where(eq(users.id, Number(session.user.id))).run();

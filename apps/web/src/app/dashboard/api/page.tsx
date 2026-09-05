@@ -6,6 +6,7 @@ import { apiKeys, domains } from "@pushpanel/db/schema";
 import { OPENAPI_SPEC } from "@/lib/openapi";
 import { readApiAccessEnabled } from "@/lib/api-auth";
 import { CreateApiKeyForm, RevokeApiKeyButton } from "./key-form";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "API" };
 
@@ -42,13 +43,13 @@ export default async function ApiPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">API</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        REST API v1 for developers — unlimited calls, key-authenticated with per-key rate limiting.
-      </p>
+      <PageHeader
+        title="API"
+        description="REST API v1 for developers — unlimited calls, key-authenticated with per-key rate limiting."
+      />
 
       {!accessEnabled && (
-        <p className="mt-4 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+        <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
           API access is currently disabled (Settings → Advanced). Existing keys are kept but all v1 key-authenticated
           requests are refused until you turn it back on.
         </p>
@@ -56,8 +57,8 @@ export default async function ApiPage() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
         <div>
-          <div className="rounded-xl border bg-card p-4">
-            <h2 className="text-sm font-medium">API keys</h2>
+          <div className="surface rounded-xl p-5">
+            <h2 className="text-[15px] font-semibold tracking-tight">API keys</h2>
             {keys.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
                 No keys yet — create one below and use it as the <code className="rounded bg-muted px-1 font-mono text-xs">X-Api-Key</code> header.
@@ -65,7 +66,7 @@ export default async function ApiPage() {
             ) : (
               <ul className="mt-3 space-y-2 text-sm">
                 {keys.map((k) => (
-                  <li key={k.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                  <li key={k.id} className="flex items-center justify-between gap-3 rounded-lg border border-input px-3 py-2">
                     <div className="min-w-0">
                       <p className="truncate font-medium">{k.label}</p>
                       <p className="truncate text-xs text-muted-foreground">
@@ -83,7 +84,7 @@ export default async function ApiPage() {
           </div>
 
           <div className="mt-4 rounded-xl border bg-card p-4">
-            <h2 className="text-sm font-medium">Usage</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Usage</h2>
             <pre className="mt-3 overflow-x-auto rounded-md bg-muted p-3 text-xs">
 {`curl -X POST https://panel.example.com/api/v1/send \\
   -H "Content-Type: application/json" \\
@@ -99,7 +100,7 @@ export default async function ApiPage() {
 
         <div className="space-y-4">
           <CreateApiKeyForm domains={wsDomains} disabled={!accessEnabled} />
-          <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+          <div className="surface rounded-xl p-5 text-sm text-muted-foreground">
             <h3 className="font-medium text-foreground">Endpoint list</h3>
             <ul className="mt-2 space-y-1">
               {Object.entries(paths).map(([path]) => (

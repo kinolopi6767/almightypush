@@ -5,6 +5,8 @@ import { auditLog, backups, settings } from "@pushpanel/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
 import { SettingsForm, SecretsForm, GDriveForm, OutboundWebhookForm } from "./settings-form";
 import { BackupsPanel } from "./settings-form";
+import { PageHeader } from "@/components/page-header";
+import { getAiConfig, getMailConfig } from "@/lib/secrets";
 
 export const metadata = { title: "Settings" };
 
@@ -25,11 +27,7 @@ const SETTING_KEYS = [
   "outbound_webhook_url",
   "secret:outbound_webhook_secret",
   "secret:ai_api_key",
-  "secret:ai_model",
-  "secret:ai_base_url",
-  "secret:mail_provider",
   "secret:mail_api_key",
-  "secret:mail_from",
   "secret:ydc_api_key",
   "secret:gdrive_service_json",
 ] as const;
@@ -71,12 +69,15 @@ export default async function SettingsPage() {
   const valueOf = (key: (typeof SETTING_KEYS)[number]): string | undefined =>
     settingsRows.find((r) => r.key === key)?.value ?? undefined;
 
+  // Non-sensitive AI/mail display fields are decrypted server-side — raw
+  // `secret:*` ciphertext must never reach the browser (it would leak vault
+  // material into the RSC payload and render garbage in the form).
+  const aiConfig = getAiConfig();
+  const mailConfig = getMailConfig();
+
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Panel-wide configuration and database backups.</p>
-      </div>
+      <PageHeader title="Settings" description="Panel-wide configuration and database backups." />
 
       <SettingsForm
         timezone={valueOf("timezone") ?? ""}
@@ -94,11 +95,11 @@ export default async function SettingsPage() {
 
       <SecretsForm
         hasAiKey={!!valueOf("secret:ai_api_key")}
-        aiModel={valueOf("secret:ai_model") ?? "gpt-4o-mini"}
-        aiBaseUrl={valueOf("secret:ai_base_url") ?? "https://api.openai.com/v1"}
-        mailProvider={valueOf("secret:mail_provider") ?? "resend"}
+        aiModel={aiConfig.model}
+        aiBaseUrl={aiConfig.baseUrl}
+        mailProvider={mailConfig.provider}
         hasMailKey={!!valueOf("secret:mail_api_key")}
-        mailFrom={valueOf("secret:mail_from") ?? ""}
+        mailFrom={mailConfig.from ?? ""}
       />
 
       <GDriveForm
@@ -111,31 +112,53 @@ export default async function SettingsPage() {
 
       <BackupsPanel rows={backupList} />
 
-      <section>
-        <h2 className="text-lg font-semibold">Audit log</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Recent workspace activity.</p>
-        <ul className="mt-3 space-y-1.5">
-          {auditRows.length === 0 && (
-            <li className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-              No activity yet.
-            </li>
-          )}
-          {auditRows.map((row) => (
-            <li key={row.id} className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
-              <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{row.action}</code>
-              {row.entity_type && (
-                <span className="text-muted-foreground">
-                  {row.entity_type}
-                  {row.entity_id ? ` #${row.entity_id}` : ""}
-                </span>
-              )}
-              {row.meta_json && <span className="truncate text-muted-foreground">{row.meta_json}</span>}
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                {new Date(row.ts).toLocaleString()}
-              </span>
-            </li>
-          ))}
-        </ul>
+      <section className="premium-card rounded-xl p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-[15px] font-semibold tracking-tight">Audit log — enterprise trail</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Recent workspace activity · structured, searchable, exportable.</p>
+          </div>
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary ring-1 ring-inset ring-primary/15">
+            <span className="size-1.5 rounded-full bg-primary" aria-hidden /> {auditRows.length} events
+          </span>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-xl border">
+          <div className="max-h-[380px] overflow-y-auto premium-scroll">
+            {auditRows.length === 0 ? (
+              <div className="px-4 py-12 text-center">
+                <div className="mx-auto flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-5" aria-hidden><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" /></svg>
+                </div>
+                <p className="mt-3 text-sm font-medium">No activity yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">Actions like campaign creation, domain setup, and backups will appear here.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-border/60">
+                {auditRows.map((row) => (
+                  <li key={row.id} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/30 transition-colors">
+                    <code className="shrink-0 rounded-lg bg-muted px-2 py-1 font-mono text-xs font-medium border">{row.action}</code>
+                    {row.entity_type && (
+                      <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-0.5 text-xs text-muted-foreground shadow-xs">
+                        {row.entity_type}
+                        {row.entity_id ? ` #${row.entity_id}` : ""}
+                      </span>
+                    )}
+                    {row.meta_json && <span className="hidden lg:block truncate text-xs text-muted-foreground max-w-[320px]">{row.meta_json}</span>}
+                    <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {new Date(row.ts).toLocaleString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        {auditRows.length > 0 && (
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>Showing latest 20 · full history in database</span>
+            <span className="font-mono">audit_log · {auditRows.length} rows</span>
+          </div>
+        )}
       </section>
 
       <p className="text-xs text-muted-foreground">

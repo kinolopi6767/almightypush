@@ -1,7 +1,7 @@
 export const STATUS_STYLES: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   scheduled: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  sending: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  sending: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
   done: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   failed: "bg-destructive/10 text-destructive",
   cancelled: "bg-muted text-muted-foreground",

@@ -23,7 +23,7 @@ export function UnsubscribeButton({ domainId, subscriberId }: { domainId: number
         if (!state?.ok && window.confirm("Unsubscribe this subscriber?")) void action();
       }}
       disabled={pending || Boolean(state?.ok)}
-      className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+      className="rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
     >
       {pending ? "…" : state?.ok ? "Unsubscribed" : "Unsubscribe"}
     </button>

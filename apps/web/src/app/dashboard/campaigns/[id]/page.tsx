@@ -131,9 +131,9 @@ export default async function CampaignDetailPage({ params }: Props) {
           ["Clicked", clickedRow?.value ?? 0],
           ["Created", new Date(campaign.created_at).toLocaleDateString()],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-xl border bg-card p-5">
-            <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="mt-2 text-3xl font-semibold">{value}</p>
+          <div key={label} className="surface rounded-xl p-5">
+            <p className="kicker text-muted-foreground">{label}</p>
+            <p className="tabular mt-3 text-[26px] font-semibold leading-none tracking-tight">{value}</p>
           </div>
         ))}
       </div>
@@ -144,11 +144,11 @@ export default async function CampaignDetailPage({ params }: Props) {
             const title = v === "a" ? campaign.title : campaign.title_b;
             const isWinner = abWinner === v;
             return (
-              <div key={v} className={`rounded-xl border bg-card p-5 ${isWinner ? "ring-2 ring-emerald-500" : ""}`}>
+              <div key={v} className={`surface rounded-xl p-5 ${isWinner ? "ring-2 ring-emerald-500/70" : ""}`}>
                 <div className="flex items-center justify-between">
-                  <h2 className="font-semibold">Variant {v.toUpperCase()}</h2>
+                  <h2 className="text-sm font-semibold tracking-tight">Variant {v.toUpperCase()}</h2>
                   {isWinner && (
-                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                    <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                       Winner
                     </span>
                   )}
@@ -175,8 +175,8 @@ export default async function CampaignDetailPage({ params }: Props) {
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="font-semibold">Payload</h2>
+          <div className="surface rounded-xl p-5">
+            <h2 className="text-[15px] font-semibold tracking-tight">Payload</h2>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex gap-2">
                 <dt className="w-24 shrink-0 text-muted-foreground">Message</dt>
@@ -212,8 +212,8 @@ export default async function CampaignDetailPage({ params }: Props) {
             </dl>
           </div>
 
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="font-semibold">Recent deliveries</h2>
+          <div className="surface rounded-xl p-5">
+            <h2 className="text-[15px] font-semibold tracking-tight">Recent deliveries</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Showing {deliveryRows.length} of the latest — statuses right now:{" "}
               {[...byStatus.entries()].map(([s, n]) => `${s} ${n}`).join(", ") || "none yet"}.

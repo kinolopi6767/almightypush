@@ -85,7 +85,7 @@ function DemoContent() {
       {status === "ready" && (
         <button
           onClick={handleSubscribe}
-          className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-primary-hover active:scale-[0.97]"
         >
           Subscribe to push
         </button>

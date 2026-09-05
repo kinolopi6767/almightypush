@@ -1,18 +1,24 @@
 export default function DashboardLoading() {
   return (
-    <div>
-      <div className="h-7 w-44 animate-pulse rounded-md bg-muted" />
-      <div className="mt-2.5 h-4 w-80 max-w-full animate-pulse rounded bg-muted/70" />
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="rise space-y-6" aria-busy="true" aria-label="Loading dashboard">
+      <div className="space-y-3">
+        <div className="h-8 w-56 animate-pulse rounded-xl bg-muted shimmer" />
+        <div className="h-4 w-[28rem] max-w-full animate-pulse rounded-lg bg-muted/70 shimmer" style={{ animationDelay: "80ms" }} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="h-[104px] animate-pulse rounded-xl border bg-card shadow-[var(--shadow-card)]"
+            className="premium-card h-[128px] animate-pulse rounded-xl shimmer"
             style={{ animationDelay: `${i * 75}ms` }}
           />
         ))}
       </div>
-      <div className="mt-6 h-72 animate-pulse rounded-xl border bg-card shadow-[var(--shadow-card)]" />
+      <div className="grid gap-4 lg:grid-cols-12">
+        <div className="premium-card h-[320px] animate-pulse rounded-xl shimmer lg:col-span-7" style={{ animationDelay: "300ms" }} />
+        <div className="premium-card h-[320px] animate-pulse rounded-xl shimmer lg:col-span-5" style={{ animationDelay: "380ms" }} />
+      </div>
+      <p className="sr-only">Loading dashboard content — please wait</p>
     </div>
   );
 }

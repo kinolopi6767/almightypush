@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
@@ -31,11 +31,12 @@ export default async function DomainsPage() {
     .orderBy(domains.name)
     .all();
 
+  // Active subscribers only — matches dashboard hero + detail page.
   const counts = await db
     .select({ domain_id: subscribers.domain_id, value: count() })
     .from(subscribers)
     .innerJoin(domains, eq(domains.id, subscribers.domain_id))
-    .where(eq(domains.workspace_id, workspaceId))
+    .where(and(eq(domains.workspace_id, workspaceId), isNull(subscribers.unsubscribed_at)))
     .groupBy(subscribers.domain_id)
     .all();
   const countByDomain = new Map(counts.map((c) => [c.domain_id, c.value]));

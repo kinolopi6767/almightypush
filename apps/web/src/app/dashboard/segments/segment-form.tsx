@@ -173,8 +173,8 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
   }, []);
 
   return (
-    <form action={formAction} className="rounded-xl border bg-card p-5">
-      <h2 className="font-semibold">{initial ? "Edit segment" : "New segment"}</h2>
+    <form action={formAction} className="surface rounded-xl p-5">
+      <h2 className="text-[15px] font-semibold tracking-tight">{initial ? "Edit segment" : "New segment"}</h2>
       <p className="mt-1 text-sm text-muted-foreground">Reusable audience rules — pick any subscribers matching the conditions.</p>
 
       <div className="mt-4 space-y-4">
@@ -189,7 +189,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
             maxLength={100}
             defaultValue={initial?.name}
             placeholder="Chrome users on mobile"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
 
@@ -231,14 +231,14 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
           <input type="hidden" name="groups" value={JSON.stringify(groups)} />
 
           {groups.map((group, gi) => (
-            <div key={gi} className="rounded-lg border p-3">
+            <div key={gi} className="rounded-lg border bg-muted/30 p-3.5">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Match</span>
                 <select
                   aria-label={`Group ${gi + 1} logic`}
                   value={group.logic}
                   onChange={(e) => updateGroup(gi, { logic: e.target.value as "AND" | "OR" })}
-                  className="rounded-md border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="rounded-lg border border-input bg-background px-2 py-1 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
                 >
                   <option value="AND">all conditions (AND)</option>
                   <option value="OR">any condition (OR)</option>
@@ -256,7 +256,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
                         const field = FIELDS.find((f) => f.value === e.target.value);
                         updateCondition(gi, ci, { field: e.target.value, op: field?.ops[0]?.value ?? DEFAULT_OP });
                       }}
-                      className="rounded-md border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="rounded-lg border border-input bg-background px-2 py-1.5 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
                     >
                       {FIELDS.map((f) => (
                         <option key={f.value} value={f.value}>
@@ -268,7 +268,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
                       aria-label={`Condition ${gi + 1}.${ci + 1} operator`}
                       value={cond.op}
                       onChange={(e) => updateCondition(gi, ci, { op: e.target.value })}
-                      className="rounded-md border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="rounded-lg border border-input bg-background px-2 py-1.5 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
                     >
                       {(FIELDS.find((f) => f.value === cond.field)?.ops ?? []).map((o) => (
                         <option key={o.value} value={o.value}>
@@ -281,7 +281,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
                       value={cond.value}
                       onChange={(e) => updateCondition(gi, ci, { value: e.target.value })}
                       placeholder={cond.field === "opened_campaign" || cond.field === "campaign_total_opens" ? "e.g. 12" : "value"}
-                      className="min-w-40 flex-1 rounded-md border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="min-w-40 flex-1 rounded-lg border border-input bg-background px-2 py-1.5 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
                     />
                     {group.conditions.length > 1 && (
                       <button
@@ -293,7 +293,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
                             ),
                           )
                         }
-                        className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-destructive"
+                        className="rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                       >
                         Remove
                       </button>
@@ -305,7 +305,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
               <button
                 type="button"
                 onClick={() => updateGroup(gi, { conditions: [...group.conditions, emptyCondition()] })}
-                className="mt-2 rounded-md px-2 py-1 text-sm text-primary hover:bg-primary/10"
+                className="mt-2 rounded-lg px-2 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
               >
                 + Add condition
               </button>
@@ -315,7 +315,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
           <button
             type="button"
             onClick={() => setGroups((gs) => [...gs, { logic: "AND", conditions: [emptyCondition()] }])}
-            className="rounded-md px-2 py-1 text-sm text-primary hover:bg-primary/10"
+            className="rounded-lg px-2 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
           >
             + Add group
           </button>
@@ -327,7 +327,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
             onClick={runEstimate}
             disabled={estimating}
             aria-busy={estimating}
-            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-input px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
           >
             {estimating ? "Estimating…" : "Estimate"}
           </button>
@@ -339,7 +339,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
         </div>
 
         {state?.error && (
-          <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {state.error}
           </p>
         )}
@@ -347,7 +347,7 @@ export function SegmentForm({ domains, initial }: SegmentFormProps) {
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Saving…" : submitLabel}
         </button>

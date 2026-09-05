@@ -1,11 +1,11 @@
 "use server";
 
-import { mkdir, stat, unlink } from "node:fs/promises";
+import { chmod, mkdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { resolveDbPath } from "@pushpanel/db";
+import { resolveDbPath, backupDatabase } from "@pushpanel/db";
 import { backups, settings } from "@pushpanel/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -45,7 +45,7 @@ const generalSchema = z.object({
   backupInterval: z.enum(["off", "daily", "weekly", "monthly"]).optional(),
   backupRetention: z.coerce.number().int().min(1).max(365).optional(), // unlocked from 60
   whiteLabel: z.enum(["on", "off"]).optional(),
-  cdnUrl: z.string().trim().url().max(500).optional().or(z.literal("")),
+  cdnUrl: z.string().trim().max(500).pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
   frequencyCapDaily: z.coerce.number().int().min(0).max(1000).optional(), // unlocked from 100
   suppressionEnabled: z.enum(["on", "off"]).optional(),
 });
@@ -132,7 +132,7 @@ function setSecret(key: string, plain: string | null) {
 const secretsSchema = z.object({
   ai_api_key: z.string().max(500).optional().or(z.literal("")),
   ai_model: z.string().max(100).optional().or(z.literal("")),
-  ai_base_url: z.string().url().max(500).optional().or(z.literal("")),
+  ai_base_url: z.string().max(500).refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL").optional().or(z.literal("")),
   ydc_api_key: z.string().max(500).optional().or(z.literal("")),
   mail_provider: z.enum(["resend", "brevo", "ses", "smtp", ""]).optional().or(z.literal("")),
   mail_api_key: z.string().max(500).optional().or(z.literal("")),
@@ -241,8 +241,11 @@ export async function createBackupAction(): Promise<NonNullable<SettingsFormStat
   const target = path.join(backupDir, `backup-${stamp}.db`);
 
   try {
-    // SQLite literal path — escape single quotes
-    db.run(sql.raw(`VACUUM INTO '${target.replace(/'/g, "''")}'`));
+    // Non-blocking consistent snapshot (better-sqlite3 backup API) — a sync
+    // VACUUM INTO would stall every concurrent request for the whole copy.
+    await backupDatabase(db, target);
+    // Snapshots contain password hashes + encrypted tokens — owner-only reads.
+    await chmod(target, 0o600).catch(() => undefined);
   } catch (err) {
     return { error: `Backup failed: ${err instanceof Error ? err.message : String(err)}` };
   }
@@ -332,7 +335,7 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
 }
 
 const outboundSchema = z.object({
-  outbound_webhook_url: z.string().url().max(500).optional().or(z.literal("")),
+  outbound_webhook_url: z.string().max(500).refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL").optional().or(z.literal("")),
   outbound_webhook_secret: z.string().max(200).optional().or(z.literal("")),
 });
 
@@ -356,10 +359,15 @@ export async function updateOutboundAction(_prev: SettingsFormState, formData: F
   const d = parsed.data;
   if (d.outbound_webhook_url) {
     try {
-      // Validate scheme — webhooks must be https in production.
+      // Premium SSRF hardening: webhooks must be https and public (no private IP, no loopback)
       const u = new URL(d.outbound_webhook_url);
       if (u.protocol !== "https:") {
         return { error: "Webhook URL must use https://" };
+      }
+      // Block private Loopback/link-local via static check; deep IP check happens at send-time via ssrfDispatcher
+      const host = u.hostname.toLowerCase();
+      if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local") || host === "0.0.0.0") {
+        return { error: "Webhook URL must be a public host (no localhost/private)" };
       }
     } catch {
       return { error: "Invalid webhook URL" };

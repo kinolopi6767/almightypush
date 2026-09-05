@@ -27,6 +27,13 @@ function greeting(): string {
   return "Good evening";
 }
 
+/** Backup kind enum → human label for the services card. */
+const KIND_LABEL: Record<string, string> = {
+  manual: "Manual snapshot",
+  auto: "Auto snapshot",
+  gdrive: "Drive snapshot",
+};
+
 function todayLabel(): string {
   return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
@@ -69,35 +76,30 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Masthead — editorial, not a card */}
-      <div className="rise border-b pb-6">
+      <div className="rise border-b pb-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-xs font-medium tracking-widest text-muted-foreground">{todayLabel()}</p>
-              <span className="hidden h-3 w-px bg-border sm:block" aria-hidden />
-              <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium">
-                <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
-                Personal · Unlimited
-              </span>
-            </div>
-            <h1 className="text-[30px] font-semibold leading-none tracking-tight md:text-[36px]">
+          <div className="space-y-2.5">
+            <p className="kicker text-muted-foreground">{todayLabel()}</p>
+            <h1 className="text-[30px] font-semibold leading-none tracking-tight md:text-[34px]">
               {greeting()}
               <span className="font-light text-muted-foreground">{firstName ? `, ${firstName}` : ""}</span>
             </h1>
             <p className="max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-              Your push notification command center. <span className="text-foreground">{(subsRow?.value ?? 0).toLocaleString()} active subscribers</span> across {domainsRow?.value ?? 0} domains.
+              Your push notification command center.{" "}
+              <span className="font-medium text-foreground">{(subsRow?.value ?? 0).toLocaleString()} active subscribers</span> across{" "}
+              {domainsRow?.value ?? 0} domains.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Link
               href="/dashboard/domains"
-              className="inline-flex h-9 items-center justify-center rounded-full border bg-card px-4 text-sm font-medium shadow-xs transition-colors hover:bg-accent"
+              className="inline-flex h-9 items-center justify-center rounded-lg border bg-card px-4 text-sm font-medium shadow-xs transition-colors hover:border-border-strong hover:bg-accent"
             >
               Add domain
             </Link>
             <Link
               href="/dashboard/campaigns/new"
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-foreground px-5 text-sm font-medium text-background shadow-sm transition-colors hover:bg-foreground/90 dark:bg-white dark:text-zinc-900"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-primary-hover active:scale-[0.97]"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-3.5" aria-hidden>
                 <path d="M12 5v14M5 12h14" />
@@ -108,25 +110,44 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Primary metrics — bento: hero + 3 */}
+      {/* Primary metrics — premium bento: hero + 3 */}
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="rise lg:col-span-5">
-          <div className="surface flex h-full flex-col rounded-2xl p-6" data-testid="stat-subscribers">
-            <div className="flex items-center justify-between">
+          <div
+            className="premium-card surface-premium relative flex h-full flex-col overflow-hidden rounded-2xl p-7"
+            data-testid="stat-subscribers"
+          >
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 h-32 opacity-60"
+              style={{ background: "radial-gradient(32rem 12rem at 18% -30%, color-mix(in oklab, var(--primary) 14%, transparent), transparent 70%)" }}
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-8 -top-8 size-32 rounded-full bg-gradient-to-br from-primary/10 to-transparent blur-2xl"
+            />
+            <div className="relative flex items-center justify-between">
               <p className="kicker text-muted-foreground">Total subscribers</p>
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="size-4" aria-hidden>
+              <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15 shadow-xs dark:bg-primary/15 dark:ring-primary/20">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="size-5" aria-hidden>
                   <path d={ICONS.users} />
                 </svg>
               </span>
             </div>
-            <p className="tabular mt-4 text-[42px] font-semibold leading-none tracking-tight">{(subsRow?.value ?? 0).toLocaleString()}</p>
-            <p className="mt-2 text-sm text-muted-foreground">Active across all domains · <Link href="/dashboard/analytics" className="font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground">View analytics →</Link></p>
-            <div className="mt-auto flex items-center gap-2 pt-6 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 font-medium text-emerald-600 dark:text-emerald-400">
-                <span className="size-1.5 rounded-full bg-emerald-500" /> Live
+            <p className="tabular relative mt-6 text-[46px] font-semibold leading-none tracking-tight">
+              {(subsRow?.value ?? 0).toLocaleString()}
+            </p>
+            <p className="relative mt-3 text-sm text-muted-foreground">
+              Active across all domains ·{" "}
+              <Link href="/dashboard/analytics" className="font-medium text-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-foreground hover:text-primary">
+                View analytics →
+              </Link>
+            </p>
+            <div className="relative mt-auto flex items-center gap-2.5 pt-8 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-600 ring-1 ring-inset ring-emerald-500/15 dark:text-emerald-400 dark:ring-emerald-500/20">
+                <span className="size-1.5 rounded-full bg-current pulse-dot shadow-[0_0_8px_currentColor]" aria-hidden /> Live
               </span>
-              <span>Updated just now</span>
+              <span>Updated just now · enterprise-grade</span>
             </div>
           </div>
         </div>
@@ -135,26 +156,26 @@ export default async function DashboardPage() {
             <StatCard label="Domains" value={(domainsRow?.value ?? 0).toLocaleString()} icon={<path d={ICONS.globe} />} tone="sky" href="/dashboard/domains" hint="VAPID per domain" />
           </div>
           <div className="rise rise-2">
-            <StatCard label="Campaigns sent" value={(sentRow?.value ?? 0).toLocaleString()} icon={<path d={ICONS.send} />} tone="emerald" href="/dashboard/campaigns" />
+            <StatCard label="Campaigns sent" value={(sentRow?.value ?? 0).toLocaleString()} icon={<path d={ICONS.send} />} tone="emerald" href="/dashboard/campaigns" hint="Completed sends" />
           </div>
           <div className="rise rise-3">
             <StatCard label="Total clicks" value={(clicksRow?.value ?? 0).toLocaleString()} icon={<path d={ICONS.click} />} tone="amber" hint="All-time" />
           </div>
           <div className="sm:col-span-3">
-            <div className="surface flex items-center justify-between rounded-2xl p-4">
+            <div className="premium-card flex items-center justify-between rounded-xl p-4">
               <div className="flex items-center gap-3">
-                <span className="hidden size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground sm:inline-flex">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="size-4" aria-hidden>
+                <span className="icon-chip icon-chip-premium hidden size-9 sm:inline-flex">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-5" aria-hidden>
                     <path d={ICONS.shield} />
                   </svg>
                 </span>
                 <div>
-                  <p className="text-sm font-medium">Infrastructure</p>
-                  <p className="text-xs text-muted-foreground">SQLite WAL · 1M scale · Litestream optional</p>
+                  <p className="text-sm font-semibold tracking-tight">Infrastructure</p>
+                  <p className="text-xs text-muted-foreground">SQLite WAL · Premium scale · Enterprise hardened</p>
                 </div>
               </div>
-              <Link href="/dashboard/status" className="shrink-0 rounded-full border bg-card px-3 py-1.5 text-xs font-medium hover:bg-accent">
-                Status →
+              <Link href="/dashboard/status" className="shrink-0 rounded-xl border bg-card px-3.5 py-2 text-xs font-medium shadow-xs transition-all hover:border-border-strong hover:bg-accent hover:shadow-sm">
+                System health →
               </Link>
             </div>
           </div>
@@ -168,8 +189,8 @@ export default async function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-3">
             <QuickCard
               title="Backups"
-              value={lastBackup ? `${lastBackup.kind}` : "No backups yet"}
-              sub={lastBackup ? new Date(lastBackup.created_at).toLocaleDateString() : `Drive ${gdriveEnabled ? "on" : "off"} · VACUUM INTO`}
+              value={lastBackup ? KIND_LABEL[lastBackup.kind] ?? lastBackup.kind : "No backups yet"}
+              sub={lastBackup ? new Date(lastBackup.created_at).toLocaleDateString() : `Drive ${gdriveEnabled ? "on" : "off"} · snapshot backup`}
               href="/dashboard/settings"
               action="Manage"
               icon={<path d="M21 12a9 9 0 1 0-9-9 2.5 2.5 0 0 1 2.5 2.5V8a2 2 0 0 1 2 2v1a3 3 0 0 1 3 3v1a2 2 0 0 1-2 2H9a4 4 0 0 1 0-8h1" />}
@@ -180,7 +201,7 @@ export default async function DashboardPage() {
               sub={hasAiKey ? "Model ready · hooks · translate" : "Add key for LLM features"}
               href="/dashboard/ai"
               action="Open"
-              icon={<path d="M12 3l1.7 5.2L19 10l-5.3 1.8L12 17l-1.7-5.2L5 10l5.3-1.8zM19 14l1 2.5 2.5 1-2.5 1L19 21l-1-2.5-2.5-1 2.5-1z" />}
+              icon={<path d={ICONS.spark} />}
             />
             <QuickCard
               title="Outbound webhooks"
@@ -195,7 +216,7 @@ export default async function DashboardPage() {
         <div className="lg:col-span-5">
           <div className="flex items-center justify-between">
             <h2 className="kicker text-muted-foreground">Live activity</h2>
-            <Link href="/dashboard/analytics" className="text-xs font-medium text-muted-foreground hover:text-foreground">
+            <Link href="/dashboard/analytics" className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
               Analytics →
             </Link>
           </div>
@@ -224,17 +245,17 @@ function QuickCard({
   icon: React.ReactNode;
 }) {
   return (
-    <Link href={href} className="surface surface-hover group block rounded-2xl p-5">
-      <span aria-hidden className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-foreground group-hover:text-background">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+    <Link href={href} className="premium-card card-lift group block rounded-xl p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+      <span aria-hidden className="icon-chip size-9 transition-all duration-200 group-hover:bg-primary/10 group-hover:text-primary group-hover:border-primary/15 group-hover:shadow-xs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-4.5">
           {icon}
         </svg>
       </span>
-      <p className="kicker mt-3 text-muted-foreground">{title}</p>
-      <p className="mt-1.5 text-sm font-semibold leading-tight">{value}</p>
+      <p className="kicker mt-4 text-muted-foreground">{title}</p>
+      <p className="mt-1.5 text-sm font-semibold leading-tight tracking-tight">{value}</p>
       <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{sub}</p>
-      <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
-        {action} <span aria-hidden className="transition-transform group-hover:translate-x-0.5">→</span>
+      <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary">
+        {action} <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-1">→</span>
       </span>
     </Link>
   );

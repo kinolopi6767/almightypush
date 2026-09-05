@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { LinkForm } from "./link-form";
 import { deleteLinkAction, type Link } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "LP links" };
 
@@ -40,10 +41,10 @@ export default async function LinksPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">LP links</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Collection links: a landing page that captures push subscribers before sending visitors to your post.
-      </p>
+      <PageHeader
+        title="LP links"
+        description="Collection links: a landing page that captures push subscribers before sending visitors to your post."
+      />
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
         <div className="space-y-3">
@@ -66,7 +67,7 @@ export default async function LinksPage() {
                   <span className="whitespace-nowrap">{row.clicks_count.toLocaleString()} clicks</span>
                   <span className="whitespace-nowrap">{row.subscribers_count.toLocaleString()} subs</span>
                   <form action={deleteLinkAction.bind(null, row.id)}>
-                    <SubmitButton confirm={`Delete link ${row.code}?`} pendingLabel="Deleting…" className="rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={`Delete link ${row.code}`}>Delete</SubmitButton>
+                    <SubmitButton confirm={`Delete link ${row.code}?`} pendingLabel="Deleting…" className="rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={`Delete link ${row.code}`}>Delete</SubmitButton>
                   </form>
                 </div>
               </div>

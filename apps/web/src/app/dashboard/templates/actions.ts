@@ -14,9 +14,9 @@ const templateSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
   title: z.string().trim().min(1, "Title is required").max(120),
   message: z.string().trim().max(500).optional().or(z.literal("")),
-  icon_url: z.string().trim().url().optional().or(z.literal("")),
-  image_url: z.string().trim().url().optional().or(z.literal("")),
-  launch_url: z.string().trim().url().optional().or(z.literal("")),
+  icon_url: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
+  image_url: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
+  launch_url: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
 });
 
 export async function createTemplateAction(_prev: TemplateFormState | undefined, formData: FormData): Promise<TemplateFormState> {

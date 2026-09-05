@@ -68,11 +68,11 @@ export default async function SegmentsPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                  <Link href={`/dashboard/segments/${row.id}`} className="inline-flex h-7 items-center rounded-md border px-2.5 text-xs hover:bg-accent" aria-label={`Edit segment ${row.name}`}>
+                  <Link href={`/dashboard/segments/${row.id}`} className="inline-flex h-7 items-center rounded-lg border border-input px-2.5 text-xs hover:bg-accent" aria-label={`Edit segment ${row.name}`}>
                     Edit
                   </Link>
                   <form action={deleteSegmentAction.bind(null, row.id)}>
-                    <SubmitButton confirm={`Delete segment "${row.name}"?`} pendingLabel="Deleting…" title={`Delete segment ${row.name}`} className="inline-flex h-7 items-center rounded-md border border-destructive/20 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50">
+                    <SubmitButton confirm={`Delete segment "${row.name}"?`} pendingLabel="Deleting…" title={`Delete segment ${row.name}`} className="inline-flex h-7 items-center rounded-lg border border-input border-destructive/20 px-2.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50">
                       Delete
                     </SubmitButton>
                   </form>

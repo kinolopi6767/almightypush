@@ -3,6 +3,7 @@ import { journeys } from "@pushpanel/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,10 @@ export default async function JourneysPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Journeys</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Visual canvas: trigger → filter → wait → push/email branches — OneSignal Journeys + Braze Canvas parity.</p>
-      </div>
+      <PageHeader
+        title="Journeys"
+        description="Visual canvas: trigger → filter → wait → push/email branches — OneSignal Journeys + Braze Canvas parity."
+      />
       {rows.length === 0 ? (
         <div className="rounded-xl border border-dashed p-8 text-center">
           <p className="text-sm font-medium">No journeys yet</p>

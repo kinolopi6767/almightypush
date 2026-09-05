@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDialogA11y } from "@/components/use-dialog";
 import { useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { createChannelAction, type ChannelFormState } from "./actions";
@@ -9,6 +10,7 @@ export function ChannelForm() {
   const router = useRouter();
   const [state, action, pending] = useActionState(createChannelAction, undefined as ChannelFormState | undefined);
   const [open, setOpen] = useState(false);
+  const dialogRef = useDialogA11y(open, () => setOpen(false));
 
   useEffect(() => {
     if (state?.ok) {
@@ -18,7 +20,7 @@ export function ChannelForm() {
   }, [state, router]);
 
   const inputCls =
-    "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus:border-primary";
+    "flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus:border-primary";
   const label = "text-sm font-medium";
 
   return (
@@ -28,7 +30,7 @@ export function ChannelForm() {
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen(!open)}
-        className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
+        className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
       >
         {open ? "Cancel" : "Add channel"}
       </button>
@@ -41,8 +43,8 @@ export function ChannelForm() {
             if (e.key === "Escape") setOpen(false);
           }}
         >
-          <div className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add YouTube channel">
-            <h2 className="text-lg font-semibold">Add YouTube channel</h2>
+          <div ref={dialogRef} tabIndex={-1} className="mt-10 w-full max-w-lg rounded-xl border bg-background p-6 outline-none" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add YouTube channel">
+            <h2 className="text-[15px] font-semibold tracking-tight">Add YouTube channel</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Creates a landing page that captures push subscribers before sending visitors to your channel.
             </p>
@@ -65,11 +67,11 @@ export function ChannelForm() {
             {state?.error && <p className="mt-3 text-sm text-destructive">{state.error}</p>}
 
             <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setOpen(false)} className="inline-flex h-9 items-center rounded-md border px-4 text-sm">Cancel</button>
+              <button type="button" onClick={() => setOpen(false)} className="inline-flex h-9 items-center rounded-lg border border-input px-4 text-sm">Cancel</button>
               <button
                 type="submit"
                 disabled={pending}
-                className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
               >
                 {pending ? "Adding…" : "Add channel"}
               </button>

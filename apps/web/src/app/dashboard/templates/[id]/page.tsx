@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { templates } from "@pushpanel/db/schema";
 import { TemplateForm } from "../template-form";
 import type { TemplatePayload } from "../payload";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Edit template" };
 
@@ -13,6 +14,7 @@ export default async function TemplateEditPage({ params }: { params: Promise<{ i
   const session = await auth();
   const workspaceId = Number(session?.user?.workspaceId ?? 0);
   const id = Number((await params).id);
+  if (!Number.isInteger(id)) notFound();
 
   const [row] = await db
     .select({
@@ -35,10 +37,12 @@ export default async function TemplateEditPage({ params }: { params: Promise<{ i
 
   return (
     <>
-      <Link href="/dashboard/templates" className="text-sm text-primary hover:underline">
+      <Link href="/dashboard/templates" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
         ← Back to templates
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Edit template</h1>
+      <div className="mt-2">
+        <PageHeader title="Edit template" />
+      </div>
       <div className="mt-8 max-w-2xl">
         <TemplateForm initial={initial} />
       </div>

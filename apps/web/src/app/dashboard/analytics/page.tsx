@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { parseSubscriberFilters, subscriberAnd, subscriberConditions, type SubscriberFilter } from "@/lib/subscriber-filters";
 import { GrowthChart, type GrowthPoint } from "./growth-chart";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Analytics" };
 
@@ -18,7 +19,7 @@ const DIMENSIONS = [
 ] as const;
 
 const inputCls =
-  "h-9 rounded-lg border bg-card px-3 text-sm shadow-xs outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/20";
+  "h-9 max-w-full min-w-0 rounded-lg border border-input bg-card px-3 text-sm shadow-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:ring-[3px] focus:ring-ring/40";
 
 export default async function AnalyticsPage({
   searchParams,
@@ -61,7 +62,16 @@ export default async function AnalyticsPage({
       .select({ hour: sql<string>`strftime('%H', ${events.ts})`, value: sql<number>`count(*)` })
       .from(events)
       .innerJoin(domains, eq(domains.id, events.domain_id))
-      .where(and(eq(events.type, "clicked"), eq(domains.workspace_id, wsId)))
+      .where(
+        and(
+          eq(events.type, "clicked"),
+          eq(domains.workspace_id, wsId),
+          // Bounded window: an all-time GROUP BY over millions of events runs
+          // synchronously on the web event loop. 90d is the planning horizon
+          // for "best send hours" anyway.
+          sql`${events.ts} >= date('now', '-90 days')`,
+        ),
+      )
       .groupBy(sql`strftime('%H', ${events.ts})`)
       .all(),
   ];
@@ -88,41 +98,41 @@ export default async function AnalyticsPage({
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Subscriber growth, audience breakdowns and click timing — filtered in your browser&apos;s history-friendly GET form below.
-      </p>
+      <PageHeader
+        title="Analytics"
+        description="Subscriber growth, audience breakdowns and click timing — filtered in your browser's history-friendly GET form below."
+      />
 
-      <form method="get" className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-5 shadow-sm">
-        <div>
+      <form method="get" className="premium-card mt-6 flex flex-wrap items-end gap-3 rounded-xl p-5">
+        <div className="flex flex-col gap-1.5 min-w-0">
           <label className="text-xs font-medium text-muted-foreground" htmlFor="f-domain">Domain</label>
-          <select id="f-domain" name="domain" className={`ml-2 ${inputCls}`} defaultValue={filter.domainId ?? ""}>
+          <select id="f-domain" name="domain" className={inputCls} defaultValue={filter.domainId ?? ""}>
             <option value="">All domains</option>
             {wsDomains.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </select>
         </div>
-        <div>
+        <div className="flex flex-col gap-1.5 min-w-0">
           <label className="text-xs font-medium text-muted-foreground" htmlFor="f-from">Subscribed from</label>
-          <input id="f-from" name="from" type="date" defaultValue={filter.from ?? ""} className={`ml-2 ${inputCls}`} />
+          <input id="f-from" name="from" type="date" defaultValue={filter.from ?? ""} className={inputCls} />
         </div>
-        <div>
+        <div className="flex flex-col gap-1.5 min-w-0">
           <label className="text-xs font-medium text-muted-foreground" htmlFor="f-to">to</label>
-          <input id="f-to" name="to" type="date" defaultValue={filter.to ?? ""} className={`ml-2 ${inputCls}`} />
+          <input id="f-to" name="to" type="date" defaultValue={filter.to ?? ""} className={inputCls} />
         </div>
-        <div>
+        <div className="flex flex-col gap-1.5 min-w-0">
           <label className="text-xs font-medium text-muted-foreground" htmlFor="f-show">Status</label>
-          <select id="f-show" name="show" className={`ml-2 ${inputCls}`} defaultValue={filter.showOnly}>
+          <select id="f-show" name="show" className={inputCls} defaultValue={filter.showOnly}>
             <option value="all">All</option>
             <option value="active">Active</option>
             <option value="unsubscribed">Unsubscribed</option>
           </select>
         </div>
         {DIMENSIONS.map((d) => (
-          <div key={d.key}>
+          <div key={d.key} className="flex flex-col gap-1.5 min-w-0">
             <label className="text-xs font-medium text-muted-foreground" htmlFor={`f-${d.key}`}>{d.label}</label>
-            <select id={`f-${d.key}`} name={d.key} className={`ml-2 ${inputCls}`} defaultValue={filter[d.key] ?? ""}>
+            <select id={`f-${d.key}`} name={d.key} className={inputCls} defaultValue={filter[d.key] ?? ""}>
               <option value="">Any</option>
               {breakdowns.find((b) => b.key === d.key)?.rows.map((r) =>
                 r.value === "Unknown" || r.value === "" ? null : (
@@ -132,35 +142,35 @@ export default async function AnalyticsPage({
             </select>
           </div>
         ))}
-        <button type="submit" className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+        <button type="submit" className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-primary-hover active:scale-[0.97]">
           Apply
         </button>
         <a
           href={`/api/export/subscribers-analytics?${exportQuery.toString()}`}
           download
-          className="inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+          className="inline-flex h-9 items-center rounded-lg border border-input bg-card px-4 text-sm font-medium shadow-xs transition-colors hover:border-border-strong hover:bg-accent"
         >
           Export CSV
         </a>
       </form>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <div className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
+        <div className="surface card-lift rounded-xl p-5">
           <p className="kicker text-muted-foreground">Subscribers (filter)</p>
-          <p className="tabular mt-2 text-3xl font-semibold tracking-tight">{totalRow?.value ?? 0}</p>
+          <p className="tabular mt-3 text-[30px] font-semibold leading-none tracking-tight">{totalRow?.value ?? 0}</p>
         </div>
-        <div className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
+        <div className="surface card-lift rounded-xl p-5">
           <p className="kicker text-muted-foreground">Active</p>
-          <p className="tabular mt-2 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{activeRow?.value ?? 0}</p>
+          <p className="tabular mt-3 text-[30px] font-semibold leading-none tracking-tight text-emerald-600 dark:text-emerald-400">{activeRow?.value ?? 0}</p>
         </div>
-        <div className="card-lift rounded-xl border bg-card p-4 shadow-[var(--shadow-card)]">
+        <div className="surface card-lift rounded-xl p-5">
           <p className="kicker text-muted-foreground">Unsubscribed</p>
-          <p className="tabular mt-2 text-3xl font-semibold tracking-tight text-muted-foreground">{(totalRow?.value ?? 0) - (activeRow?.value ?? 0)}</p>
+          <p className="tabular mt-3 text-[30px] font-semibold leading-none tracking-tight text-muted-foreground">{(totalRow?.value ?? 0) - (activeRow?.value ?? 0)}</p>
         </div>
       </div>
 
-      <div className="mt-6 rounded-xl border bg-card p-4">
-        <h2 className="text-sm font-medium">Growth — last {growth.length} days</h2>
+      <div className="surface mt-6 rounded-xl p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Growth — last {growth.length} days</h2>
         {growth.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">No subscribers in this window yet.</p>
         ) : (
@@ -174,7 +184,7 @@ export default async function AnalyticsPage({
         {breakdowns.map((b) => {
           const max = Math.max(1, ...b.rows.map((r) => r.count));
           return (
-            <div key={b.key} className="rounded-2xl border bg-card p-5 shadow-sm">
+            <div key={b.key} className="surface rounded-xl p-5">
               <h2 className="text-[13px] font-semibold tracking-tight">By {b.label.toLowerCase()}</h2>
               {b.rows.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">No data yet.</p>
@@ -188,7 +198,7 @@ export default async function AnalyticsPage({
                       </div>
                       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-primary transition-colors group-hover:bg-primary-hover"
+                          className="h-full rounded-full bg-primary transition-colors duration-200 group-hover:bg-primary-hover"
                           style={{ width: `${Math.round((r.count / max) * 100)}%` }}
                         />
                       </div>
@@ -201,18 +211,18 @@ export default async function AnalyticsPage({
         })}
       </div>
 
-      <div className="mt-6 rounded-xl border bg-card p-4">
-        <h2 className="text-sm font-medium">Click timing — best send hours (E8)</h2>
+      <div className="surface mt-6 rounded-xl p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Click timing — best send hours (E8)</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           All-time click distribution by hour of day across the workspace.
         </p>
-        <div className="mt-3 grid grid-cols-12 gap-1.5">
+        <div className="mt-3 grid grid-cols-6 gap-1.5 sm:grid-cols-12">
           {Array.from({ length: 24 }, (_, h) => {
             const v = heat.get(String(h).padStart(2, "0")) ?? 0;
             const intensity = v === 0 ? 0 : 0.15 + (v / maxHour) * 0.85;
             return (
               <div key={h} title={`${String(h).padStart(2, "0")}:00 — ${v} clicks`}
-                className="flex h-10 items-center justify-center rounded text-[11px] font-medium text-primary-foreground"
+                className={`flex h-10 items-center justify-center rounded-md text-[11px] font-medium tabular transition-transform duration-150 hover:scale-105 ${v === 0 ? "text-muted-foreground" : "text-primary-foreground"}`}
                 style={{ backgroundColor: v === 0 ? "var(--muted)" : `color-mix(in oklab, var(--primary) ${Math.round(intensity * 100)}%, transparent)` }}>
                 {h}
               </div>

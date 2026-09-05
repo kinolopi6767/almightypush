@@ -8,6 +8,7 @@ import { AUTOMATION_TYPE_LABEL } from "@pushpanel/core";
 import { AutomationForm } from "./automation-form";
 import { AutomationRow } from "./row-actions";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Automations" };
 
@@ -46,15 +47,11 @@ export default async function AutomationsPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Automations</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Recurring pushes: welcome messages, publish webhooks, AutoMagic posts and YouTube uploads.
-          </p>
-        </div>
-        <AutomationForm domains={domainRows} />
-      </div>
+      <PageHeader
+        title="Automations"
+        description="Recurring pushes: welcome messages, publish webhooks, AutoMagic posts and YouTube uploads."
+        actions={<AutomationForm domains={domainRows} />}
+      />
 
       <div className="mt-8 space-y-3">
         {rows.length === 0 && (
@@ -89,7 +86,7 @@ export default async function AutomationsPage() {
                   {row.error && <span className="break-all text-destructive">· {row.error.slice(0, 120)}</span>}
                 </div>
                 {row.type === "push_on_publish" && !parseSecret(row.config_json) && (
-                  <p className="mt-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="mt-1.5 rounded-lg bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
                     No webhook secret — recreate it so external publishers can trigger this automation.
                   </p>
                 )}

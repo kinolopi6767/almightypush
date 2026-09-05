@@ -123,7 +123,7 @@ export default async function DomainDetailPage({ params }: Props) {
           actions={
             <Link
               href={`/dashboard/domains/${domainId}/subscribers`}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
             >
               Subscribers →
             </Link>
@@ -178,7 +178,7 @@ export default async function DomainDetailPage({ params }: Props) {
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           {/* Integration — the primary action on this page */}
-          <section className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+          <section className="surface rounded-xl p-5">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-semibold tracking-tight">Integration snippet</h2>
               <CopyButton value={snippet} label="Copy snippet" />
@@ -197,7 +197,7 @@ export default async function DomainDetailPage({ params }: Props) {
             </p>
           </section>
 
-          <section className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+          <section className="surface rounded-xl p-5">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-semibold tracking-tight">VAPID public key</h2>
               {config.publicKey && <CopyButton value={config.publicKey} label="Copy key" />}
@@ -214,7 +214,7 @@ export default async function DomainDetailPage({ params }: Props) {
             </p>
           </section>
 
-          <section className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
+          <section className="surface rounded-xl p-5">
             <h2 className="font-semibold tracking-tight">Recent deliveries</h2>
             <ul className="mt-3 divide-y divide-border/60 text-sm">
               {recentDeliveries.length === 0 && (

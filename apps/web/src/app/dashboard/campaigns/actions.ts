@@ -15,9 +15,9 @@ const createCampaignSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(120),
   titleB: z.string().trim().max(120).optional().or(z.literal("")),
   message: z.string().trim().max(500).optional().or(z.literal("")),
-  url: z.string().trim().url().optional().or(z.literal("")),
-  iconUrl: z.string().trim().url().optional().or(z.literal("")),
-  imageUrl: z.string().trim().url().optional().or(z.literal("")),
+  url: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
+  iconUrl: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
+  imageUrl: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
   buttons: z
     .array(z.object({ label: z.string().trim().min(1, "Button label is required").max(24), url: z.string().trim().url("Button URL must be valid") }))
     .max(3, "At most 3 action buttons")
@@ -33,6 +33,12 @@ const createCampaignSchema = z.object({
   variantsJson: z.string().trim().optional().or(z.literal("")),
 });
 
+function requireCampaignRole(role: string | undefined): string | null {
+  const r = (role ?? "owner").toLowerCase();
+  if (["viewer"].includes(r)) return "Viewers cannot create or manage campaigns";
+  return null;
+}
+
 export async function createCampaignAction(
   _prev: CampaignFormState,
   formData: FormData,
@@ -41,6 +47,8 @@ export async function createCampaignAction(
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
+  const roleErr = requireCampaignRole(session.user.role);
+  if (roleErr) return { error: roleErr };
 
   const labels = formData.getAll("buttonLabel");
   const urls = formData.getAll("buttonUrl");
@@ -182,6 +190,8 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
+  const roleErr2 = requireCampaignRole(session.user.role);
+  if (roleErr2) return { error: roleErr2 };
 
   const [campaign] = db
     .select({ id: campaigns.id, status: campaigns.status })
@@ -222,6 +232,8 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
+  const roleErr3 = requireCampaignRole(session.user.role);
+  if (roleErr3) return { error: roleErr3 };
 
   const [source] = db
     .select({
@@ -285,6 +297,8 @@ export async function resendToNonClickersAction(campaignId: number): Promise<Cam
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
+  const roleErr4 = requireCampaignRole(session.user.role);
+  if (roleErr4) return { error: roleErr4 };
 
   const [source] = db
     .select({

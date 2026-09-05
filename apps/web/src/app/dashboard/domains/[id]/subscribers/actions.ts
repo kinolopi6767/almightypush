@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { assertPublicHttpUrl, createCipher, csvCell, parseCsv, sha256Hex } from "@pushpanel/core";
+import { assertPublicHttpUrl, createCipher, parseCsv, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
-import { and, count, eq, gt, isNotNull, isNull } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
 
 export type SubscriberActionState =
   | {
@@ -76,67 +76,6 @@ export async function cleanUnsubscribedAction(domainId: number): Promise<NonNull
   db.update(domains).set({ subscribers_count: activeCount(domainId) }).where(eq(domains.id, domainId)).run();
   revalidatePath(`/dashboard/domains/${domainId}/subscribers`);
   return { ok: true, deleted: result.changes };
-}
-
-export async function exportSubscribersAction(
-  domainId: number,
-): Promise<NonNullable<SubscriberActionState>> {
-  await requireOwnedDomain(domainId);
-  // Keyset-paginated: materializing 1M decrypted rows here would OOM the
-  // action. 2k rows per batch keeps peak memory bounded.
-  const PAGE = 2_000;
-  const cipher = createCipher(process.env.APP_ENC_KEY);
-  // Round-trip guarantee: the import path requires p256dh + auth, so the
-  // export must include them or exported files could never be re-imported.
-  const header = "id,endpoint,p256dh,auth,browser,os,device,country,state,subscribe_url,subscribe_at,last_active_at,unsubscribed_at,provider";
-  const lines: string[] = [];
-  let lastId = 0;
-  for (;;) {
-    const rows = db
-      .select()
-      .from(subscribers)
-      .where(and(eq(subscribers.domain_id, domainId), gt(subscribers.id, lastId)))
-      .orderBy(subscribers.id)
-      .limit(PAGE)
-      .all();
-    if (rows.length === 0) break;
-    for (const s of rows) {
-      lastId = s.id;
-      let endpoint = "";
-      let p256dh = "";
-      let auth = "";
-      if (s.token) {
-        try {
-          const parsed = JSON.parse(cipher.decrypt(s.token)) as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
-          endpoint = parsed.endpoint ?? "";
-          p256dh = parsed.keys?.p256dh ?? "";
-          auth = parsed.keys?.auth ?? "";
-        } catch {
-          endpoint = "";
-        }
-      }
-      lines.push(
-        [
-          s.id,
-          csvCell(endpoint),
-          csvCell(p256dh),
-          csvCell(auth),
-          csvCell(s.browser),
-          csvCell(s.os),
-          csvCell(s.device),
-          csvCell(s.country),
-          csvCell(s.state),
-          csvCell(s.subscribe_url),
-          csvCell(s.subscribe_at),
-          csvCell(s.last_active_at),
-          csvCell(s.unsubscribed_at),
-          csvCell(s.provider),
-        ].join(","),
-      );
-    }
-  }
-  const csv = [header, ...lines].join("\n");
-  return { ok: true, csv, filename: `subscribers-domain-${domainId}-${Date.now()}.csv` };
 }
 
 const IMPORT_LINE_LIMIT = 100_000; // personal: unlocked from 5k

@@ -146,14 +146,14 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
           defaultValue={q}
           aria-label="Search subscribers"
           placeholder="Search browser, OS, device, country…"
-          className="h-9 w-64 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-9 w-full max-w-64 rounded-lg border border-input bg-background px-3 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40 sm:w-64"
         />
-        <select name="status" aria-label="Status" defaultValue={status} className="h-9 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+        <select name="status" aria-label="Status" defaultValue={status} className="h-9 rounded-lg border border-input bg-background px-2 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40">
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="unsubscribed">Unsubscribed</option>
         </select>
-        <button type="submit" className="inline-flex h-9 items-center rounded-md bg-secondary px-4 text-sm font-medium hover:bg-secondary/80">
+        <button type="submit" className="inline-flex h-9 items-center rounded-lg bg-secondary px-4 text-sm font-medium transition-colors hover:bg-secondary/80">
           Filter
         </button>
       </form>
@@ -226,7 +226,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
             {page > 1 && (
               <Link
                 href={qs({ page: String(page - 1) })}
-                className="inline-flex h-9 items-center rounded-md border px-3 text-sm hover:bg-muted"
+                className="inline-flex h-9 items-center rounded-lg border border-input px-3 text-sm hover:bg-muted"
               >
                 ← Previous
               </Link>
@@ -234,7 +234,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
             {page < pages && (
               <Link
                 href={qs({ page: String(page + 1) })}
-                className="inline-flex h-9 items-center rounded-md border px-3 text-sm hover:bg-muted"
+                className="inline-flex h-9 items-center rounded-lg border border-input px-3 text-sm hover:bg-muted"
               >
                 Next →
               </Link>

@@ -19,6 +19,7 @@ const ICON_PATHS: Record<string, string> = {
   "/dashboard/email": "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6",
   "/dashboard/ai": "M12 3l1.9 5.8L19.7 10l-5.8 1.9L12 17.7l-1.9-5.8L4.3 10l5.8-1.2zM19 15l.9 2.6L22.5 18.5l-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z",
   "/dashboard/status": "M22 12h-4l-3 9L9 3l-3 9H2",
+  "/dashboard/logs": "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M10 13H8M10 17H8",
   "/dashboard/api": "M16 18l6-6-6-6M8 6l-6 6 6 6",
   "/dashboard/guides": "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20V2H6.5A2.5 2.5 0 0 0 4 4.5z",
   "/dashboard/team": "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
@@ -76,6 +77,7 @@ const SECTIONS: { heading: string; items: { href: string; label: string }[] }[] 
     items: [
       { href: "/dashboard/workspaces", label: "Workspaces" },
       { href: "/dashboard/status", label: "Status" },
+      { href: "/dashboard/logs", label: "Logs" },
       { href: "/dashboard/api", label: "API" },
       { href: "/dashboard/guides", label: "Guides" },
       { href: "/dashboard/team", label: "Team" },
@@ -97,7 +99,9 @@ function NavLink({ href, label, active }: { href: string; label: string; active:
     <>
       <NavIcon
         href={href}
-        className={`size-4 shrink-0 transition-opacity ${active ? "" : "opacity-55 group-hover:opacity-100"}`}
+        className={`size-4 shrink-0 transition-[opacity,color] duration-150 ${
+          active ? "text-primary" : "opacity-60 group-hover:opacity-100"
+        }`}
       />
       <span className="truncate">{label}</span>
       {pending && (
@@ -114,13 +118,13 @@ export function AppNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-4 text-[13px]">
+    <nav className="flex flex-col gap-6 text-[13px]" aria-label="Primary">
       {SECTIONS.map((section) => (
         <div key={section.heading}>
-          <p className="sidebar-heading px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em]">
+          <p className="sidebar-heading px-3 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
             {section.heading}
           </p>
-          <div className="mt-1 flex flex-col gap-px">
+          <div className="mt-2 flex flex-col gap-0.5">
             {section.items.map((item) => {
               const active = activeFor(pathname, item.href);
               return (
@@ -129,9 +133,8 @@ export function AppNav() {
                   href={item.href}
                   data-active={active}
                   aria-current={active ? "page" : undefined}
-                  className={`sidebar-item group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] font-medium ${
-                    active ? "" : ""
-                  }`}
+                  aria-label={item.label}
+                  className="sidebar-item group relative flex items-center gap-2.5 rounded-lg px-3 py-2 font-[450] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                 >
                   <NavLink href={item.href} label={item.label} active={active} />
                 </Link>

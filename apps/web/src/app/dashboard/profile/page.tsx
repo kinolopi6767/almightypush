@@ -4,6 +4,7 @@ import { users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
 import { ProfileForm } from "./profile-form";
 import { TfaPanel } from "./tfa-panel";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Profile" };
 
@@ -29,10 +30,7 @@ export default async function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
-        <p className="mt-1 text-sm text-muted-foreground break-all">{user.email} · 2FA {user.totp_enabled ? "enabled ✓" : "off"}</p>
-      </div>
+      <PageHeader title="Profile" description={<span className="break-all">{user.email} · 2FA {user.totp_enabled ? "enabled ✓" : "off"}</span>} />
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <ProfileForm name={user.name ?? ""} />
         <TfaPanel initiallyEnabled={Boolean(user.totp_enabled)} />

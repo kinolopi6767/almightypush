@@ -17,8 +17,8 @@ export function TemplateForm({ initial }: TemplateFormProps) {
   );
 
   return (
-    <form action={formAction} className="rounded-xl border bg-card p-5">
-      <h2 className="font-semibold">{initial ? "Edit template" : "New template"}</h2>
+    <form action={formAction} className="surface rounded-xl p-5">
+      <h2 className="text-[15px] font-semibold tracking-tight">{initial ? "Edit template" : "New template"}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Reusable push payloads — pick one when creating a campaign and it pre-fills the fields.
       </p>
@@ -35,7 +35,7 @@ export function TemplateForm({ initial }: TemplateFormProps) {
             maxLength={100}
             defaultValue={initial?.name}
             placeholder="Flash sale"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
@@ -49,7 +49,7 @@ export function TemplateForm({ initial }: TemplateFormProps) {
             maxLength={120}
             defaultValue={initial?.title ?? ""}
             placeholder="Big sale this weekend"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
@@ -63,7 +63,7 @@ export function TemplateForm({ initial }: TemplateFormProps) {
             rows={2}
             defaultValue={initial?.message ?? ""}
             placeholder="Everything is 50% off until Sunday."
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
@@ -76,7 +76,7 @@ export function TemplateForm({ initial }: TemplateFormProps) {
             type="url"
             defaultValue={initial?.launch_url ?? ""}
             placeholder="https://app.example.com/sale"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
@@ -89,7 +89,7 @@ export function TemplateForm({ initial }: TemplateFormProps) {
             type="url"
             defaultValue={initial?.icon_url ?? ""}
             placeholder="https://example.com/icon.png"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
@@ -102,12 +102,12 @@ export function TemplateForm({ initial }: TemplateFormProps) {
             type="url"
             defaultValue={initial?.image_url ?? ""}
             placeholder="https://example.com/banner.png"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
 
         {state?.error && (
-          <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {state.error}
           </p>
         )}
@@ -115,7 +115,7 @@ export function TemplateForm({ initial }: TemplateFormProps) {
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Saving…" : initial ? "Save template" : "Create template"}
         </button>

@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import { CodeBlock } from "@/components/code-block";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Guides" };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <h2 className="text-[17px] font-semibold tracking-tight">{title}</h2>
       {children}
     </section>
   );
@@ -19,10 +20,10 @@ function P({ children }: { children: ReactNode }) {
 export default function GuidesPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Guides</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Wire PushPanel into WordPress, Blogger and AMP pages — no plugin install required.
-      </p>
+      <PageHeader
+        title="Guides"
+        description="Wire PushPanel into WordPress, Blogger and AMP pages — no plugin install required."
+      />
 
       <div className="mt-8 max-w-3xl space-y-10">
         <Section title="WordPress (push-on-publish webhook)">
@@ -34,7 +35,7 @@ export default function GuidesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <a
               href="/api/v1/plugin/wordpress"
-              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
             >
               Download WordPress plugin
             </a>

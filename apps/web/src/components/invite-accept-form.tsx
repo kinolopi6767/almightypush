@@ -14,7 +14,7 @@ export function InviteAcceptForm({ token, email, role }: { token: string; email?
       </p>
       <div className="space-y-2">
         <label htmlFor="name" className="text-sm font-medium">Name</label>
-        <input id="name" name="name" required autoComplete="name" placeholder="Jane Doe" className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+        <input id="name" name="name" required autoComplete="name" placeholder="Jane Doe" className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40" />
       </div>
       <div className="space-y-2">
         <label htmlFor="password" className="text-sm font-medium">Password</label>
@@ -26,21 +26,21 @@ export function InviteAcceptForm({ token, email, role }: { token: string; email?
           minLength={10}
           autoComplete="new-password"
           placeholder="At least 10 characters"
-          className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
         />
       </div>
       {state?.error && (
-        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+        <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
       )}
       {state?.ok && (
-        <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+        <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
           Account created — you can sign in now.
         </p>
       )}
       <button
         type="submit"
         disabled={pending}
-        className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
+        className="inline-flex h-9 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
       >
         {pending ? "Creating account…" : "Create account & join"}
       </button>

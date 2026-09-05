@@ -22,13 +22,13 @@ export function DuplicateCampaignForm({ campaignId, canRetarget }: { campaignId:
   );
 
   return (
-    <form action={formAction} className="rounded-xl border bg-card p-5">
-      <h2 className="font-semibold">Send again</h2>
+    <form action={formAction} className="surface rounded-xl p-5">
+       <h2 className="text-[15px] font-semibold tracking-tight">Send again</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Copies this campaign&apos;s message and buttons and delivers it now.
       </p>
       {state?.error && (
-        <p role="alert" className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p role="alert" className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}
         </p>
       )}
@@ -38,7 +38,7 @@ export function DuplicateCampaignForm({ campaignId, canRetarget }: { campaignId:
           name="intent"
           value="duplicate"
           disabled={pending}
-          className="inline-flex h-9 flex-1 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-9 flex-1 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Working…" : "Send again"}
         </button>
@@ -49,7 +49,7 @@ export function DuplicateCampaignForm({ campaignId, canRetarget }: { campaignId:
             value="non_clickers"
             disabled={pending}
             title="Resend only to subscribers who received this campaign but never clicked it"
-            className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex h-9 flex-1 items-center justify-center rounded-lg border border-input bg-background px-4 text-sm font-medium shadow-xs transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
           >
             Resend to non-clickers
           </button>

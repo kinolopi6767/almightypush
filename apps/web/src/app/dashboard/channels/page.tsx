@@ -2,6 +2,7 @@ import { ChannelForm } from "./channel-form";
 import { deleteChannelAction, listChannels, toggleChannelAction, type Channel } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "YouTube channels" };
 
@@ -10,15 +11,11 @@ export default async function ChannelsPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">YouTube channels</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Channel landing pages that capture push subscribers before sending visitors to YouTube.
-          </p>
-        </div>
-        <ChannelForm />
-      </div>
+      <PageHeader
+        title="YouTube channels"
+        description="Channel landing pages that capture push subscribers before sending visitors to YouTube."
+        actions={<ChannelForm />}
+      />
 
       <div className="mt-8 space-y-3">
         {rows.length === 0 && (
@@ -64,8 +61,8 @@ export default async function ChannelsPage() {
               <div className="flex shrink-0 items-center gap-2 self-start">
                 <form action={toggleChannelAction.bind(null, row.id)}>
                   <SubmitButton
-                    pendingLabel="Deleting…"
-                    className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                    pendingLabel={row.status === "active" ? "Pausing…" : "Resuming…"}
+                    className="inline-flex h-8 items-center rounded-lg border border-input bg-background px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
                     {row.status === "active" ? "Pause" : "Resume"}
                   </SubmitButton>
@@ -74,7 +71,7 @@ export default async function ChannelsPage() {
                   <SubmitButton
                     confirm={`Delete channel "${row.title}"? This cannot be undone.`}
                     pendingLabel="Deleting…"
-                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                    className="inline-flex h-8 items-center rounded-lg border border-input border-destructive/30 bg-background px-3 text-xs font-medium text-destructive shadow-xs transition-colors hover:bg-destructive/10 disabled:opacity-50"
                   >
                     Delete
                   </SubmitButton>

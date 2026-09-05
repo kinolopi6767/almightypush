@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { CampaignForm } from "../campaign-form";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "New campaign" };
 
@@ -26,10 +27,10 @@ export default async function NewCampaignPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">New campaign</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Send a push to every active subscriber of a domain — or to a saved segment — immediately or on a schedule.
-      </p>
+      <PageHeader
+        title="New campaign"
+        description="Send a push to every active subscriber of a domain — or to a saved segment — immediately or on a schedule."
+      />
       <div className="mt-8 max-w-xl">
         <CampaignForm domains={domainRows} segments={segmentRows} templates={templateRows} />
       </div>

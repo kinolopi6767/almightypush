@@ -18,11 +18,11 @@ export function ThemeToggle() {
       onClick={() => setTheme(dark ? "light" : "dark")}
       role="switch"
       aria-checked={dark}
-      className="relative inline-flex h-8 w-[52px] items-center rounded-full border bg-muted p-1 transition-colors dark:border-white/10 dark:bg-white/10"
+      className="relative inline-flex h-8 w-[52px] items-center rounded-full border bg-muted p-1 transition-colors duration-200 dark:border-white/10 dark:bg-white/10"
     >
       <span
         aria-hidden
-        className={`inline-flex size-6 items-center justify-center rounded-full bg-card text-foreground shadow-sm transition-colors ${dark ? "translate-x-6" : "translate-x-0"}`}
+        className={`inline-flex size-6 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-xs transition-transform duration-200 ease-out ${dark ? "translate-x-6" : "translate-x-0"}`}
       >
         {dark ? (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="size-3.5">

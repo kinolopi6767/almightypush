@@ -6,11 +6,14 @@ import { CopyButton } from "@/components/copy-button";
 
 export function InviteForm() {
   const [state, action, pending] = useActionState(inviteTeamMemberAction, undefined as TeamFormState);
-  const inviteUrl = state?.token ? `/invite/${state.token}` : null;
+  // Absolute URL: a relative /invite/<token> pasted off-server is broken —
+  // the recipient needs the panel origin included.
+  const inviteUrl =
+    typeof window !== "undefined" && state?.token ? `${window.location.origin}/invite/${state.token}` : null;
 
   return (
     <form action={action} className="space-y-3 rounded-lg border p-4" aria-label="Invite member">
-      <h3 className="font-medium">Invite member</h3>
+      <h3 className="text-[15px] font-semibold tracking-tight">Invite member</h3>
       <div className="flex flex-wrap gap-2">
         <div className="min-w-0 flex-1">
           <label htmlFor="invite-email" className="sr-only">Email</label>
@@ -22,12 +25,12 @@ export function InviteForm() {
             spellCheck={false}
             placeholder="teammate@example.com…"
             required
-            className="h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
           <label htmlFor="invite-role" className="sr-only">Role</label>
-          <select id="invite-role" name="role" defaultValue="viewer" className="h-9 rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+          <select id="invite-role" name="role" defaultValue="viewer" className="h-9 rounded-lg border border-input bg-card px-3 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
             <option value="admin">Admin</option>
@@ -37,7 +40,7 @@ export function InviteForm() {
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-[background-color] hover:bg-primary-hover disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-[background-color] hover:bg-primary-hover disabled:opacity-50"
           aria-busy={pending}
         >
           {pending ? "Inviting…" : "Invite"}

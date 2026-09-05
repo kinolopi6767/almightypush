@@ -32,7 +32,7 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
   }, [disableState]);
 
   return (
-    <div className="rounded-xl border bg-card p-5">
+    <div className="surface rounded-xl p-5">
       <div className="flex items-center justify-between">
         <div>
           <p className="font-semibold">Two-factor authentication</p>
@@ -50,7 +50,7 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
           <button
             type="submit"
             disabled={startPending}
-            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-input px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
           >
             {startPending ? "Generating…" : "Set up authenticator"}
           </button>
@@ -85,13 +85,13 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
                 maxLength={6}
                 autoComplete="one-time-code"
                 placeholder="000000"
-                className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
               />
             </div>
             <button
               type="submit"
               disabled={confirmPending}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary-hover disabled:opacity-50"
             >
               {confirmPending ? "Checking…" : "Enable"}
             </button>
@@ -113,13 +113,13 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
                 type="password"
                 required
                 autoComplete="current-password"
-                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
               />
             </div>
             <button
               type="submit"
               disabled={disablePending}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-destructive/30 px-4 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-input border-destructive/30 px-4 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
             >
               {disablePending ? "Disabling…" : "Disable 2FA"}
             </button>

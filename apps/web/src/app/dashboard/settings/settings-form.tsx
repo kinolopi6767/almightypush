@@ -27,7 +27,7 @@ function TestConnectionButton({ provider, label }: { provider: "ai" | "you" | "m
         type="button"
         onClick={test}
         disabled={state?.loading}
-        className="inline-flex h-7 items-center rounded-md border bg-card px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+        className="inline-flex h-7 items-center rounded-lg border border-input bg-card px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
       >
         {state?.loading ? "Testing…" : label}
       </button>
@@ -41,16 +41,16 @@ function TestConnectionButton({ provider, label }: { provider: "ai" | "you" | "m
 function Status({ state }: { state: SettingsFormState }) {
   if (!state) return null;
   if (state.error) {
-    return <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>;
+    return <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>;
   }
   if (state.backupId !== undefined) {
     return (
-      <p role="status" className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+      <p role="status" className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
         Backup created (#{state.backupId}).
       </p>
     );
   }
-  if (state.ok) return <p role="status" className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">Saved.</p>;
+  if (state.ok) return <p role="status" className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">Saved.</p>;
   return null;
 }
 
@@ -85,8 +85,8 @@ export function SettingsForm({
   );
 
   return (
-    <form action={action} className="space-y-4 rounded-lg border bg-card p-5">
-      <h2 className="text-lg font-semibold">General</h2>
+    <form action={action} className="space-y-4 surface rounded-xl p-5">
+      <h2 className="text-[15px] font-semibold tracking-tight">General</h2>
 
       <div className="space-y-1">
         <label htmlFor="timezone" className="text-sm font-medium">
@@ -97,7 +97,7 @@ export function SettingsForm({
           name="timezone"
           defaultValue={timezone}
           placeholder="UTC (e.g. America/New_York)"
-          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">Display timezone for the dashboard.</p>
       </div>
@@ -113,7 +113,7 @@ export function SettingsForm({
           min={0}
           max={36500}
           defaultValue={retentionDays}
-          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">
           Purge unsubscribed subscribers older than this. The worker cleanup job reads this value; 0 disables it.
@@ -131,7 +131,7 @@ export function SettingsForm({
           min={1}
           max={1000}
           defaultValue={sendingSpeed}
-          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">
           How many pushes the worker has in flight per cycle. Lower it to be gentler to the push service; raise it to
@@ -167,7 +167,7 @@ export function SettingsForm({
             id="backupInterval"
             name="backupInterval"
             defaultValue={backupInterval}
-            className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
+            className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm"
           >
             <option value="off">Off</option>
             <option value="daily">Daily</option>
@@ -187,7 +187,7 @@ export function SettingsForm({
             min={1}
             max={365}
             defaultValue={backupRetention}
-            className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
+            className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">Newest N automated snapshots kept; older ones are pruned.</p>
         </div>
@@ -210,7 +210,7 @@ export function SettingsForm({
           name="cdnUrl"
           defaultValue={cdnUrl}
           placeholder="https://cdn.example.com"
-          className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
+          className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm"
         />
         <p className="text-xs text-muted-foreground">Dedicated Enterprise CDN for SDK delivery (empty = self-host).</p>
       </div>
@@ -227,7 +227,7 @@ export function SettingsForm({
             min={0}
             max={1000}
             defaultValue={frequencyCapDaily}
-            className="h-9 w-full max-w-xs rounded-md border bg-card px-3 text-sm"
+            className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">0 = off. Enforced as a calendar-day cap AND a rolling 24h window (whichever bites). Over cap = suppressed, not sent.</p>
         </div>
@@ -243,7 +243,7 @@ export function SettingsForm({
       <button
         type="submit"
         disabled={pending}
-        className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+        className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
       >
         {pending ? "Saving…" : "Save settings"}
       </button>
@@ -270,15 +270,15 @@ export function BackupsPanel({ rows }: { rows: { id: number; kind: string; statu
   }, [createState, router]);
 
   return (
-    <div className="space-y-4 rounded-lg border bg-card p-5">
+    <div className="space-y-4 surface rounded-xl p-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Backups</h2>
+        <h2 className="text-[15px] font-semibold tracking-tight">Backups</h2>
         {/* VACUUM INTO can take >5s on busy disks — the assertion in the e2e
            test also uses a generous timeout. No change needed here. */}
         <button
           onClick={() => void createAction()}
           disabled={creating}
-          className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
         >
           {creating ? "Creating…" : "Create backup"}
         </button>
@@ -291,7 +291,7 @@ export function BackupsPanel({ rows }: { rows: { id: number; kind: string; statu
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No backups yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="overflow-x-auto rounded-lg border border-input">
           <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b bg-muted/30 text-left text-muted-foreground">
@@ -355,7 +355,7 @@ function DeleteBackup({ id }: { id: number }) {
         if (window.confirm("Delete this backup?")) void action();
       }}
       disabled={pending}
-      className="rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+      className="rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
     >
       {pending ? "…" : "Delete"}
     </button>
@@ -386,7 +386,7 @@ function RestoreBackup({ id }: { id: number }) {
         }}
         disabled={pending}
         aria-busy={pending}
-        className="rounded-md px-2 py-1 text-sm text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 disabled:opacity-50 dark:text-amber-400 dark:hover:text-amber-300"
+        className="rounded-lg px-2 py-1 text-sm text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 disabled:opacity-50 dark:text-amber-400 dark:hover:text-amber-300"
       >
         {pending ? "Restoring…" : "Restore"}
       </button>
@@ -411,8 +411,8 @@ export function SecretsForm({
 }) {
   const [state, action, pending] = useActionState(updateSecretsAction, undefined);
   return (
-    <form action={action} className="space-y-4 rounded-lg border bg-card p-5">
-      <h2 className="text-lg font-semibold">API Keys — managed in panel (no .env hassle)</h2>
+    <form action={action} className="space-y-4 surface rounded-xl p-5">
+      <h2 className="text-[15px] font-semibold tracking-tight">API Keys — managed in panel (no .env hassle)</h2>
       <p className="text-sm text-muted-foreground">
         All keys stored encrypted (AES-256-GCM via <code className="rounded bg-muted px-1">APP_ENC_KEY</code>) in the panel DB. Leave blank to keep existing. Env vars remain fallback.
       </p>
@@ -426,7 +426,7 @@ export function SecretsForm({
             name="ai_api_key"
             type="password"
             placeholder={hasAiKey ? "•••••••• (set) — leave blank to keep" : "sk-..."}
-            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
+            className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">Powers AI Studio: hook angles, spam score, translate, URL→campaign, image.</p>
         </div>
@@ -434,7 +434,7 @@ export function SecretsForm({
           <label htmlFor="ai_model" className="text-sm font-medium">
             AI Model
           </label>
-          <input id="ai_model" name="ai_model" defaultValue={aiModel} placeholder="gpt-4o-mini" className="h-9 w-full rounded-md border bg-card px-3 text-sm" />
+          <input id="ai_model" name="ai_model" defaultValue={aiModel} placeholder="gpt-4o-mini" className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm" />
         </div>
         <div className="space-y-1 sm:col-span-2">
           <label htmlFor="ai_base_url" className="text-sm font-medium">
@@ -445,7 +445,7 @@ export function SecretsForm({
             name="ai_base_url"
             defaultValue={aiBaseUrl}
             placeholder="https://api.openai.com/v1"
-            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
+            className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm"
           />
         </div>
         <div className="space-y-1 sm:col-span-2">
@@ -457,7 +457,7 @@ export function SecretsForm({
             name="ydc_api_key"
             type="password"
             placeholder="ydc_... — leave blank to keep · free tier works without key"
-            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
+            className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm"
           />
           <p className="text-xs text-muted-foreground">
             Powers URL→Campaign enrichment + hook research via you.com Search. Get free 200 credits at you.com. Leave blank to use heuristic fallback.
@@ -467,7 +467,7 @@ export function SecretsForm({
           <label htmlFor="mail_provider" className="text-sm font-medium">
             Mail Provider
           </label>
-          <select id="mail_provider" name="mail_provider" defaultValue={mailProvider} className="h-9 w-full rounded-md border bg-card px-3 text-sm">
+          <select id="mail_provider" name="mail_provider" defaultValue={mailProvider} className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm">
             <option value="">— none —</option>
             <option value="resend">Resend</option>
             <option value="brevo">Brevo</option>
@@ -484,18 +484,18 @@ export function SecretsForm({
             name="mail_api_key"
             type="password"
             placeholder={hasMailKey ? "•••••••• (set)" : "re_... / xkeysib-..."}
-            className="h-9 w-full rounded-md border bg-card px-3 text-sm"
+            className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm"
           />
         </div>
         <div className="space-y-1 sm:col-span-2">
           <label htmlFor="mail_from" className="text-sm font-medium">
             Mail From (verified domain)
           </label>
-          <input id="mail_from" name="mail_from" type="email" defaultValue={mailFrom} placeholder="news@yourdomain.com" className="h-9 w-full rounded-md border bg-card px-3 text-sm" />
+          <input id="mail_from" name="mail_from" type="email" defaultValue={mailFrom} placeholder="news@yourdomain.com" className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm" />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50">
           {pending ? "Saving…" : "Save API Keys"}
         </button>
         <TestConnectionButton provider="ai" label="Test AI" />
@@ -510,8 +510,8 @@ export function SecretsForm({
 export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boolean; folderId: string; hasServiceJson: boolean }) {
   const [state, action, pending] = useActionState(updateGDriveAction, undefined);
   return (
-    <form action={action} className="space-y-4 rounded-lg border bg-card p-5">
-      <h2 className="text-lg font-semibold">Google Drive Auto-Backup</h2>
+    <form action={action} className="space-y-4 surface rounded-xl p-5">
+      <h2 className="text-[15px] font-semibold tracking-tight">Google Drive Auto-Backup</h2>
       <p className="text-sm text-muted-foreground">
         Disabled by default. Enable to auto-upload every <code className="rounded bg-muted px-1">VACUUM INTO</code> snapshot to Drive. For personal single-tenant, share a Drive folder with your Service Account email.
       </p>
@@ -525,7 +525,7 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
         <label htmlFor="gdrive_folder_id" className="text-sm font-medium">
           Drive Folder ID (optional)
         </label>
-        <input id="gdrive_folder_id" name="gdrive_folder_id" defaultValue={folderId} placeholder="1aB2cDeFgHiJkL — leave empty for My Drive root" className="h-9 w-full rounded-md border bg-card px-3 text-sm" />
+        <input id="gdrive_folder_id" name="gdrive_folder_id" defaultValue={folderId} placeholder="1aB2cDeFgHiJkL — leave empty for My Drive root" className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm" />
         <p className="text-xs text-muted-foreground">Find in Drive URL: https://drive.google.com/drive/folders/{"<ID>"}</p>
       </div>
       <div className="space-y-1">
@@ -537,7 +537,7 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
           name="gdrive_service_json"
           rows={4}
           placeholder='{"type":"service_account","project_id":"...","private_key":"-----BEGIN PRIVATE KEY-----...","client_email":"...@...iam.gserviceaccount.com"}'
-          className="w-full rounded-md border bg-card px-3 py-2 font-mono text-xs"
+          className="w-full rounded-lg border border-input bg-card px-3 py-2 font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">Stored encrypted. Share your Drive folder with the service account email (Viewer or Editor).</p>
       </div>
@@ -551,7 +551,7 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
         </ol>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <button type="submit" disabled={pending} className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50">
           {pending ? "Saving…" : "Save Drive Settings"}
         </button>
         <TestConnectionButton provider="drive" label="Test Drive" />
@@ -565,8 +565,8 @@ export function GDriveForm({ enabled, folderId, hasServiceJson }: { enabled: boo
 export function OutboundWebhookForm({ url, hasSecret }: { url: string; hasSecret: boolean }) {
   const [state, action, pending] = useActionState(updateOutboundAction, undefined);
   return (
-    <form action={action} className="space-y-4 rounded-lg border bg-card p-5">
-      <h2 className="text-lg font-semibold">Outbound event webhooks</h2>
+    <form action={action} className="space-y-4 surface rounded-xl p-5">
+      <h2 className="text-[15px] font-semibold tracking-tight">Outbound event webhooks</h2>
       <p className="text-sm text-muted-foreground">
         POSTs HMAC-signed JSON to your endpoint on{" "}
         <code className="rounded bg-muted px-1">subscribed</code>,{" "}
@@ -585,7 +585,7 @@ export function OutboundWebhookForm({ url, hasSecret }: { url: string; hasSecret
           type="url"
           defaultValue={url}
           placeholder="https://n8n.example.com/webhook/pushpanel"
-          className="h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
         />
       </div>
       <div className="space-y-1">
@@ -598,7 +598,7 @@ export function OutboundWebhookForm({ url, hasSecret }: { url: string; hasSecret
           type="password"
           autoComplete="off"
           placeholder={hasSecret ? "••••••••" : "whsec_..."}
-          className="h-9 w-full rounded-md border bg-card px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-9 w-full rounded-lg border border-input bg-card px-3 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
         />
         <p className="text-xs text-muted-foreground">
           Verify header <code className="rounded bg-muted px-1">X-PushPanel-Signature</code> as{" "}
@@ -608,7 +608,7 @@ export function OutboundWebhookForm({ url, hasSecret }: { url: string; hasSecret
       <button
         type="submit"
         disabled={pending}
-        className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
+        className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
       >
         {pending ? "Saving…" : "Save webhooks"}
       </button>

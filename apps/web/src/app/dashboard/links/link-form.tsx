@@ -8,8 +8,8 @@ export function LinkForm({ domains }: { domains: { id: number; name: string }[] 
   const [forced, setForced] = useState(false);
 
   return (
-    <form action={formAction} className="rounded-xl border bg-card p-5">
-      <h2 className="font-semibold">New link</h2>
+    <form action={formAction} className="surface rounded-xl p-5">
+       <h2 className="text-[15px] font-semibold tracking-tight">New link</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         A shareable landing page that asks for push permission and then redirects to your target.
       </p>
@@ -25,7 +25,7 @@ export function LinkForm({ domains }: { domains: { id: number; name: string }[] 
             type="url"
             required
             placeholder="https://your-site.com/post"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
@@ -37,7 +37,7 @@ export function LinkForm({ domains }: { domains: { id: number; name: string }[] 
             name="prompt_text"
             maxLength={120}
             placeholder="Get notified when we publish"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -56,7 +56,7 @@ export function LinkForm({ domains }: { domains: { id: number; name: string }[] 
           <select
             id="domain_id"
             name="domain_id"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           >
             <option value="">No push (just redirect)</option>
             {domains.map((d) => (
@@ -75,12 +75,12 @@ export function LinkForm({ domains }: { domains: { id: number; name: string }[] 
             name="deleted_target_url"
             type="url"
             placeholder="Where deleted links redirect"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
 
         {state?.error && (
-          <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {state.error}
           </p>
         )}
@@ -88,7 +88,7 @@ export function LinkForm({ domains }: { domains: { id: number; name: string }[] 
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Creating…" : "Create link"}
         </button>

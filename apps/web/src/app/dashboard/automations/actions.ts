@@ -19,10 +19,10 @@ const createSchema = z.object({
   payload: automationPayloadSchema,
   delay_seconds: z.coerce.number().int().min(0).max(86_400).default(0),
   interval_minutes: z.coerce.number().int().min(1).max(10_080).default(15),
-  source_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+  source_url: z.string().trim().max(500).pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
   range: z.coerce.number().int().min(1).max(100).default(10),
   rotation_json: z.string().trim().optional().or(z.literal("")),
-  feed_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+  feed_url: z.string().trim().max(500).pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
   schedule_cron: z.string().trim().min(1).max(100).optional().or(z.literal("")),
   steps: z.array(dripStepSchema).min(1).max(MAX_DRIP_STEPS).optional(),
 });

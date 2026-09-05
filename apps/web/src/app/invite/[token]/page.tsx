@@ -24,7 +24,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/10 to-transparent" />
       <div className="relative w-full max-w-sm space-y-6">
         <div className="space-y-3 text-center">
-          <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/55 text-base font-bold text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--primary)_60%,transparent)]">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/55 text-base font-bold text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--primary)_60%,transparent)]">
             P
           </span>
           <div className="space-y-1.5">
@@ -35,11 +35,11 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           </div>
         </div>
         {preview.valid ? (
-          <div className="surface space-y-4 rounded-2xl p-6 [box-shadow:var(--shadow-pop)]">
+          <div className="surface space-y-4 rounded-xl p-6 [box-shadow:var(--shadow-pop)]">
             <InviteAcceptForm token={token} email={preview.email} role={preview.role} />
           </div>
         ) : (
-          <div className="surface rounded-2xl p-6 text-center text-sm text-muted-foreground">
+          <div className="surface rounded-xl p-6 text-center text-sm text-muted-foreground">
             Ask the workspace owner to resend the invitation, then open the new link.
           </div>
         )}

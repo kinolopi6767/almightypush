@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { InviteForm } from "./invite-form";
+import { PageHeader } from "@/components/page-header";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Team" };
@@ -17,12 +18,12 @@ export default async function TeamPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Multi-user RBAC — owner / admin / editor / viewer · invites expire in 7 days · personal unlimited.</p>
-      </div>
-      <div className="rounded-xl border bg-card p-5 shadow-[var(--shadow-card)]">
-        <h2 className="font-semibold">Members ({members.length})</h2>
+      <PageHeader
+        title="Team"
+        description="Multi-user RBAC — owner / admin / editor / viewer · invites expire in 7 days · personal unlimited."
+      />
+      <div className="surface rounded-xl p-5">
+        <h2 className="text-[15px] font-semibold tracking-tight">Members ({members.length})</h2>
         {members.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No members yet — just you. Invite teammates below.</p>
         ) : (
@@ -40,8 +41,8 @@ export default async function TeamPage() {
         )}
       </div>
       <InviteForm />
-      <div className="rounded-xl border bg-card p-5">
-        <h3 className="font-semibold">Pending invites ({invites.length})</h3>
+      <div className="surface rounded-xl p-5">
+        <h3 className="text-[15px] font-semibold tracking-tight">Pending invites ({invites.length})</h3>
         {invites.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No pending invites.</p>
         ) : (

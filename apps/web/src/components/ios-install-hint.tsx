@@ -34,8 +34,8 @@ export function IosInstallHint() {
   if (!show) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 max-w-xs rounded-xl border bg-card p-4 shadow-lg">
-      <p className="text-sm font-semibold">Install PushPanel</p>
+    <div className="surface rise fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 max-w-xs rounded-xl p-4" style={{ boxShadow: "var(--shadow-pop)" }}>
+      <p className="text-sm font-semibold tracking-tight">Install PushPanel</p>
       <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
         <li>Tap the Share button <span aria-hidden>⎋</span> in Safari.</li>
         <li>Choose <strong>Add to Home Screen</strong>.</li>
@@ -50,7 +50,7 @@ export function IosInstallHint() {
           }
           setShow(false);
         }}
-        className="mt-3 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        className="mt-3 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary-hover"
       >
         Got it
       </button>

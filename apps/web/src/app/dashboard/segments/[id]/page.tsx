@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { domains, segments } from "@pushpanel/db/schema";
 import { SegmentForm } from "../segment-form";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "Edit segment" };
 
@@ -12,6 +13,7 @@ export default async function SegmentEditPage({ params }: { params: Promise<{ id
   const session = await auth();
   const workspaceId = Number(session?.user?.workspaceId ?? 0);
   const id = Number((await params).id);
+  if (!Number.isInteger(id)) notFound();
 
   const [row] = await db
     .select({
@@ -59,10 +61,12 @@ export default async function SegmentEditPage({ params }: { params: Promise<{ id
 
   return (
     <>
-      <Link href="/dashboard/segments" className="text-sm text-primary hover:underline">
+      <Link href="/dashboard/segments" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
         ← Back to segments
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Edit segment</h1>
+      <div className="mt-2">
+        <PageHeader title="Edit segment" />
+      </div>
       <div className="mt-8 max-w-2xl">
         <SegmentForm domains={wsDomains} initial={{ id: row.id, name: row.name, domainIds, groups }} />
       </div>

@@ -50,14 +50,14 @@ export default async function TemplatesPage() {
                 {row.launch_url && <p className="mt-1 truncate text-xs text-muted-foreground">{row.launch_url}</p>}
               </div>
               <div className="flex shrink-0 items-center gap-2 sm:ml-4">
-                <Link href={`/dashboard/templates/${row.id}`} className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium hover:bg-accent" aria-label={`Edit template ${row.name}`}>
+                <Link href={`/dashboard/templates/${row.id}`} className="inline-flex h-8 items-center rounded-lg border border-input px-3 text-xs font-medium hover:bg-accent" aria-label={`Edit template ${row.name}`}>
                   Edit
                 </Link>
                 <form action={deleteTemplateAction.bind(null, row.id)}>
                   <SubmitButton
                     confirm={`Delete template "${row.name}"?`}
                     pendingLabel="Deleting…"
-                    className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                    className="inline-flex h-8 items-center rounded-lg border border-input border-destructive/30 bg-background px-3 text-xs font-medium text-muted-foreground shadow-xs transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                   >
                     Delete
                   </SubmitButton>

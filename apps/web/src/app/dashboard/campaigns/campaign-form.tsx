@@ -96,13 +96,26 @@ export function CampaignForm({
     setVariants((prev) => prev.map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
   const removeVariant = (i: number) => setVariants((prev) => prev.filter((_, idx) => idx !== i));
   const addVariant = () =>
-    setVariants((prev) => (prev.length >= 20 ? prev : [...prev, { rid: nextRid(), title: "", weight: 10 }]));
+    setVariants((prev) => (prev.length >= 10 ? prev : [...prev, { rid: nextRid(), title: "", weight: 10 }]));
 
   const isDirty =
-    Boolean(title) || Boolean(message) || Boolean(launchUrl) || variants.length > 0;
+    Boolean(title) ||
+    Boolean(message) ||
+    Boolean(launchUrl) ||
+    Boolean(iconUrl) ||
+    Boolean(imageUrl) ||
+    Boolean(topic) ||
+    ttl !== "86400" ||
+    urgency !== "normal" ||
+    channel !== "push" ||
+    variants.length > 0 ||
+    buttons.some((b) => b.label.trim() || b.url.trim()) ||
+    audienceKind !== "all" ||
+    Boolean(segmentId) ||
+    Boolean(templateId);
 
   return (
-    <form action={formAction} className="rounded-xl border bg-card p-5">
+    <form action={formAction} className="surface rounded-xl p-6">
       <UseDirtyGuard dirty={() => isDirty} />
       {/* Hidden fields for advanced variant/ delivery plumbing */}
       <input type="hidden" name="channel" value={channel} />
@@ -116,11 +129,12 @@ export function CampaignForm({
           value={JSON.stringify(variants.map(({ rid: _rid, title, message, weight }) => ({ title, message, weight })))}
         />
       )}
-      <h2 className="font-semibold">New campaign</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">New campaign</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         The worker starts the campaign the moment it is due and queues a delivery for every active subscriber.
       </p>
-      <div className="mt-4 space-y-3">
+      <div className="mt-5 space-y-5">
+        <p className="kicker text-muted-foreground">Creative</p>
         {templates.length > 0 && (
           <div>
             <label htmlFor="templateId" className="text-sm font-medium">
@@ -130,7 +144,7 @@ export function CampaignForm({
               id="templateId"
               value={templateId}
               onChange={(e) => applyTemplate(e.target.value)}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
             >
               <option value="">— blank —</option>
               {templates.map((t) => (
@@ -151,7 +165,7 @@ export function CampaignForm({
               id="domainId"
               name="domainId"
               required
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
             >
               <option value="">Select a domain…</option>
               {domains.map((d) => (
@@ -169,7 +183,7 @@ export function CampaignForm({
               id="channel"
               value={channel}
               onChange={(e) => setChannel(e.target.value as "push" | "email")}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
             >
               <option value="push">Push (VAPID)</option>
               <option value="email">Email</option>
@@ -189,12 +203,12 @@ export function CampaignForm({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Big sale this weekend"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
           <label htmlFor="titleB" className="text-sm font-medium">
-            B title <span className="font-normal text-muted-foreground">(quick 50/50 — or use Variants below for up to 20)</span>
+            B title <span className="font-normal text-muted-foreground">(quick 50/50 — or use Variants below for up to 10)</span>
           </label>
           <input
             id="titleB"
@@ -202,39 +216,41 @@ export function CampaignForm({
             maxLength={120}
             defaultValue=""
             placeholder="Big sale this weekend — now!"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            Half gets original, half gets B. For weighted multi-variant (up to 20), use the Variants builder below.
+            Half gets original, half gets B.             For weighted multi-variant (up to 10), use the Variants builder below.
           </p>
         </div>
 
-        <div className="rounded-lg border p-3">
+        <div className="rounded-lg border bg-muted/30 p-3.5">
           <button
             type="button"
             onClick={() => setShowVariants((v) => !v)}
             className="flex w-full items-center justify-between text-sm font-medium"
           >
-            <span>A/B Variants (up to 20, weighted) — LumaPush / OneSignal parity</span>
-            <span className="text-muted-foreground">{showVariants ? "Hide" : `Show ${variants.length ? `(${variants.length})` : ""}`}</span>
+            <span>A/B Variants (up to 10, weighted)</span>
+            <span className="text-xs text-muted-foreground">{showVariants ? "Hide" : `Show ${variants.length ? `(${variants.length})` : ""}`}</span>
           </button>
           {showVariants && (
             <div className="mt-3 space-y-2">
               {variants.map((v, i) => (
-                <div key={v.rid} className="grid grid-cols-[1fr_1fr_80px_auto] gap-2">
+                <div key={v.rid} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_80px_auto]">
                   <input
                     placeholder="Title"
+                    aria-label={`Variant ${i + 1} title`}
                     value={v.title}
                     onChange={(e) => updateVariant(i, { title: e.target.value })}
                     maxLength={120}
-                    className="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
                   />
                   <input
                     placeholder="Message (optional)"
+                    aria-label={`Variant ${i + 1} message`}
                     value={v.message ?? ""}
                     onChange={(e) => updateVariant(i, { message: e.target.value })}
                     maxLength={500}
-                    className="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
                   />
                   <input
                     type="number"
@@ -242,16 +258,17 @@ export function CampaignForm({
                     max={100}
                     value={v.weight}
                     onChange={(e) => updateVariant(i, { weight: Math.max(1, Math.min(100, Number(e.target.value) || 10)) })}
-                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    className="rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                    aria-label={`Variant ${i + 1} weight`}
                     title="Weight 1-100"
                   />
-                  <button type="button" onClick={() => removeVariant(i)} aria-label={`Remove variant ${i + 1}`} className="rounded-md border px-3 text-sm hover:bg-muted">
+                  <button type="button" onClick={() => removeVariant(i)} aria-label={`Remove variant ${i + 1}`} className="rounded-lg border border-input px-3 text-sm hover:bg-muted">
                     ✕
                   </button>
                 </div>
               ))}
               <div className="flex gap-2">
-                <button type="button" onClick={addVariant} disabled={variants.length >= 20} className="rounded-md border border-dashed px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
+                <button type="button" onClick={addVariant} disabled={variants.length >= 10} className="rounded-lg border border-input border-dashed px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
                   + Add variant
                 </button>
                 {variants.length > 0 && (
@@ -276,7 +293,7 @@ export function CampaignForm({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Everything is 50% off until Sunday."
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
         </div>
         <div>
@@ -291,13 +308,13 @@ export function CampaignForm({
               value={launchUrl}
               onChange={(e) => setLaunchUrl(e.target.value)}
               placeholder="https://app.example.com/sale"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
             />
             <button
               type="button"
               onClick={() => void fetchContent()}
               disabled={fetching}
-              className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+              className="shrink-0 rounded-lg border border-input px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
               title="Fetch title/message/icon from the page (og-scrape)"
             >
               {fetching ? "Fetching…" : "Fetch from URL"}
@@ -317,7 +334,7 @@ export function CampaignForm({
               value={iconUrl}
               onChange={(e) => setIconUrl(e.target.value)}
               placeholder="https://example.com/icon.png"
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
             />
           </div>
           <div>
@@ -331,22 +348,22 @@ export function CampaignForm({
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
               placeholder="https://example.com/banner.png"
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
             />
           </div>
         </div>
-        <div>
-          <span className="text-sm font-medium">Action buttons</span>
-          <p className="mt-0.5 text-xs text-muted-foreground">Shown below the notification on desktop. Up to 3.</p>
+        <div className="border-t border-border/70 pt-5">
+          <p className="kicker text-muted-foreground">Action buttons</p>
+          <p className="mt-1 text-xs text-muted-foreground">Shown below the notification on desktop. Up to 3.</p>
           {filledButtons.map((b, i) => (
-            <div key={b.rid} className="mt-2 grid grid-cols-[1fr_1.4fr_auto] gap-2">
+            <div key={b.rid} className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
               <input
                 aria-label={`Button ${i + 1} label`}
                 value={b.label}
                 onChange={(e) => updateButton(i, "label", e.target.value)}
                 placeholder="Label"
                 maxLength={24}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
               />
               <input
                 aria-label={`Button ${i + 1} URL`}
@@ -354,13 +371,13 @@ export function CampaignForm({
                 onChange={(e) => updateButton(i, "url", e.target.value)}
                 placeholder="https://example.com/x"
                 type="url"
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
               />
               <button
                 type="button"
                 onClick={() => removeButton(i)}
                 aria-label={`Remove button ${i + 1}`}
-                className="rounded-md border px-3 text-sm text-muted-foreground hover:bg-muted"
+                className="rounded-lg border border-input px-3 text-sm text-muted-foreground hover:bg-muted"
               >
                 ✕
               </button>
@@ -370,7 +387,7 @@ export function CampaignForm({
             <button
               type="button"
               onClick={addButton}
-              className="mt-2 rounded-md border border-dashed px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
+              className="mt-2 rounded-lg border border-input border-dashed px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
             >
               + Add button
             </button>
@@ -382,28 +399,31 @@ export function CampaignForm({
             </Fragment>
           ))}
         </div>
-        <div>
-          <label htmlFor="schedule" className="text-sm font-medium">
-            Schedule (optional)
-          </label>
+        <div className="border-t border-border/70 pt-5">
+          <p className="kicker text-muted-foreground">Delivery</p>
+          <div className="mt-3 space-y-4">
+          <div>
+            <label htmlFor="schedule" className="text-sm font-medium">
+              Schedule (optional)
+            </label>
           <input
             id="schedule"
             name="schedule"
             type="datetime-local"
-            className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40"
           />
           <p className="mt-1 text-xs text-muted-foreground">Leave empty to send immediately — interpreted in panel timezone.</p>
         </div>
 
-        <div className="rounded-lg border p-3">
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="flex w-full items-center justify-between text-sm font-medium"
-          >
-            <span>Delivery options — topic / TTL / urgency (LumaPush)</span>
-            <span className="text-muted-foreground">{showAdvanced ? "Hide" : "Show"}</span>
-          </button>
+          <div className="rounded-lg border bg-muted/30 p-3.5">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex w-full items-center justify-between text-sm font-medium"
+            >
+              <span>Delivery options — topic / TTL / urgency</span>
+              <span className="text-xs text-muted-foreground">{showAdvanced ? "Hide" : "Show"}</span>
+            </button>
           {showAdvanced && (
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <div>
@@ -415,7 +435,7 @@ export function CampaignForm({
                   value={topic}
                   onChange={(e) => setTopic(e.target.value.slice(0, 64))}
                   placeholder="sale-2026-09"
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">Notifications with same topic collapse.</p>
               </div>
@@ -430,7 +450,7 @@ export function CampaignForm({
                   max={2419200}
                   value={ttl}
                   onChange={(e) => setTtl(e.target.value)}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">0 = drop if offline, 86400 = 1 day.</p>
               </div>
@@ -442,7 +462,7 @@ export function CampaignForm({
                   id="urgency"
                   value={urgency}
                   onChange={(e) => setUrgency(e.target.value as typeof urgency)}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                 >
                   <option value="very-low">very-low</option>
                   <option value="low">low</option>
@@ -452,11 +472,14 @@ export function CampaignForm({
               </div>
             </div>
           )}
+          </div>
+          </div>
         </div>
-        <div>
-          <span className="text-sm font-medium">Audience</span>
-          <div className="mt-1 space-y-2">
-            <label className="flex items-center gap-2 text-sm">
+
+        <div className="border-t border-border/70 pt-5">
+          <p className="kicker text-muted-foreground">Audience</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3.5 py-3 text-sm transition-colors ${audienceKind === "all" ? "border-primary/40 bg-primary/[0.06]" : "hover:bg-accent"}`}>
               <input
                 type="radio"
                 name="audienceKind"
@@ -466,7 +489,7 @@ export function CampaignForm({
               />
               All subscribers of the domain
             </label>
-            <label className="flex items-center gap-2 text-sm">
+            <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3.5 py-3 text-sm transition-colors ${audienceKind === "segment" ? "border-primary/40 bg-primary/[0.06]" : "hover:bg-accent"}`}>
               <input
                 type="radio"
                 name="audienceKind"
@@ -476,40 +499,40 @@ export function CampaignForm({
               />
               A saved segment
             </label>
-{audienceKind === "segment" && (
-              <>
-                <input type="hidden" name="segmentId" value={segmentId} />
-                <div className="mt-1 space-y-2">
-                  <select
-                    aria-label="Segment"
-                    value={segmentId}
-                    onChange={(e) => setSegmentId(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="">Pick a segment…</option>
-                    {segments.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} (~{s.estimate_count?.toLocaleString() ?? "…"})
-                      </option>
-                    ))}
-                  </select>
-                  {segments.length === 0 && (
-                    <p className="text-xs text-muted-foreground">No segments yet — create one on the Segments page first.</p>
-                  )}
-                </div>
-              </>
-            )}
           </div>
+          {audienceKind === "segment" && (
+            <>
+              <input type="hidden" name="segmentId" value={segmentId} />
+              <div className="mt-2">
+                <select
+                  aria-label="Segment"
+                  value={segmentId}
+                  onChange={(e) => setSegmentId(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-[border-color,box-shadow] duration-150 focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40 sm:max-w-sm"
+                >
+                  <option value="">Pick a segment…</option>
+                  {segments.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} (~{s.estimate_count?.toLocaleString() ?? "…"})
+                    </option>
+                  ))}
+                </select>
+                {segments.length === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">No segments yet — create one on the Segments page first.</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
         {state?.error && (
-          <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {state.error}
           </p>
         )}
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Creating…" : "Create campaign"}
         </button>

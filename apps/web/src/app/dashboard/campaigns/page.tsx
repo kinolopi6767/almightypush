@@ -65,13 +65,13 @@ export default async function CampaignsPage() {
             <a
               href="/api/export/campaigns"
               download
-              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent"
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-input bg-background px-4 text-sm font-medium shadow-xs transition-colors hover:bg-accent"
             >
               Export CSV
             </a>
             <Link
               href="/dashboard/campaigns/new"
-              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] hover:bg-primary-hover active:scale-[0.98]"
             >
               New campaign
             </Link>
@@ -96,11 +96,11 @@ export default async function CampaignsPage() {
             <Link
               key={row.id}
               href={`/dashboard/campaigns/${row.id}`}
-              className="card-lift flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-accent/40 sm:flex-row sm:items-center sm:justify-between"
+              className="premium-card card-lift flex flex-col gap-3 rounded-xl p-5 sm:flex-row sm:items-center sm:justify-between hover:bg-accent/30"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{row.title}</p>
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                <p className="truncate font-medium tracking-tight">{row.title}</p>
+                <p className="mt-1 truncate text-sm text-muted-foreground">
                   {row.domain_name ?? "multi-domain"} · {statusLabel(row.status)} ·{" "}
                   {row.schedule_at
                     ? `scheduled ${new Date(row.schedule_at).toLocaleString()}`
@@ -111,7 +111,7 @@ export default async function CampaignsPage() {
                 <span className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">
                   {stats.delivered ?? 0} delivered · {clickCount} clicks
                 </span>
-                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[row.status] ?? "bg-muted text-muted-foreground"}`}>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium capitalize shadow-xs ring-1 ring-inset ${STATUS_STYLES[row.status] ?? "bg-muted text-muted-foreground ring-border"}`}>
                   {statusLabel(row.status)}
                 </span>
               </div>

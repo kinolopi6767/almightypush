@@ -28,7 +28,7 @@ function sanitizeHostname(raw: string): string {
 
 const createDomainSchema = z.object({
   name: z.string().trim().toLowerCase().regex(HOSTNAME_RE, "Enter a valid hostname, e.g. app.example.com"),
-  url: z.string().trim().url().optional().or(z.literal("")),
+  url: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
 });
 
 export async function createDomainAction(
@@ -102,7 +102,7 @@ const promptSchema = z.object({
 const testPushSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(120),
   message: z.string().trim().max(500).optional().or(z.literal("")),
-  url: z.string().trim().url().optional().or(z.literal("")),
+  url: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
 });
 
 export async function sendTestPushAction(
@@ -144,6 +144,9 @@ export async function sendTestPushAction(
 
   if (audience.length === 0) return { error: "No active subscribers yet — add the SDK to your site first" };
 
+  // FIX: audience must be manual with explicit ids, otherwise the scheduler/worker
+  // would re-resolve {kind:"all"} to EVERY active subscriber and bypass the 25 cap.
+  const manualIds = audience.map((s) => s.id);
   const campaign = db
     .insert(campaigns)
     .values({
@@ -152,7 +155,7 @@ export async function sendTestPushAction(
       title: parsed.data.title,
       message: parsed.data.message || null,
       launch_url: parsed.data.url || null,
-      audience_json: JSON.stringify({ kind: "all" }),
+      audience_json: JSON.stringify({ kind: "manual", ids: manualIds }),
       status: "sending",
       source: "panel",
     })
@@ -168,6 +171,18 @@ export async function sendTestPushAction(
   });
 
   return { ok: true, id: campaignId, count: audience.length };
+}
+
+function sanitizeCustomCss(css: string): string | undefined {
+  if (!css.trim()) return undefined;
+  // Block dangerous constructs while preserving legitimate styling.
+  const lower = css.toLowerCase();
+  const blocked = ["expression(", "javascript:", "behavior:", "binding:", "-moz-binding", "vbscript:"];
+  for (const b of blocked) if (lower.includes(b)) return undefined;
+  // Strip @import with external URLs (could load untrusted styles) — keep only safe @imports
+  // For premium hardening, disallow @import entirely (admin can paste full rules inline)
+  if (/@import/i.test(css)) return css.replace(/@import[^;]+;/gi, "/* @import blocked */");
+  return css.slice(0, 5000);
 }
 
 export async function updateDomainPromptAction(
@@ -209,7 +224,7 @@ export async function updateDomainPromptAction(
     delayMs: parsed.data.delayMs ?? 1500,
     scrollDepth: parsed.data.scrollDepth,
     idleMs: parsed.data.idleMs,
-    customCss: parsed.data.customCss || undefined,
+    customCss: sanitizeCustomCss(parsed.data.customCss ?? "") || undefined,
     texts: {
       title: parsed.data.title || undefined,
       message: parsed.data.message || undefined,

@@ -32,12 +32,18 @@ function fmtUptime(sec: number): string {
   return `${d}d ${h}h ${m}m`;
 }
 
-function Card({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Card({ label, value, sub, tone = "default" }: { label: string; value: string; sub?: string; tone?: "default" | "success" | "warning" | "destructive" }) {
+  const toneStyles: Record<string, string> = {
+    default: "text-foreground",
+    success: "text-emerald-600 dark:text-emerald-400",
+    warning: "text-amber-600 dark:text-amber-400",
+    destructive: "text-destructive",
+  };
   return (
-    <div className="rounded-xl border bg-card p-5">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
-      {sub && <p className="mt-1 break-all text-sm text-muted-foreground">{sub}</p>}
+    <div className="premium-card card-lift rounded-xl p-6">
+      <p className="kicker text-muted-foreground">{label}</p>
+      <p className={`tabular mt-3 text-[26px] font-semibold leading-none tracking-tight ${toneStyles[tone] ?? ""}`}>{value}</p>
+      {sub && <p className="mt-2 break-all text-xs leading-relaxed text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -65,13 +71,20 @@ export default async function StatusPage() {
     );
   }
 
+  const queueTotal = metrics.queue.queued + metrics.queue.sending;
+  const queueTone = queueTotal > 1000 ? "warning" : queueTotal > 0 ? "default" : "success";
+  const failedTone = metrics.deliveriesFailed > 100 ? "warning" : "default";
+
   return (
     <>
-      <PageHeader title="Server status" description="Live process, queue and database health." />
+      <PageHeader
+        title="Server status"
+        description="Live process, queue and database health — enterprise observability with premium insights."
+      />
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Uptime" value={fmtUptime(metrics.uptimeSec)} sub={metrics.node} />
-        <Card label="Load avg" value={metrics.load != null ? String(metrics.load) : "n/a"} sub={metrics.platform} />
+        <Card label="Load avg" value={metrics.load != null ? metrics.load.toFixed(2) : "n/a"} sub={metrics.platform} />
         <Card
           label="Memory (heap)"
           value={fmtBytes(metrics.memory.heapUsed)}
@@ -80,22 +93,37 @@ export default async function StatusPage() {
         <Card label="Database" value={fmtBytes(metrics.db.sizeBytes)} sub={metrics.db.path ?? "n/a"} />
         <Card
           label="Queue"
-          value={String(metrics.queue.queued + metrics.queue.sending)}
+          value={String(queueTotal)}
           sub={`${metrics.queue.queued} queued · ${metrics.queue.sending} sending`}
+          tone={queueTone}
         />
-        <Card label="Failed deliveries" value={String(metrics.deliveriesFailed)} sub="all time" />
-        <div className="rounded-xl border bg-card p-5 sm:col-span-2 lg:col-span-2">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Database readiness</p>
-          <p className="mt-2 text-2xl font-semibold">
+        <Card label="Failed deliveries" value={String(metrics.deliveriesFailed)} sub="all time" tone={failedTone} />
+        <div className="premium-card rounded-xl p-6 sm:col-span-2 lg:col-span-2">
+          <p className="kicker text-muted-foreground">Database readiness</p>
+          <p className="mt-3 flex items-center gap-2 text-2xl font-semibold">
+            <span className={`size-2 rounded-full ${dbReady ? "bg-success pulse-dot" : "bg-destructive"}`} aria-hidden />
             {dbReady ? (
-              <span className="text-emerald-600 dark:text-emerald-400">ready</span>
+              <span className="text-emerald-600 dark:text-emerald-400">Operational</span>
             ) : (
-              <span className="text-destructive">degraded</span>
+              <span className="text-destructive">Degraded</span>
             )}
           </p>
-          <p className="mt-1 text-sm break-all text-muted-foreground">
-            {metrics.lastAutomationError ? `Last automation error: ${metrics.lastAutomationError}` : "No automation errors."}
+          <p className="mt-2 break-all text-sm leading-relaxed text-muted-foreground">
+            {metrics.lastAutomationError ? `Last automation error: ${metrics.lastAutomationError}` : "No automation errors — all systems nominal."}
           </p>
+        </div>
+      </div>
+
+      {/* Premium observability footer */}
+      <div className="mt-6 premium-card rounded-xl p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold tracking-tight">Enterprise observability</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Structured logs available via <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">logger</code> · Audit trail in Settings · Health at <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">/api/health</code></p>
+          </div>
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1.5 text-xs font-medium text-success ring-1 ring-inset ring-success/15">
+            <span className="size-1.5 rounded-full bg-success pulse-dot" aria-hidden /> All systems go
+          </span>
         </div>
       </div>
     </>
