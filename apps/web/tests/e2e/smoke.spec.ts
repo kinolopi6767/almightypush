@@ -17,7 +17,9 @@ test("health endpoints answer", async ({ request }) => {
 
 test("anonymous visit redirects to login", async ({ page }) => {
   await page.goto("/dashboard");
-  await expect(page).toHaveURL(/\/login$/);
+  // Middleware preserves the destination as ?callbackUrl= (dashboard-only,
+  // same-origin) so post-login returns where the user was headed.
+  await expect(page).toHaveURL(/\/login(\?callbackUrl=%2Fdashboard)?$/);
   await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
 });
 
