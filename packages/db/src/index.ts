@@ -21,6 +21,12 @@ export interface DbOptions {
   pragmas?: Record<string, string | number>;
 }
 
+function sqliteCacheKb(): number {
+  const raw = Number(process.env.SQLITE_CACHE_MB ?? 64);
+  const mb = Number.isFinite(raw) ? Math.min(Math.max(raw, 4), 1024) : 64;
+  return mb * 1024;
+}
+
 const DEFAULT_PRAGMAS: Record<string, string | number> = {
   journal_mode: "WAL",
   // 15s: retention pruning / backup windows hold the write lock in short
@@ -29,7 +35,8 @@ const DEFAULT_PRAGMAS: Record<string, string | number> = {
   foreign_keys: "ON",
   synchronous: "NORMAL",
   // VPS tune: 64MB default for AWS t2.micro 1GB, 256MB for 2GB+ VPS via SQLITE_CACHE_MB env
-  cache_size: -(Number(process.env.SQLITE_CACHE_MB ?? 64) * 1024),
+  // Guard: garbage env must not crash boot via `cache_size = NaN`.
+  cache_size: -sqliteCacheKb(),
   // Cap WAL regrowth after checkpoints (the always-writing worker +
   // pinned reader snapshots during backups would otherwise grow it unbounded).
   journal_size_limit: 134_217_728,

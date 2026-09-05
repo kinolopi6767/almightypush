@@ -112,7 +112,9 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
   const variants = parseVariants(campaign.variants_json, campaign.title_b);
 
   // 1M scale: chunk 500 inserts per transaction to avoid 1M-row single tx lock (3min) + OOM
-  const CHUNK = Number(process.env.SCHEDULER_CHUNK ?? 500);
+  // Guard: non-numeric/zero/negative env must not produce a 0-step infinite loop.
+  const rawChunk = Number(process.env.SCHEDULER_CHUNK ?? 500);
+  const CHUNK = Number.isFinite(rawChunk) ? Math.min(Math.max(Math.floor(rawChunk), 1), 5000) : 500;
   for (let i = 0; i < audience.length; i += CHUNK) {
     const slice = audience.slice(i, i + CHUNK);
     db.transaction((tx) => {

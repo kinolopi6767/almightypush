@@ -16,7 +16,9 @@ import { emitWebhookEvent } from "@pushpanel/core";
 
 export const MAX_ATTEMPTS = 3;
 // 1M scale: 500/batch = 1M queued in ~200 batches vs 10k batches at 100. Env tunable for AWS t2.micro (100) vs 4GB VPS (1000)
-const BATCH_SIZE = Math.min(Math.max(Number(process.env.WORKER_BATCH_SIZE ?? 500), 50), 2000);
+// Guard: NaN env (e.g. WORKER_BATCH_SIZE=abc) must fall back instead of poisoning .limit(NaN).
+const rawBatch = Number(process.env.WORKER_BATCH_SIZE ?? 500);
+const BATCH_SIZE = Number.isFinite(rawBatch) ? Math.min(Math.max(Math.floor(rawBatch), 50), 2000) : 500;
 /** retry backoff: 30s * 2^(attempts-1), capped at 1h */
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 3_600_000;

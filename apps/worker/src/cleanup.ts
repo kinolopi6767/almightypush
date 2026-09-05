@@ -89,8 +89,11 @@ export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>,
   const lastPrune = readSetting(db, "last_prune_at");
   if (markerIsRecent(lastPrune, now.getTime(), 24 * 60 * 60 * 1000)) return { deliveries: 0, events: 0 };
 
-  const delDays = Number(readSetting(db, "retention_deliveries_days") ?? process.env.RETENTION_DELIVERIES_DAYS ?? 7);
-  const evtDays = Number(readSetting(db, "retention_events_days") ?? process.env.RETENTION_EVENTS_DAYS ?? 30);
+  const rawDel = Number(readSetting(db, "retention_deliveries_days") ?? process.env.RETENTION_DELIVERIES_DAYS ?? 7);
+  const rawEvt = Number(readSetting(db, "retention_events_days") ?? process.env.RETENTION_EVENTS_DAYS ?? 30);
+  // Guard: corrupt setting/env ("abc" -> NaN) must not silently disable pruning and grow disk unbounded.
+  const delDays = Number.isFinite(rawDel) ? rawDel : 7;
+  const evtDays = Number.isFinite(rawEvt) ? rawEvt : 30;
   const runsCutoff = new Date(now.getTime() - 90 * 86_400_000).toISOString(); // automation/journey run history: 90d
   let prunedDel = 0;
   let prunedEvt = 0;
