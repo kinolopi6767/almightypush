@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashPassword, verifyPassword } from "../src/index.js";
+import { hashPassword, verifyPassword, verifyPasswordOrDummy } from "../src/index.js";
 
 describe("password hashing (argon2id)", () => {
   it("hashes and verifies", async () => {
@@ -15,5 +15,16 @@ describe("password hashing (argon2id)", () => {
 
   it("rejects garbage hashes without throwing", async () => {
     expect(await verifyPassword("not-a-hash", "x")).toBe(false);
+  });
+
+  it("verifyPasswordOrDummy passes through real hashes", async () => {
+    const hash = await hashPassword("timing-safe");
+    expect(await verifyPasswordOrDummy(hash, "timing-safe")).toBe(true);
+    expect(await verifyPasswordOrDummy(hash, "wrong")).toBe(false);
+  });
+
+  it("verifyPasswordOrDummy returns false (not throw) for missing hashes", async () => {
+    expect(await verifyPasswordOrDummy(null, "x")).toBe(false);
+    expect(await verifyPasswordOrDummy(undefined, "x")).toBe(false);
   });
 });

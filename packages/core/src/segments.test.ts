@@ -125,4 +125,17 @@ describe("compileSegmentWhere", () => {
       }),
     ).not.toThrow();
   });
+
+  it("rejects non-numeric opened_campaign / campaign_total_opens values", () => {
+    expect(
+      normalizeRules({ groups: [{ logic: "AND", conditions: [{ field: "opened_campaign", op: "equals", value: "abc" }] }] }),
+    ).toBeNull();
+    expect(
+      normalizeRules({ groups: [{ logic: "AND", conditions: [{ field: "campaign_total_opens", op: "gte", value: "abc" }] }] }),
+    ).toBeNull();
+    // Numeric strings are coerced so the compiler never sees NaN.
+    expect(
+      normalizeRules({ groups: [{ logic: "AND", conditions: [{ field: "opened_campaign", op: "equals", value: "42" }] }] }),
+    ).toEqual({ groups: [{ logic: "AND", conditions: [{ field: "opened_campaign", op: "equals", value: 42 }] }] });
+  });
 });
