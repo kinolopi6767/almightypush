@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { users } from "@pushpanel/db/schema";
-import { verifyPassword, verifyTotp } from "@pushpanel/core";
+import { verifyPasswordOrDummy, verifyTotp } from "@pushpanel/core";
 import { clientIp, envRateLimit, rateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 
@@ -50,10 +50,14 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
     .from(users)
     .where(eq(users.email, email))
     .limit(1);
-  if (!user?.password_hash) return { error: "Invalid email, password or code" };
-  if (!(await verifyPassword(user.password_hash, parsed.data.password))) {
+  // Timing-equalized: a missing account costs one argon2 verify, same as a
+  // wrong password, so emails can't be enumerated by latency.
+  if (!(await verifyPasswordOrDummy(user?.password_hash, parsed.data.password))) {
     return { error: "Invalid email, password or code" };
   }
+  // verifyPasswordOrDummy only returns true with a real stored hash, so the
+  // account exists here (the guard is for the type-checker).
+  if (!user) return { error: "Invalid email, password or code" };
   if (user.totp_enabled && !verifyTotp(decryptTotpSecret(user.totp_secret), parsed.data.totp ?? "")) {
     return { error: "Invalid email, password or code" };
   }
@@ -102,11 +106,11 @@ export async function checkTotpAction(_prev: TotpCheckState, formData: FormData)
     .from(users)
     .where(eq(users.email, email))
     .limit(1);
-  if (!user?.password_hash) return { error: "Invalid email or password" };
-  const ok = await verifyPassword(user.password_hash, parsed.data.password);
+  // Timing-equalized like loginAction above (no user enumeration by latency).
+  const ok = await verifyPasswordOrDummy(user?.password_hash, parsed.data.password);
   if (!ok) return { error: "Invalid email or password" };
 
-  return { needsTotp: Boolean(user.totp_enabled) };
+  return { needsTotp: Boolean(user?.totp_enabled) };
 }
 
 export async function logoutAction() {

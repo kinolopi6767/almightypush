@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { verifyPassword, verifyTotp } from "@pushpanel/core";
+import { verifyPasswordOrDummy, verifyTotp } from "@pushpanel/core";
 import { decryptTotpSecret } from "@/lib/totp-crypto";
 import { db } from "@/lib/db";
 import { users } from "@pushpanel/db/schema";
@@ -44,9 +44,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .where(eq(users.email, parsed.data.email.toLowerCase()))
           .limit(1);
 
-        if (!user?.password_hash) return null;
-        const ok = await verifyPassword(user.password_hash, parsed.data.password);
-        if (!ok) return null;
+        if (!(await verifyPasswordOrDummy(user?.password_hash, parsed.data.password))) return null;
+        // Only a real stored hash passes above, so the account exists here.
+        if (!user) return null;
 
         // Two-factor: the code must be present and valid when enabled.
         if (user.totp_enabled) {
@@ -84,9 +84,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.role = (token.role as string) ?? "owner";
         const [row] = await db
-          .select({ workspaceId: users.workspace_id, password_hash: users.password_hash })
+          .select({ workspaceId: users.workspace_id, password_hash: users.password_hash, role: users.role })
           .from(users)
           .where(eq(users.id, Number(token.id)))
           .limit(1);
@@ -97,6 +96,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!row || token.cv !== credentialVersionOf({ password_hash: row.password_hash })) {
           return { ...session, user: undefined, expires: session.expires } as unknown as typeof session;
         }
+        // Fail closed on role: the live DB row is authoritative (demotions
+        // apply immediately), the JWT is fallback, and a role-less session is
+        // a viewer — never an owner.
+        session.user.role = row?.role ?? (token.role as string) ?? "viewer";
         session.user.workspaceId = row?.workspaceId != null ? String(row.workspaceId) : null;
       }
       return session;

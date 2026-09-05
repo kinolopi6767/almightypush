@@ -58,15 +58,33 @@ const nextConfig: NextConfig = {
             ].join("; "),
           },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          // NOTE: no global Cross-Origin-Resource-Policy — CORP: same-origin
+          // would break legitimate cross-site loads of the public SDK
+          // (/sdk/* script), PWA icons/manifest and LP landing assets.
+          // Same-origin framing is still enforced via CSP frame-ancestors.
+        ],
+      },
+      {
+        // App surfaces (panel + auth + API): isolate browsing context and
+        // block cross-origin embedding of sensitive responses.
+        source: "/dashboard/:path*",
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
         ],
       },
       {
-        // SDK is served unversioned — a year-long immutable cache would pin
-        // visitor browsers to whatever engine shipped when they first hit
-        // the snippet. Revalidate hourly; SW stays must-revalidate.
+        source: "/api/:path*",
+        headers: [{ key: "Cross-Origin-Resource-Policy", value: "same-origin" }],
+      },
+      {
+        // Public embeddables must load cross-site: the customer-site SDK
+        // script, PWA manifest/icons and LP landing pages.
         source: "/sdk/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" }],
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" },
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
+        ],
       },
       {
         source: "/sw.js",

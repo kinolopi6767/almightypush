@@ -22,7 +22,7 @@
     "@pushpanel/core": "workspace:*",
     "@pushpanel/db": "workspace:*",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.44.0",
+    "drizzle-orm": "^0.45.2",
     "pino": "^9.6.0",
     "rss-parser": "^3.13.0"
   },

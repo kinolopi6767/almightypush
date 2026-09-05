@@ -34,7 +34,8 @@ const createCampaignSchema = z.object({
 });
 
 function requireCampaignRole(role: string | undefined): string | null {
-  const r = (role ?? "owner").toLowerCase();
+  // Fail closed: a role-less session is treated as viewer (read-only).
+  const r = (role ?? "viewer").toLowerCase();
   if (["viewer"].includes(r)) return "Viewers cannot create or manage campaigns";
   return null;
 }

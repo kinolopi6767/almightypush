@@ -17,7 +17,7 @@
     "@pushpanel/core": "workspace:*",
     "@pushpanel/db": "workspace:*",
     "clsx": "^2.1.1",
-    "drizzle-orm": "^0.44.0",
+    "drizzle-orm": "^0.45.2",
     "next": "^15.3.0",
     "next-auth": "^5.0.0-beta.29",
     "next-themes": "^0.4.4",

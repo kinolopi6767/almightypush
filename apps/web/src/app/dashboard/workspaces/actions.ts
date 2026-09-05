@@ -59,7 +59,8 @@ export async function switchWorkspaceAction(workspaceId: number) {
   // move between workspaces. Invited members (admin/editor/viewer) must stay
   // in the workspace they were invited to — otherwise any invited user could
   // reassign themselves into an unrelated client workspace (IDOR).
-  if ((session.user.role ?? "owner").toLowerCase() !== "owner") {
+  // Fail closed: a role-less session is treated as non-owner.
+  if ((session.user.role ?? "viewer").toLowerCase() !== "owner") {
     return { error: "Only the workspace owner can switch workspaces" };
   }
   const [ws] = db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, wsId)).limit(1).all();

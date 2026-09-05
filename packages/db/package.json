@@ -30,7 +30,7 @@
     "@pushpanel/core": "workspace:*",
     "better-sqlite3": "^12.2.0",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.44.0"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@pushpanel/tsconfig": "workspace:*",

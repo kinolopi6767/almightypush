@@ -17,3 +17,20 @@ export async function verifyPassword(hash: string, password: string): Promise<bo
     return false;
   }
 }
+
+/**
+ * Timing-safe credential check for login paths. When the account does not
+ * exist (or has no password), verifying against a fixed dummy hash keeps the
+ * response latency indistinguishable from a real password mismatch, so
+ * valid vs. invalid emails cannot be told apart by timing.
+ */
+const DUMMY_LOGIN_HASH =
+  "$argon2id$v=19$m=65536,t=3,p=4$QOeiGs3Yh5PW+C+X+6ksBA$3COSiBvl8VN5VOHqG44uFb+hTUxuOhXDUAeGbMPdCDM";
+
+export async function verifyPasswordOrDummy(storedHash: string | null | undefined, password: string): Promise<boolean> {
+  if (!storedHash) {
+    await verifyPassword(DUMMY_LOGIN_HASH, password);
+    return false;
+  }
+  return verifyPassword(storedHash, password);
+}

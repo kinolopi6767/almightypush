@@ -8,6 +8,17 @@ node_modules
 .git
 data
 **/data
+# Secrets must never bake into image layers (layers persist in registries
+# even when the running container overrides env). .env itself was already
+# ignored; also cover suffixed variants, keys/certs and local overrides.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets
+**/secrets
 Dockerfile
 docker-compose.yml

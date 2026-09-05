@@ -107,17 +107,24 @@ export function rateLimitHeaders(result: RateLimitResult, limit: number): Record
  * Uses the RIGHTMOST X-Forwarded-For entry: proxies append the real client
  * address, so the leftmost entry is attacker-controlled (spoofable per
  * request). The last entry is the one our trusted proxy actually saw.
+ *
+ * Values must parse as an IP (v4/v6) or hostname token — garbage is treated
+ * as "unknown" so random strings can't spray buckets past the memory cap.
+ * NOTE: the edge proxy must OVERWRITE X-Forwarded-For/X-Real-IP (e.g. nginx
+ * `proxy_set_header X-Real-IP $remote_addr`), never append-or-pass-through,
+ * or clients can rotate buckets with forged headers.
  */
+const IP_LIKE = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+(?:%[0-9a-zA-Z._-]+)?|[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,252}[a-zA-Z0-9])?)$/;
 export function clientIp(headers: Headers): string {
   if (process.env.TRUST_PROXY !== "1") return "unknown";
   const fwd = headers.get("x-forwarded-for");
   if (fwd) {
     const parts = fwd.split(",").map((p) => p.trim()).filter(Boolean);
     const last = parts[parts.length - 1];
-    if (last) return last;
+    if (last && IP_LIKE.test(last)) return last;
   }
-  const real = headers.get("x-real-ip");
-  if (real) return real;
+  const real = headers.get("x-real-ip")?.trim();
+  if (real && IP_LIKE.test(real)) return real;
   return "unknown";
 }
 

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, domains, segments } from "@pushpanel/db/schema";
 import { requireApiKey, domainAllowed } from "@/lib/api-auth";
+import { rateLimitWithHeaders, envRateLimit } from "@/lib/rate-limit";
 import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,21 @@ function isValidHttpUrl(value: string): boolean {
 export async function POST(req: Request) {
   const auth = requireApiKey(req.headers);
   if (!auth.ok) return corsJson({ ok: false, error: auth.error }, { status: auth.status });
+
+  // Per-workspace campaign-creation throttle (in addition to the per-key
+  // 300/min in requireApiKey): a runaway loop must not bloat the queue with
+  // thousands of campaigns. Internal automation enqueue paths bypass this
+  // route, so welcome/drip flows are unaffected.
+  if (auth.ok) {
+    const rlCreate = rateLimitWithHeaders(
+      `send:create:${auth.context.workspaceId}`,
+      envRateLimit("SEND_CREATE_RPM", 120),
+      60_000,
+    );
+    if (!rlCreate.allowed) {
+      return corsJson({ ok: false, error: "Too many campaigns — slow down" }, { status: 429 });
+    }
+  }
 
   let body: SendBody;
   try {

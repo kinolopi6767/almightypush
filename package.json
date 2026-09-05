@@ -37,6 +37,10 @@
     "vitest": "^2.1.8"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "@node-rs/argon2", "esbuild", "sharp"]
+    "onlyBuiltDependencies": ["better-sqlite3", "@node-rs/argon2", "esbuild", "sharp"],
+    "overrides": {
+      "postcss": "^8.5.28",
+      "sharp": "^0.35.4"
+    }
   }
 }

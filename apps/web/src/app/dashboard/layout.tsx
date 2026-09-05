@@ -22,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const displayName = session.user.name ?? session.user.email ?? "Account";
   const email = session.user.email ?? "";
-  const role = (session.user.role ?? "owner").toLowerCase();
+  const role = (session.user.role ?? "viewer").toLowerCase();
   // Premium: resolve workspace name for the switcher (fallback to ID)
   let workspaceName: string | null = null;
   if (session.user.workspaceId) {

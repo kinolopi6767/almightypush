@@ -8,6 +8,7 @@ import { assertPublicHttpUrl, createCipher, isValidTimezone, parseAutomationConf
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
 import { enqueueAutomationCampaign } from "@pushpanel/db";
+import { requestOriginAllowed } from "@/lib/subscribe-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,13 @@ const bodySchema = z.object({
   device: z.string().trim().max(40).optional().or(z.literal("")),
   browser: z.string().trim().max(40).optional().or(z.literal("")),
   os: z.string().trim().max(40).optional().or(z.literal("")),
-  subscribeUrl: z.string().trim().max(500).optional().or(z.literal("")),
+  subscribeUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((u) => u === "" || /^https?:\/\/[^/\s]+\//.test(u) || /^https?:\/\/[^/\s]+$/.test(u), "subscribeUrl must be an http(s) URL")
+    .optional()
+    .or(z.literal("")),
   city: z.string().trim().max(80).optional().or(z.literal("")),
   timezone: z.string().trim().max(64).optional().or(z.literal("")),
   locale: z.string().trim().max(20).optional().or(z.literal("")),
@@ -203,67 +210,6 @@ export async function POST(req: Request) {
   });
 
   return corsJson({ ok: true, id: subscriberId });
-}
-
-/**
- * Origin enforcement for the subscribe endpoint (m9):
- * - When the browser sends an `Origin` header (all cross-origin POSTs do),
- *   it is the strongest signal: the subscribing page must live on the
- *   domain's own host (or a subdomain) or on the panel's own host (the
- *   built-in sandbox demo / self-hosted sites). A site on any other origin
- *   cannot forge this from a browser.
- * - When `Origin` is absent (older clients, non-browser callers), fall back
- *   to validating the client-supplied `subscribe_url` against the same sets.
- *   Such callers can always fabricate the URL, but they are bounded by the
- *   global per-domain rate window above.
- */
-function requestOriginAllowed(req: Request, subscribeUrl: string, domainName: string): boolean {
-  const name = domainName.toLowerCase().replace(/^\./, "");
-  const appUrlHost = appUrlHostname();
-  const host = req.headers.get("host")?.split(":")[0]?.toLowerCase() ?? null;
-
-  const origin = req.headers.get("origin");
-  if (origin) {
-    try {
-      const originHost = new URL(origin).hostname.toLowerCase();
-      // Browser-attested origin: the subscribing page's host must be the
-      // domain itself (or a subdomain), the panel's fixed APP_URL host, or
-      // the panel host the request is already hitting (same-origin sandbox
-      // demo). `host` is safe in THIS branch only: a browser cannot forge
-      // Origin to match an attacker-chosen Host unless the page genuinely
-      // runs on that host.
-      for (const allowed of [name, appUrlHost, host]) {
-        if (allowed && (originHost === allowed || originHost.endsWith(`.${allowed}`))) return true;
-      }
-    } catch {
-      return false;
-    }
-    return false;
-  }
-
-  // No Origin (non-browser / legacy callers): the request Host is fully
-  // attacker-controlled, so only the domain name and APP_URL may vouch.
-  if (!subscribeUrl) return false;
-  try {
-    const hostname = new URL(subscribeUrl).hostname.toLowerCase();
-    for (const allowed of [name, appUrlHost]) {
-      if (allowed && (hostname === allowed || hostname.endsWith(`.${allowed}`))) return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
-/** APP_URL origin hostname, when the deployer fixed the panel's public URL. */
-function appUrlHostname(): string | null {
-  const url = process.env.APP_URL;
-  if (!url) return null;
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
 }
 
 /** M4/C8: event-driven welcome pushes + drip sequences — one campaign per active automation. */

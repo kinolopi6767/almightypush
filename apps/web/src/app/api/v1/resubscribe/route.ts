@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "@/lib/rate-limit";
 import { domains, subscribers } from "@pushpanel/db/schema";
 import { assertPublicHttpUrl, createCipher, sha256Hex } from "@pushpanel/core";
+import { requestOriginAllowed } from "@/lib/subscribe-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,14 @@ const bodySchema = z.object({
   domainId: z.coerce.number().int().positive(),
   /** Previous endpoint when migrating a rotated subscription (SW pushsubscriptionchange). */
   oldEndpoint: z.string().url().max(2048).optional(),
+  /** Page URL for the no-Origin fallback check (same contract as subscribe). */
+  subscribeUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((u) => u === "" || /^https?:\/\/[^/\s]+/.test(u), "subscribeUrl must be an http(s) URL")
+    .optional()
+    .or(z.literal("")),
   subscription: z.object({
     endpoint: z
       .string()
@@ -57,8 +66,14 @@ export async function POST(req: Request) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 120) });
   }
 
-  const [domain] = db.select({ id: domains.id }).from(domains).where(and(eq(domains.id, domainId), eq(domains.status, "active"))).limit(1).all();
+  const [domain] = db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.id, domainId), eq(domains.status, "active"))).limit(1).all();
   if (!domain) return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
+
+  // Same origin discipline as subscribe: without it any site could mint
+  // subscribers for someone else's domain from visitors' browsers.
+  if (!requestOriginAllowed(req, parsed.data.subscribeUrl ?? "", domain.name)) {
+    return corsJson({ ok: false, error: "subscribe_url does not match the domain" }, { status: 403 });
+  }
 
   const cipher = createCipher(process.env.APP_ENC_KEY);
   const newTokenEnc = cipher.encrypt(JSON.stringify(subscription));
@@ -112,8 +127,14 @@ export async function POST(req: Request) {
       })
       .run();
     return corsJson({ ok: true, created: true });
-  } catch {
-    return corsJson({ ok: true, deduped: true });
+  } catch (e) {
+    // Only the concurrent-insert race is success-by-definition. Any other
+    // failure (disk full, locked DB, cipher misconfig) must surface as a
+    // 500 — swallowing it would report "subscribed" while storing nothing.
+    if (e instanceof Error && /UNIQUE constraint failed/i.test(e.message)) {
+      return corsJson({ ok: true, deduped: true });
+    }
+    return corsJson({ ok: false, error: "Resubscribe failed" }, { status: 500 });
   }
 }
 
