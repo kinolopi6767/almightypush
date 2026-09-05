@@ -26,8 +26,15 @@ export async function GET(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       // Clamp the resume cursor: negative/garbage Last-Event-ID must not
-      // replay history from id 1.
-      let cursor = Math.max(0, Number(req.headers.get("last-event-id")) || 0);
+      // replay history from id 1. On a FIRST connect (no resume header) the
+      // cursor starts at the newest event — replaying the entire history
+      // would take hours to reach "live" on a large workspace while dumping
+      // years-old rows into a feed that shows only the last few.
+      const resumeHeader = Number(req.headers.get("last-event-id"));
+      const hasResume = Number.isFinite(resumeHeader) && resumeHeader > 0;
+      let cursor = hasResume
+        ? resumeHeader
+        : (db.select({ max: sql<number>`coalesce(max(${events.id}), 0)` }).from(events).get()?.max ?? 0);
       let timer: ReturnType<typeof setInterval> | null = null;
       let closed = false;
       let consecutiveErrors = 0;

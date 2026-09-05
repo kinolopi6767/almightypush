@@ -8,9 +8,12 @@ import { signInViaUi } from "./helpers";
 
 test("metrics endpoint is authenticated (leaks internals otherwise)", async ({ request }) => {
   // Hardened: /api/metrics exposes DB path + error strings — anonymous
-  // requests must get 401; the authenticated dashboard consumes it directly.
-  const res = await request.get("/api/metrics");
-  expect(res.status()).toBe(401);
+  // requests must never see it. Defense in depth: middleware redirects
+  // anonymous requests to /login BEFORE the route's own 401 can even run;
+  // either way no metric payload may leak.
+  const res = await request.get("/api/metrics", { maxRedirects: 0 });
+  expect([401, 302, 307]).toContain(res.status());
+  if (res.status() === 401) expect(await res.text()).not.toContain("heap");
 });
 
 test("server status page renders live cards", async ({ page }) => {

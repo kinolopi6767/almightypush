@@ -1,7 +1,7 @@
 import { test } from "@playwright/test";
 import { signInViaUi } from "./helpers";
 
-const PAGES = [
+const PAGES: [string, string][] = [
   ["dashboard", "/dashboard"],
   ["domains", "/dashboard/domains"],
   ["campaigns", "/dashboard/campaigns"],
@@ -26,6 +26,8 @@ const PAGES = [
 test.describe.configure({ mode: "serial" });
 
 test("capture all pages", async ({ browser }) => {
+  // 38+ full-page captures with fixed settle waits — needs more than the 30s default.
+  test.setTimeout(240_000);
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await signInViaUi(page);
 

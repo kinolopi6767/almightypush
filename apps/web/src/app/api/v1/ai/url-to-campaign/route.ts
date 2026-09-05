@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { assertPublicHttpUrl } from "@pushpanel/core";
+import { assertPublicHttpUrl, ssrfDispatcher } from "@pushpanel/core";
 import { extractOpenGraph } from "@/lib/fetch-content";
 import { z } from "zod";
 
@@ -47,7 +47,8 @@ export async function POST(req: Request) {
         redirect: "manual",
         signal: controller.signal,
         headers: { accept: "text/html", "user-agent": "PushPanelBot/1.0" },
-      });
+        dispatcher: ssrfDispatcher(),
+      } as RequestInit);
       if ([301, 302, 303, 307, 308].includes(res.status)) {
         const location = res.headers.get("location");
         if (!location) return NextResponse.json({ ok: false, error: "Redirect without location" }, { status: 502 });

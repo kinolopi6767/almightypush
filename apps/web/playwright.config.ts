@@ -11,6 +11,12 @@ const dbPath = process.env.E2E_DB_PATH as string;
 
 const appEnv = {
   DATABASE_PATH: dbPath,
+  // Production requires a fixed panel URL (worker refuses to start without
+  // it; push payloads embed it). Setting it here also makes the subscribe
+  // origin gate behave exactly like production: the no-Origin fallback
+  // accepts subscribe_urls on the APP_URL host only — never the request's
+  // spoofable Host header.
+  APP_URL: "http://127.0.0.1:3100",
   // Auth.js requires an explicit secret outside interactive dev shells.
   AUTH_SECRET: "pushpanel-e2e-secret-change-me-0123456789abcdef",
   // Used by subscribe/domain routes to encrypt subscription + VAPID keys at rest.

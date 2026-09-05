@@ -101,7 +101,9 @@ export async function POST(req: Request) {
     .limit(1)
     .all();
 
-  if (!existing && activeSubscribers(domain.id) >= maxSubscribersPerDomain()) {
+  // Single count + cap check — was 3 full counts per subscribe (slow at 1M).
+  const currentActive = activeSubscribers(domain.id);
+  if (!existing && currentActive >= maxSubscribersPerDomain()) {
     // Bounded growth: a public endpoint can otherwise be fed forever.
     return corsJson({ ok: false, error: "This site has reached its subscriber limit" }, { status: 429 });
   }
@@ -183,7 +185,9 @@ export async function POST(req: Request) {
   if (!existing) {
     db.insert(events).values({ domain_id: domain.id, subscriber_id: subscriberId, type: "subscribed" }).run();
   }
-  db.update(domains).set({ subscribers_count: activeSubscribers(domain.id) }).where(eq(domains.id, domain.id)).run();
+  // Incrementally maintain counter instead of re-counting full table (1M+ scan)
+  const newCount = existing ? currentActive : currentActive + 1;
+  db.update(domains).set({ subscribers_count: newCount }).where(eq(domains.id, domain.id)).run();
 
   if (!existing) {
     fireWelcomeAutomations(domain.id, domain.workspace_id, subscriberId);
@@ -214,20 +218,22 @@ export async function POST(req: Request) {
  *   global per-domain rate window above.
  */
 function requestOriginAllowed(req: Request, subscribeUrl: string, domainName: string): boolean {
-  const pool = new Set<string>();
   const name = domainName.toLowerCase().replace(/^\./, "");
-  pool.add(name);
-  const host = req.headers.get("host")?.split(":")[0]?.toLowerCase();
-  if (host) pool.add(host);
   const appUrlHost = appUrlHostname();
-  if (appUrlHost) pool.add(appUrlHost);
+  const host = req.headers.get("host")?.split(":")[0]?.toLowerCase() ?? null;
 
   const origin = req.headers.get("origin");
   if (origin) {
     try {
       const originHost = new URL(origin).hostname.toLowerCase();
-      for (const allowed of pool) {
-        if (originHost === allowed || originHost.endsWith(`.${allowed}`)) return true;
+      // Browser-attested origin: the subscribing page's host must be the
+      // domain itself (or a subdomain), the panel's fixed APP_URL host, or
+      // the panel host the request is already hitting (same-origin sandbox
+      // demo). `host` is safe in THIS branch only: a browser cannot forge
+      // Origin to match an attacker-chosen Host unless the page genuinely
+      // runs on that host.
+      for (const allowed of [name, appUrlHost, host]) {
+        if (allowed && (originHost === allowed || originHost.endsWith(`.${allowed}`))) return true;
       }
     } catch {
       return false;
@@ -235,11 +241,13 @@ function requestOriginAllowed(req: Request, subscribeUrl: string, domainName: st
     return false;
   }
 
+  // No Origin (non-browser / legacy callers): the request Host is fully
+  // attacker-controlled, so only the domain name and APP_URL may vouch.
   if (!subscribeUrl) return false;
   try {
     const hostname = new URL(subscribeUrl).hostname.toLowerCase();
-    for (const allowed of pool) {
-      if (hostname === allowed || hostname.endsWith(`.${allowed}`)) return true;
+    for (const allowed of [name, appUrlHost]) {
+      if (allowed && (hostname === allowed || hostname.endsWith(`.${allowed}`))) return true;
     }
   } catch {
     return false;

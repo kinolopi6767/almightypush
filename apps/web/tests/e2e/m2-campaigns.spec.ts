@@ -123,6 +123,7 @@ test("future campaign stays scheduled until its time, then cancels", async ({ pa
   ).toEqual({ n: 0 });
 
   // --- cancel it ---
+  page.once("dialog", (d) => void d.accept()); // the panel confirms destructive cancels
   await page.getByRole("button", { name: /cancel campaign/i }).click();
   await expect(page.getByText("Campaign cancelled.")).toBeVisible();
   await page.reload();

@@ -27,47 +27,59 @@ export async function GET(request: Request) {
   const filter = parseSubscriberFilters(url.searchParams);
   const where = and(...subscriberConditions(filter, wsId));
 
-  const rows = db
-    .select({
-      id: subscribers.id,
-      browser: subscribers.browser,
-      os: subscribers.os,
-      device: subscribers.device,
-      country: subscribers.country,
-      state: subscribers.state,
-      subscribe_url: subscribers.subscribe_url,
-      subscribe_at: subscribers.subscribe_at,
-      last_active_at: subscribers.last_active_at,
-      unsubscribed_at: subscribers.unsubscribed_at,
-      domain_name: domains.name,
-    })
-    .from(subscribers)
-    .leftJoin(domains, sql`${domains.id} = ${subscribers.domain_id}`)
-    .where(where)
-    .orderBy(subscribers.id)
-    .all();
-
-  // Stream to avoid OOM on 1M subs — batch 1000 rows per pull
+  // True keyset pagination: rows are pulled from SQLite in bounded batches
+  // INSIDE the stream — materializing the full result first (`.all()`) would
+  // OOM the container at the advertised 1M scale.
   const header = "id,browser,os,device,country,state,domain,subscribe_url,subscribe_at,last_active_at,unsubscribed_at\n";
   const encoder = new TextEncoder();
   // csvCell is formula-injection-safe (see packages/core/csv.ts)
   const esc = (v: string | number | null | undefined): string => csvCell(v === null || v === undefined ? "" : String(v));
-  let offset = 0;
+  const batchSize = 1000;
+  let lastId = 0;
+  let sentHeader = false;
+  let done = false;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
-      if (offset === 0) {
-        controller.enqueue(encoder.encode(header));
+      if (done) {
+        controller.close();
+        return;
       }
-      const batchSize = 1000;
-      const batch = rows.slice(offset, offset + batchSize);
+      if (!sentHeader) {
+        controller.enqueue(encoder.encode(header));
+        sentHeader = true;
+      }
+      const batch = db
+        .select({
+          id: subscribers.id,
+          browser: subscribers.browser,
+          os: subscribers.os,
+          device: subscribers.device,
+          country: subscribers.country,
+          state: subscribers.state,
+          subscribe_url: subscribers.subscribe_url,
+          subscribe_at: subscribers.subscribe_at,
+          last_active_at: subscribers.last_active_at,
+          unsubscribed_at: subscribers.unsubscribed_at,
+          domain_name: domains.name,
+        })
+        .from(subscribers)
+        .leftJoin(domains, sql`${domains.id} = ${subscribers.domain_id}`)
+        .where(and(where, sql`${subscribers.id} > ${lastId}`))
+        .orderBy(subscribers.id)
+        .limit(batchSize)
+        .all();
       if (batch.length === 0) {
+        done = true;
         controller.close();
         return;
       }
       const chunk = batch.map((r) => [r.id, r.browser, r.os, r.device, r.country, r.state, r.domain_name, r.subscribe_url, r.subscribe_at, r.last_active_at, r.unsubscribed_at].map(esc).join(",")).join("\n");
       controller.enqueue(encoder.encode(chunk + "\n"));
-      offset += batch.length;
-      if (offset >= rows.length) controller.close();
+      lastId = batch[batch.length - 1]!.id;
+      if (batch.length < batchSize) {
+        done = true;
+        controller.close();
+      }
     },
   });
 
