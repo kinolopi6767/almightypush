@@ -14,36 +14,36 @@ export const metadata = { title: "Setup" };
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
-  const [row] = await db.select({ value: count() }).from(users);
-  if ((row?.value ?? 0) > 0) redirect("/login");
+ const [row] = await db.select({ value: count() }).from(users);
+ if ((row?.value ?? 0) > 0) redirect("/login");
 
-  return (
-    <AuthCard
-      title="Set up PushPanel"
-      description="Create the owner account. Only available on first run."
-      action={setupAction}
-      submitLabel="Finish setup"
-      onSuccess="/login"
-    >
-      <div className="space-y-2">
-        <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" required autoComplete="name" placeholder="Jane Doe" />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          required
-          autoComplete="new-password"
-          placeholder="At least 10 characters"
-        />
-      </div>
-    </AuthCard>
-  );
+ return (
+  <AuthCard
+   title="Set up PushPanel"
+   description="Create the owner account. Only available on first run."
+   action={setupAction}
+   submitLabel="Finish setup"
+   onSuccess="/login"
+  >
+   <div className="space-y-2">
+    <Label htmlFor="name">Name</Label>
+    <Input id="name" name="name" required autoComplete="name" placeholder="Jane Doe" />
+   </div>
+   <div className="space-y-2">
+    <Label htmlFor="email">Email</Label>
+    <Input id="email" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
+   </div>
+   <div className="space-y-2">
+    <Label htmlFor="password">Password</Label>
+    <Input
+     id="password"
+     name="password"
+     type="password"
+     required
+     autoComplete="new-password"
+     placeholder="At least 10 characters"
+    />
+   </div>
+  </AuthCard>
+ );
 }

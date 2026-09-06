@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireAiAccess } from "@/lib/ai-guard";
 import { z } from "zod";
 import { youResearch, youSearch } from "@pushpanel/core";
 import { getYouConfig } from "@/lib/secrets";
@@ -21,8 +21,8 @@ const bodySchema = z.object({
  * to heuristic when not configured. Free credits cover ~16k lite calls.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const gate = await requireAiAccess(req, { limit: 20 });
+  if (!gate.ok) return gate.response;
 
   let parsed: z.infer<typeof bodySchema>;
   try {

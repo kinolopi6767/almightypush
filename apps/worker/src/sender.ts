@@ -166,8 +166,11 @@ export async function runSendCycle(
 
 /** Revive deliveries stuck in `sending` past the stale threshold (crashed worker). */
 function requeueStaleClaims(db: PushDb, now: number): void {
+  // Preserve next_attempt_at: a delivery that was on 30s/60s backoff must not
+  // become immediately due on revive, or every restart causes a thundering
+  // herd of retries at once. Only rows with no scheduled retry become due.
   db.update(deliveries)
-    .set({ status: "queued", claimed_at: null, next_attempt_at: null })
+    .set({ status: "queued", claimed_at: null })
     .where(and(eq(deliveries.status, "sending"), isNotNull(deliveries.claimed_at), sql`${deliveries.claimed_at} <= ${now - STALE_CLAIM_MS}`))
     .run();
 }

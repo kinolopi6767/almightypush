@@ -28,6 +28,15 @@ export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStat
     .all();
 
   for (const row of rows) {
+    // Claim scheduled→sending before resolving the audience: without this,
+    // two workers sharing the SQLite file both resolve and both mark done —
+    // a double-send once real SMTP delivery is plugged in.
+    const claimed = db
+      .update(emailCampaigns)
+      .set({ status: "sending" })
+      .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "scheduled")))
+      .run();
+    if (claimed.changes === 0) continue;
     const audience = resolveEmailAudience(db, row.workspace_id, row.audience_json);
     if (audience.length === 0) {
       db.update(emailCampaigns).set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: 0 }) }).where(eq(emailCampaigns.id, row.id)).run();

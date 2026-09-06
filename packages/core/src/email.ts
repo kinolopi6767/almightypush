@@ -23,13 +23,28 @@ export function renderBlocksToHtml(blocks: EmailBlock[]): string {
   for (const b of blocks) {
     // Scheme allowlist: zod's .url() accepts javascript:/data: — those must
     // never reach href/src, even in owner-authored content (stored-XSS
-    // latency when a real send path or preview lands).
+    // latency when a real send path or preview lands). URL-less block types
+    // (text/divider) render without a URL check; URL-bearing types require it.
+    if (b.type === "text") {
+      if (b.content) parts.push(`<p>${escapeHtml(b.content)}</p>`);
+      continue;
+    }
+    if (b.type === "divider") {
+      parts.push(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0" />`);
+      continue;
+    }
+    if (b.type === "social") {
+      if (b.content) parts.push(`<p style="text-align:center">${escapeHtml(b.content)}</p>`);
+      continue;
+    }
     if (!isSafeEmailUrl(b.url)) continue;
-    if (b.type === "hero" && b.url) parts.push(`<img src="${escapeHtml(b.url)}" style="width:100%;border-radius:8px" />`);
-    else if (b.type === "text") parts.push(`<p>${escapeHtml(b.content ?? "")}</p>`);
+    if (b.type === "hero" && b.url) parts.push(`<img src="${escapeHtml(b.url)}" alt="" style="width:100%;border-radius:8px" />`);
     else if (b.type === "button" && b.content && b.url) parts.push(`<a href="${escapeHtml(b.url)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">${escapeHtml(b.content)}</a>`);
-    else if (b.type === "divider") parts.push(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0" />`);
-    else if (b.type === "product" && b.content) parts.push(`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px">${escapeHtml(b.content)}</div>`);
+    else if (b.type === "product" && b.content) {
+      const label = escapeHtml(b.content);
+      if (b.url) parts.push(`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px"><a href="${escapeHtml(b.url)}">${label}</a></div>`);
+      else parts.push(`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px">${label}</div>`);
+    }
   }
   parts.push("</div>");
   return parts.join("\n");

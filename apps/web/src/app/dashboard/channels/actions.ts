@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { lpLinks, youtubeChannels } from "@pushpanel/db/schema";
 import { logAudit } from "@/lib/audit";
 
@@ -36,6 +37,7 @@ function channelTitleFromUrl(url: string): string {
 export async function createChannelAction(_prev: ChannelFormState | undefined, formData: FormData): Promise<ChannelFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const parsed = channelSchema.safeParse({
@@ -56,26 +58,62 @@ export async function createChannelAction(_prev: ChannelFormState | undefined, f
   }
 
   const code = makeCode();
-  db.insert(lpLinks)
-    .values({
-      workspace_id: workspaceId,
-      code,
-      target_url: parsed.data.channel_url,
-      prompt_text: parsed.data.prompt_text || null,
-      force_subscribe: parsed.data.force_subscribe,
-    })
-    .run();
-  db.insert(youtubeChannels)
-    .values({
-      workspace_id: workspaceId,
-      title: channelTitleFromUrl(parsed.data.channel_url),
-      channel_url: parsed.data.channel_url,
-      prompt_text: parsed.data.prompt_text || null,
-      force_subscribe: parsed.data.force_subscribe,
-      lp_code: code,
-      status: "active",
-    })
-    .run();
+  try {
+    db.insert(lpLinks)
+      .values({
+        workspace_id: workspaceId,
+        code,
+        target_url: parsed.data.channel_url,
+        prompt_text: parsed.data.prompt_text || null,
+        force_subscribe: parsed.data.force_subscribe,
+      })
+      .run();
+  } catch {
+    // UNIQUE collision on the random LP code — retry once with a fresh code
+    // instead of surfacing a 500.
+    const retryCode = makeCode();
+    try {
+      db.insert(lpLinks)
+        .values({
+          workspace_id: workspaceId,
+          code: retryCode,
+          target_url: parsed.data.channel_url,
+          prompt_text: parsed.data.prompt_text || null,
+          force_subscribe: parsed.data.force_subscribe,
+        })
+        .run();
+    } catch {
+      return { error: "Could not generate a unique link code — try again" };
+    }
+    return insertChannelRow(workspaceId, parsed.data.channel_url, parsed.data.prompt_text || null, parsed.data.force_subscribe, retryCode);
+  }
+  return insertChannelRow(workspaceId, parsed.data.channel_url, parsed.data.prompt_text || null, parsed.data.force_subscribe, code);
+}
+
+function insertChannelRow(
+  workspaceId: number,
+  channelUrl: string,
+  promptText: string | null,
+  forceSubscribe: number,
+  code: string,
+): ChannelFormState {
+  try {
+    db.insert(youtubeChannels)
+      .values({
+        workspace_id: workspaceId,
+        title: channelTitleFromUrl(channelUrl),
+        channel_url: channelUrl,
+        prompt_text: promptText,
+        force_subscribe: forceSubscribe,
+        lp_code: code,
+        status: "active",
+      })
+      .run();
+  } catch {
+    // Roll back the orphan LP link so a half-created channel leaves nothing behind.
+    db.delete(lpLinks).where(and(eq(lpLinks.code, code), eq(lpLinks.workspace_id, workspaceId))).run();
+    return { error: "Could not create channel — try again" };
+  }
   logAudit(db, { workspaceId, action: "channel.create", entityType: "channel", meta: { code } });
   revalidatePath("/dashboard/channels");
   return { ok: true };
@@ -84,6 +122,7 @@ export async function createChannelAction(_prev: ChannelFormState | undefined, f
 export async function toggleChannelAction(id: number): Promise<void> {
   const session = await auth();
   if (!session?.user?.workspaceId) return;
+  if (requireEditorRole(session.user.role)) return;
   const workspaceId = Number(session.user.workspaceId);
 
   const [row] = db
@@ -95,7 +134,7 @@ export async function toggleChannelAction(id: number): Promise<void> {
   if (!row) return;
 
   const status = row.status === "active" ? "paused" : "active";
-  db.update(youtubeChannels).set({ status }).where(eq(youtubeChannels.id, id)).run();
+  db.update(youtubeChannels).set({ status }).where(and(eq(youtubeChannels.id, id), eq(youtubeChannels.workspace_id, workspaceId))).run();
   logAudit(db, { workspaceId, action: "channel.toggle", entityType: "channel", entityId: id, meta: { status } });
   revalidatePath("/dashboard/channels");
 }
@@ -103,6 +142,7 @@ export async function toggleChannelAction(id: number): Promise<void> {
 export async function deleteChannelAction(id: number): Promise<void> {
   const session = await auth();
   if (!session?.user?.workspaceId) return;
+  if (requireEditorRole(session.user.role)) return;
   const workspaceId = Number(session.user.workspaceId);
 
   const [row] = db
@@ -113,7 +153,7 @@ export async function deleteChannelAction(id: number): Promise<void> {
     .all();
   if (!row) return;
 
-  db.delete(youtubeChannels).where(eq(youtubeChannels.id, id)).run();
+  db.delete(youtubeChannels).where(and(eq(youtubeChannels.id, id), eq(youtubeChannels.workspace_id, workspaceId))).run();
   if (row.lp_code) db.delete(lpLinks).where(and(eq(lpLinks.code, row.lp_code), eq(lpLinks.workspace_id, workspaceId))).run();
   logAudit(db, { workspaceId, action: "channel.delete", entityType: "channel", entityId: id });
   revalidatePath("/dashboard/channels");

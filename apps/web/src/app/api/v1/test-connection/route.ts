@@ -18,6 +18,17 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  // Connection tests reveal whether third-party secrets are configured and
+  // trigger outbound traffic — owner/admin only, rate-limited.
+  const role = (session.user as { role?: string }).role;
+  if (role !== "owner" && role !== "admin") {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+  const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
+  const rl = rateLimitWithHeaders(`test-conn:${session.user.id ?? clientIp(req.headers)}`, 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 10) });
+  }
 
   let parsed: z.infer<typeof bodySchema>;
   try {

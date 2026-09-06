@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { domains } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
 import { AUTOMATION_TYPES, MAX_DRIP_STEPS, automationPayloadSchema, dripStepSchema, newWebhookSecret } from "@pushpanel/core";
@@ -30,6 +31,7 @@ const createSchema = z.object({
 export async function createAutomationAction(_prev: AutomationFormState | undefined, formData: FormData): Promise<AutomationFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const parsed = createSchema.safeParse({
@@ -136,6 +138,7 @@ function safeParseRotation(json: string): RotationItem[] {
 export async function toggleAutomationAction(id: number): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { ok: false, error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { ok: false, error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const [row] = db
@@ -158,6 +161,7 @@ export async function toggleAutomationAction(id: number): Promise<{ ok: boolean;
 export async function runAutomationNowAction(id: number): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { ok: false, error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { ok: false, error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const [row] = db
@@ -178,6 +182,7 @@ export async function runAutomationNowAction(id: number): Promise<{ ok: boolean;
 export async function deleteAutomationAction(id: number): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { ok: false, error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { ok: false, error: "Viewers cannot create or manage content" };
 
   db.delete(automations)
     .where(and(eq(automations.id, id), eq(automations.workspace_id, Number(session.user.workspaceId))))

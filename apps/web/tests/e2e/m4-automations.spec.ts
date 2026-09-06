@@ -174,7 +174,7 @@ test("webhook trigger runs push_on_publish automation", async ({ page, request }
 
   const before = mock.received.length;
   const row = page
-    .locator(".rounded-xl.border.bg-card", { hasText: name })
+    .locator('[data-entity="automation"]', { hasText: name })
     .locator('[data-testid^="webhook-secret-"]');
   const secret = (await row.textContent()) ?? "";
   expect(secret.length).toBeGreaterThanOrEqual(16);
@@ -269,7 +269,7 @@ test("pause blocks both webhook and run-now; delete removes the automation", asy
     message: "Paused",
   });
 
-  const publishRow = page.locator(".rounded-xl.border.bg-card", { hasText: pauseName });
+  const publishRow = page.locator('[data-entity="automation"]', { hasText: pauseName });
   await publishRow.getByRole("button", { name: "Pause" }).click();
   await expect(publishRow.getByRole("button", { name: "Resume" })).toBeVisible();
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { translateText } from "@pushpanel/core";
 import { getAiConfig } from "@/lib/secrets";
+import { requireAiAccess } from "@/lib/ai-guard";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +12,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const gate = await requireAiAccess(req);
+  if (!gate.ok) return gate.response;
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());

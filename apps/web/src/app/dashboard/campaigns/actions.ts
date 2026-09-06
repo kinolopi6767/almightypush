@@ -230,6 +230,61 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
 }
 
 /**
+ * Retry failed deliveries: requeue a finished campaign's terminally-failed
+ * rows (provider 5xx, timeouts, rate-limit exhaustion) so the sender picks
+ * them up on the next cycle. Policy-suppressed rows (fatigue caps) are
+ * included — the operator explicitly asked for another attempt.
+ *
+ * Attempts reset to 0 so MAX_ATTEMPTS backoff starts fresh; in-flight rows
+ * (queued/sending) are untouched, and the campaign flips back to `sending`
+ * only from a terminal state (TOCTOU-guarded, like cancel).
+ */
+export async function retryFailedDeliveriesAction(campaignId: number): Promise<CampaignFormState> {
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in" };
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!workspaceId) return { error: "No workspace" };
+  const roleErr = requireCampaignRole(session.user.role);
+  if (roleErr) return { error: roleErr };
+
+  const [campaign] = db
+    .select({ id: campaigns.id, status: campaigns.status })
+    .from(campaigns)
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.workspace_id, workspaceId)))
+    .limit(1)
+    .all();
+  if (!campaign) return { error: "Campaign not found" };
+  if (!["done", "failed"].includes(campaign.status)) {
+    return { error: `Retry is available once the campaign finishes (state: ${campaign.status})` };
+  }
+
+  const requeued = db.transaction((tx) => {
+    const changed = tx
+      .update(deliveries)
+      .set({ status: "queued", attempts: 0, next_attempt_at: null, claimed_at: null, error: null })
+      .where(and(eq(deliveries.campaign_id, campaignId), eq(deliveries.status, "failed")))
+      .run();
+    if ((changed.changes ?? 0) > 0) {
+      tx.update(campaigns)
+        .set({ status: "sending" })
+        .where(and(eq(campaigns.id, campaignId), inArray(campaigns.status, ["done", "failed"])))
+        .run();
+    }
+    return changed.changes ?? 0;
+  });
+
+  if (requeued === 0) return { error: "No failed deliveries to retry" };
+  logAudit(db, {
+    workspaceId,
+    action: "campaign.retry",
+    entityType: "campaign",
+    entityId: campaignId,
+    meta: { retried: requeued },
+  });
+  return { ok: true, id: campaignId };
+}
+
+/**
  * Quick push (B8): duplicate a campaign's payload + audience and fire it
  * immediately, reusing the same domain, icon, image and action buttons.
  */

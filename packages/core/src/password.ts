@@ -2,6 +2,12 @@ import * as argon2 from "@node-rs/argon2";
 
 /** argon2id with sane defaults for interactive login (memory 64MB, time 3, parallelism 4). */
 export async function hashPassword(password: string): Promise<string> {
+  // Defense-in-depth: every entry point validates length via zod, but a
+  // programmatic caller passing megabytes would OOM the worker on argon2's
+  // 64MB memory cost. Fail fast instead.
+  if (typeof password !== "string" || password.length === 0 || password.length > 1024) {
+    throw new Error("Invalid password length");
+  }
   return argon2.hash(password, {
     algorithm: 2, // Argon2id
     memoryCost: 65536,

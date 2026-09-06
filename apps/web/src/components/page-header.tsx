@@ -1,31 +1,31 @@
 import type { ReactNode } from "react";
 
-/** Premium page header: editorial hierarchy + refined actions. */
+/** Console page head: eyebrow + title + description + actions, hairline below. */
 export function PageHeader({
-  title,
-  description,
-  actions,
-  children,
+ eyebrow,
+ title,
+ description,
+ actions,
+ children,
 }: {
-  title: ReactNode;
-  description?: ReactNode;
-  actions?: ReactNode;
-  children?: ReactNode;
+ eyebrow?: ReactNode;
+ title: ReactNode;
+ description?: ReactNode;
+ actions?: ReactNode;
+ children?: ReactNode;
 }) {
-  return (
-    <div className="rise">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-2">
-          <h1 className="text-[26px] font-semibold leading-none tracking-tight md:text-[28px]">{title}</h1>
-          {description && <p className="max-w-2xl text-[14px] leading-relaxed text-muted-foreground text-pretty">{description}</p>}
-          {children}
-        </div>
-        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2.5 pt-1">{actions}</div>}
-      </div>
-      <div
-        aria-hidden
-        className="mt-6 h-px premium-divider"
-      />
+ return (
+  <div className="enter">
+   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="min-w-0 space-y-1.5">
+     {eyebrow && <p className="page-eyebrow">{eyebrow}</p>}
+     <h1 className="page-title">{title}</h1>
+     {description && <p className="page-desc">{description}</p>}
+     {children}
     </div>
-  );
+    {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+   </div>
+   <hr aria-hidden className="divider mt-4" />
+  </div>
+ );
 }

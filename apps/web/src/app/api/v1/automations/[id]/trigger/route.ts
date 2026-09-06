@@ -20,11 +20,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: false, error: "Invalid automation id" }, { status: 400 });
   }
 
+  // Rate-limit BEFORE buffering the body: unbounded 1MB req.text() reads per
+  // request are a CPU/DB DoS vector, and HMAC verification must not be
+  // brute-forced at line rate.
+  const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
+  const ip = clientIp(req.headers);
+  const rlIp = rateLimitWithHeaders(`trigger:${ip}`, 60, 60_000);
+  if (!rlIp.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 60) });
+  }
+  const rlAll = rateLimitWithHeaders("trigger:all", 600, 60_000);
+  if (!rlAll.allowed) {
+    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlAll, 600) });
+  }
+
   const timestamp = Number(req.headers.get("x-pushpanel-timestamp") ?? "0");
   if (!timestamp || Math.abs(Date.now() - timestamp) > 5 * 60_000) {
     return NextResponse.json({ ok: false, error: "Stale or missing timestamp" }, { status: 401 });
   }
 
+  // Fail fast on declared size before buffering (req.text() already consumed
+  // memory by the time a post-hoc length check runs).
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > 1024 * 1024) {
+    return NextResponse.json({ ok: false, error: "Payload too large" }, { status: 413 });
+  }
   const body = await req.text();
   if (body.length > 1024 * 1024) {
     return NextResponse.json({ ok: false, error: "Payload too large" }, { status: 413 });

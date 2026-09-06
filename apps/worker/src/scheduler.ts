@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { campaigns, deliveries, events, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
 
@@ -31,6 +31,14 @@ interface CampaignRow {
 export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats {
   const stats: SchedulerStats = { campaignsStarted: 0, deliveriesQueued: 0, skipped: 0 };
   const nowIso = now.toISOString();
+
+  // Crash reaper: a `sending` campaign with zero queued/sending deliveries
+  // will never be picked up again (the due-query only matches `scheduled`,
+  // and finalize only visits campaigns touched by the current send cycle).
+  // This happens when the worker crashes between the scheduled→sending claim
+  // and the first delivery chunk. Mirror finalize semantics: done if anything
+  // was sent, failed otherwise — never touch cancelled/paused/draft.
+  reapStuckCampaigns(db, nowIso);
 
   const rows = db
     .select({
@@ -77,6 +85,35 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
     }
   }
   return stats;
+}
+
+function reapStuckCampaigns(db: PushDb, nowIso: string): void {
+  const stuck = db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.status, "sending"),
+        sql`NOT EXISTS (SELECT 1 FROM deliveries WHERE ${deliveries.campaign_id} = ${campaigns.id} AND ${deliveries.status} IN ('queued', 'sending'))`,
+      ),
+    )
+    .all();
+  for (const row of stuck) {
+    try {
+      const [sentRow] = db
+        .select({ value: count() })
+        .from(deliveries)
+        .where(and(eq(deliveries.campaign_id, row.id), eq(deliveries.status, "sent")))
+        .all();
+      const anySent = (sentRow?.value ?? 0) > 0;
+      db.update(campaigns)
+        .set({ status: anySent ? "done" : "failed", sent_at: nowIso })
+        .where(and(eq(campaigns.id, row.id), eq(campaigns.status, "sending")))
+        .run();
+    } catch {
+      void 0;
+    }
+  }
 }
 
 function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { queued: number; skipped: number } {

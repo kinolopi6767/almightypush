@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { emailCampaigns } from "@pushpanel/db/schema";
 import { renderBlocksToHtml, emailCampaignSchema } from "@pushpanel/core";
 import { and, eq } from "drizzle-orm";
@@ -13,6 +14,7 @@ export type EmailFormState = { ok?: boolean; error?: string; id?: number } | und
 export async function createEmailCampaignAction(_prev: EmailFormState, formData: FormData): Promise<NonNullable<EmailFormState>> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const blocksRaw = formData.get("blocks_json") as string | null;
@@ -61,6 +63,7 @@ export async function createEmailCampaignAction(_prev: EmailFormState, formData:
 export async function deleteEmailCampaignAction(id: number): Promise<void> {
   const session = await auth();
   if (!session?.user?.workspaceId) return;
+  if (requireEditorRole(session.user.role)) return;
   db.delete(emailCampaigns)
     .where(and(eq(emailCampaigns.id, id), eq(emailCampaigns.workspace_id, Number(session.user.workspaceId))))
     .run();

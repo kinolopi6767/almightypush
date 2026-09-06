@@ -27,4 +27,11 @@ describe("password hashing (argon2id)", () => {
     expect(await verifyPasswordOrDummy(null, "x")).toBe(false);
     expect(await verifyPasswordOrDummy(undefined, "x")).toBe(false);
   });
+
+  it("hashPassword rejects oversized input instead of burning argon2 memory", async () => {
+    await expect(hashPassword("x".repeat(1025))).rejects.toThrow();
+    // Boundary still works.
+    const hash = await hashPassword("x".repeat(1024));
+    expect(await verifyPassword(hash, "x".repeat(1024))).toBe(true);
+  });
 });

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireAiAccess } from "@/lib/ai-guard";
 import { assertPublicHttpUrl, ssrfDispatcher } from "@pushpanel/core";
 import { extractOpenGraph } from "@/lib/fetch-content";
 import { z } from "zod";
@@ -20,8 +20,8 @@ const MAX_REDIRECTS = 3;
  * address or exhaust memory (same discipline as /api/fetch-content).
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const gate = await requireAiAccess(req, { limit: 30 });
+  if (!gate.ok) return gate.response;
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());
@@ -73,10 +73,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Not an HTML page" }, { status: 415 });
   }
 
-  const body = await res!.arrayBuffer();
-  if (body.byteLength > MAX_BYTES) return NextResponse.json({ ok: false, error: "Page too large" }, { status: 413 });
-
-  const html = Buffer.from(body).toString("utf8").slice(0, MAX_BYTES);
+  // Stream with a hard cap (same discipline as /api/fetch-content): buffering
+  // the whole body via arrayBuffer() lets a hostile page OOM the server.
+  let html: string;
+  try {
+    const reader = res!.body?.getReader();
+    if (!reader) return NextResponse.json({ ok: false, error: "Empty page" }, { status: 502 });
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > MAX_BYTES) {
+          try { await reader.cancel(); } catch { /* noop */ }
+          return NextResponse.json({ ok: false, error: "Page too large" }, { status: 413 });
+        }
+        chunks.push(value);
+      }
+    }
+    const merged = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
+    html = Buffer.from(merged).toString("utf8").slice(0, MAX_BYTES);
+  } catch {
+    return NextResponse.json({ ok: false, error: "Fetch failed" }, { status: 502 });
+  }
   const og = extractOpenGraph(html);
 
   // Resolve og:image against the final URL after redirects.

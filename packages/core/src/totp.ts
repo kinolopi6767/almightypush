@@ -61,11 +61,20 @@ export function totpCode(secretB32: string, atMs: number = Date.now()): string {
 }
 
 /** RFC 6238 verification with a ±WINDOW step drift allowance. */
-export function verifyTotp(secretB32: string, code: string, atMs: number = Date.now()): boolean {
-  if (!code || !/^\d{6}$/.test(code)) return false;
+export function verifyTotp(secretB32: string | null | undefined, code: string, atMs: number = Date.now()): boolean {
+  if (!secretB32 || !code || !/^\d{6}$/.test(code)) return false;
+  let secret: Buffer;
+  try {
+    secret = base32Decode(secretB32);
+  } catch {
+    // Corrupt/legacy secret — fail closed (deny) instead of throwing a 500
+    // that would lock the user out with an unactionable error page.
+    return false;
+  }
+  if (secret.length === 0) return false;
   const counter = Math.floor(atMs / 1000 / STEP_SECONDS);
   for (let i = -WINDOW; i <= WINDOW; i++) {
-    if (safeEqual(hotp(base32Decode(secretB32), counter + i), code)) return true;
+    if (safeEqual(hotp(secret, counter + i), code)) return true;
   }
   return false;
 }

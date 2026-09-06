@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { generateTotpSecret, totpUri, verifyPassword, verifyTotp } from "@pushpanel/core";
 import { users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 import { decryptTotpSecret, encryptTotpSecret } from "@/lib/totp-crypto";
 
@@ -22,6 +24,9 @@ async function currentUser() {
 
 /** Stage 1: generate + persist a secret (not yet enabled). */
 export async function enableTfaStartAction(): Promise<NonNullable<TfaState>> {
+  if (!rateLimit(`tfa:${clientIp(await headers())}`, 10, 60_000)) {
+    return { error: "Too many attempts — try again later" };
+  }
   const user = await currentUser();
   if (!user) return { error: "Not signed in" };
   // Never clobber an active enrollment silently — an attacker with a stolen
@@ -39,8 +44,17 @@ export async function enableTfaStartAction(): Promise<NonNullable<TfaState>> {
 
 /** Stage 2: confirm the code read from the authenticator app. */
 export async function enableTfaConfirmAction(_prev: TfaState, formData: FormData): Promise<NonNullable<TfaState>> {
+  // TOTP codes are 6 digits — without a throttle this is brute-forceable
+  // (~26%/month at 30 tries/15min with a ±1-step window). 10/min/IP plus the
+  // per-account bucket below keeps guessing infeasible.
+  if (!rateLimit(`tfa:${clientIp(await headers())}`, 10, 60_000)) {
+    return { error: "Too many attempts — try again later" };
+  }
   const user = await currentUser();
   if (!user) return { error: "Not signed in" };
+  if (!rateLimit(`tfa:acct:${user.id}`, 10, 15 * 60_000)) {
+    return { error: "Too many attempts — try again later" };
+  }
 
   const code = z.string().regex(/^\d{6}$/).safeParse(formData.get("code"));
   if (!code.success) return { error: "Enter the 6-digit code" };
@@ -64,6 +78,9 @@ async function tfaAudit(userId: number, action: "profile.totp.enabled" | "profil
 }
 
 export async function disableTfaAction(_prev: TfaState, formData: FormData): Promise<NonNullable<TfaState>> {
+  if (!rateLimit(`tfa:${clientIp(await headers())}`, 10, 60_000)) {
+    return { error: "Too many attempts — try again later" };
+  }
   const user = await currentUser();
   if (!user) return { error: "Not signed in" };
 

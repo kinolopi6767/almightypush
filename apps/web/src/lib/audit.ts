@@ -8,6 +8,7 @@ export type AuditAction =
   | "domain.delete"
   | "campaign.create"
   | "campaign.cancel"
+  | "campaign.retry"
   | "campaign.duplicate"
   | "automation.create"
   | "automation.toggle"
@@ -32,7 +33,11 @@ export type AuditAction =
   | "profile.totp.enabled"
   | "profile.totp.disabled"
   | "api_key.create"
-  | "api_key.revoke";
+  | "api_key.revoke"
+  | "data.export"
+  | "data.import"
+  | "journey.create"
+  | "track.ingest";
 
 /** Append a row to the audit log. Best-effort: never throws into callers. */
 export function logAudit(

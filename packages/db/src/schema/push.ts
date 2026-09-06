@@ -116,6 +116,11 @@ export const deliveries = sqliteTable(
     // generate` diffs against reality instead of emitting DROP INDEX.
     index("idx_deliveries_status_next").on(t.status, t.next_attempt_at),
     index("idx_deliveries_sent_at").on(t.sent_at),
+    // Crash-recovery revive filters (status, claimed_at); per-subscriber
+    // delivery history has no covering index otherwise (SQLite FKs are not
+    // auto-indexed).
+    index("idx_deliveries_status_claimed").on(t.status, t.claimed_at),
+    index("idx_deliveries_subscriber").on(t.subscriber_id),
   ],
 );
 
@@ -142,6 +147,9 @@ export const events = sqliteTable(
     index("idx_events_camp").on(t.campaign_id, t.type),
     // Migration-only indexes (0009/0012) — retention pruning + SSE/analytics.
     index("idx_events_subscriber_type").on(t.subscriber_id, t.type),
+    // Fatigue counters range-filter ts per (subscriber, type) on every send —
+    // without the trailing ts column each delivery scans 30d of rows.
+    index("idx_events_subscriber_type_ts").on(t.subscriber_id, t.type, t.ts),
     index("idx_events_type_ts").on(t.type, t.ts),
     index("idx_events_ts").on(t.ts),
     // One clicked event per delivery — replay beacons can't double-count.

@@ -63,7 +63,7 @@ test("segment builder estimates and creates a segment via the UI", async ({ page
   await expect(page.getByText("~2 subscribers")).toBeVisible();
   await page.getByRole("button", { name: "Create segment" }).click();
 
-  await expect(page.locator("div.rounded-xl.border.bg-card", { hasText: name })).toContainText("~2 subs");
+  await expect(page.locator('[data-entity="segment"]', { hasText: name })).toContainText("~2 subs");
   await expect.poll(() => segmentEstimate(name), { timeout: 10_000 }).toBe(2);
 
   const row = db
@@ -88,7 +88,7 @@ test("editing a segment re-estimates against the new rules", async ({ page, requ
   await page.getByText(`seg-edit-${suffix}.example.test`, { exact: true }).click();
   await buildCondition(page, "device", "equals", "android");
   await page.getByRole("button", { name: "Create segment" }).click();
-  await expect(page.locator("div.rounded-xl.border.bg-card", { hasText: name })).toBeVisible();
+  await expect(page.locator('[data-entity="segment"]', { hasText: name })).toBeVisible();
 
   const id = (db.prepare("SELECT id FROM segments WHERE name = ? ORDER BY id DESC LIMIT 1").get(name) as { id: number }).id;
   await page.goto(`/dashboard/segments/${id}`);
@@ -97,7 +97,7 @@ test("editing a segment re-estimates against the new rules", async ({ page, requ
 
   await expect.poll(() => segmentEstimate(name), { timeout: 10_000 }).toBe(1);
   await page.goto("/dashboard/segments");
-  await expect(page.locator("div.rounded-xl.border.bg-card", { hasText: name })).toContainText("~1 subs");
+  await expect(page.locator('[data-entity="segment"]', { hasText: name })).toContainText("~1 subs");
 });
 
 test("a segment-targeted campaign delivers only to matching subscribers", async ({ page, request }) => {
@@ -114,7 +114,7 @@ test("a segment-targeted campaign delivers only to matching subscribers", async 
   await page.getByText(`seg-camp-${suffix}.example.test`, { exact: true }).click();
   await buildCondition(page, "device", "equals", "android");
   await page.getByRole("button", { name: "Create segment" }).click();
-  await expect(page.locator("div.rounded-xl.border.bg-card", { hasText: segName })).toBeVisible();
+  await expect(page.locator('[data-entity="segment"]', { hasText: segName })).toBeVisible();
 
   const segId = (db.prepare("SELECT id FROM segments WHERE name = ? ORDER BY id DESC LIMIT 1").get(segName) as { id: number }).id;
   const title = `Segmented blast ${suffix}`;

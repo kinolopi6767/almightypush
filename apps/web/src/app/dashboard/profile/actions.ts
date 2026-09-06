@@ -13,8 +13,13 @@ export type ProfileFormState = { ok?: boolean; error?: string } | undefined;
 
 const profileSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
-  currentPassword: z.string().min(1, "Enter your current password"),
-  newPassword: z.string().min(10, "New password must be at least 10 characters").optional().or(z.literal("")),
+  currentPassword: z.string().min(1, "Enter your current password").max(256),
+  newPassword: z
+    .string()
+    .min(10, "New password must be at least 10 characters")
+    .max(256, "New password must be at most 256 characters")
+    .optional()
+    .or(z.literal("")),
 });
 
 export async function updateProfileAction(

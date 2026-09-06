@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { templates } from "@pushpanel/db/schema";
 import { logAudit } from "@/lib/audit";
 
@@ -22,6 +23,7 @@ const templateSchema = z.object({
 export async function createTemplateAction(_prev: TemplateFormState | undefined, formData: FormData): Promise<TemplateFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const parsed = templateSchema.safeParse({
@@ -53,6 +55,7 @@ export async function createTemplateAction(_prev: TemplateFormState | undefined,
 export async function updateTemplateAction(id: number, formData: FormData): Promise<TemplateFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const parsed = templateSchema.safeParse({
@@ -84,6 +87,7 @@ export async function updateTemplateAction(id: number, formData: FormData): Prom
 export async function deleteTemplateAction(id: number): Promise<void> {
   const session = await auth();
   if (!session?.user?.workspaceId) return;
+  if (requireEditorRole(session.user.role)) return;
 
   db.delete(templates)
     .where(and(eq(templates.id, id), eq(templates.workspace_id, Number(session.user.workspaceId))))

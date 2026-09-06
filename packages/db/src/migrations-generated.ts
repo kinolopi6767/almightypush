@@ -72,5 +72,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0012_retention_indexes",
     "idx": 12,
     "sql": "-- 0012: retention-prune + email-poller coverage (idempotent).\n-- The daily retention job deletes deliveries by sent_at and events by ts —\n-- both were full table scans holding SQLite's write lock for the whole\n-- statement (web-side writes hit SQLITE_BUSY for the duration). The email\n-- poller filters (status, schedule_at) with no leading index, and the\n-- automation/journey run-history prunes scan created_at.\n\nCREATE INDEX IF NOT EXISTS idx_deliveries_sent_at ON deliveries (sent_at);\nCREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts);\nCREATE INDEX IF NOT EXISTS idx_email_campaigns_status_sched ON email_campaigns (status, schedule_at);\nCREATE INDEX IF NOT EXISTS idx_automation_runs_created ON automation_runs (created_at);\nCREATE INDEX IF NOT EXISTS idx_journey_runs_created ON journey_runs (created_at);\n"
+  },
+  {
+    "tag": "0013_sender_recovery_indexes",
+    "idx": 13,
+    "sql": "-- 0013: sender crash-recovery + fatigue-counter coverage (idempotent).\n-- The stale-claim revive filters (status, claimed_at) with no leading index,\n-- so every send cycle scans the whole `sending` set (large after a crash).\n-- Per-subscriber delivery history has no index at all (SQLite does not\n-- auto-index FK columns). The fatigue counters range-filter ts per\n-- (subscriber_id, type) on EVERY delivery — without the trailing ts column\n-- each send scans 30 days of that subscriber's delivered rows.\n\nCREATE INDEX IF NOT EXISTS idx_deliveries_status_claimed ON deliveries (status, claimed_at);\nCREATE INDEX IF NOT EXISTS idx_deliveries_subscriber ON deliveries (subscriber_id);\nCREATE INDEX IF NOT EXISTS idx_events_subscriber_type_ts ON events (subscriber_id, type, ts);\n"
   }
 ];

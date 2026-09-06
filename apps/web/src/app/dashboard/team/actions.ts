@@ -5,7 +5,9 @@ import { db } from "@/lib/db";
 import { teamInvites, users } from "@pushpanel/db/schema";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { headers } from "next/headers";
 import { logAudit } from "@/lib/audit";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { hashPassword, sha256Hex } from "@pushpanel/core";
 import { randomBytes } from "node:crypto";
 
@@ -34,6 +36,12 @@ export async function inviteTeamMemberAction(_prev: TeamFormState, formData: For
     return { error: (e as Error).message };
   }
   const { workspaceId } = ctx;
+
+  // Invite minting sends email-equivalent secrets — throttle per inviter IP so
+  // a compromised owner/admin session cannot spray invites at line rate.
+  if (!rateLimit(`invite:${clientIp(await headers())}`, 10, 60_000)) {
+    return { error: "Too many invites — try again later" };
+  }
 
   const parsed = inviteSchema.safeParse({ email: formData.get("email"), role: formData.get("role") });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -73,7 +81,21 @@ export async function revokeInviteAction(inviteId: number): Promise<TeamFormStat
 export async function listInvitesAction() {
   try {
     const { workspaceId } = await requireOwnerOrAdmin();
-    return db.select().from(teamInvites).where(eq(teamInvites.workspace_id, workspaceId)).all();
+    // Explicit columns: token_hash must never leave the server (it is a
+    // credential-equivalent verifier for the invite link).
+    return db
+      .select({
+        id: teamInvites.id,
+        workspace_id: teamInvites.workspace_id,
+        email: teamInvites.email,
+        role: teamInvites.role,
+        expires_at: teamInvites.expires_at,
+        accepted_at: teamInvites.accepted_at,
+        created_at: teamInvites.created_at,
+      })
+      .from(teamInvites)
+      .where(eq(teamInvites.workspace_id, workspaceId))
+      .all();
   } catch {
     return [];
   }
@@ -87,10 +109,14 @@ export async function listInvitesAction() {
 const acceptSchema = z.object({
   token: z.string().min(32).max(128),
   name: z.string().trim().min(1).max(80),
-  password: z.string().min(10, "Password must be at least 10 characters"),
+  password: z.string().min(10, "Password must be at least 10 characters").max(256, "Password must be at most 256 characters"),
 });
 
 export async function acceptInviteAction(_prev: { error?: string; ok?: boolean } | undefined, formData: FormData): Promise<{ error?: string; ok?: boolean } | undefined> {
+  // Each attempt costs an argon2id hash — throttle before doing any work.
+  if (!rateLimit(`invite-accept:${clientIp(await headers())}`, 10, 60_000)) {
+    return { error: "Too many attempts — try again later" };
+  }
   const parsed = acceptSchema.safeParse({
     token: formData.get("token"),
     name: formData.get("name"),
@@ -134,6 +160,16 @@ export async function acceptInviteAction(_prev: { error?: string; ok?: boolean }
 
 /** Validate an invite token for the acceptance page (no secrets returned). */
 export async function getInvitePreview(token: string): Promise<{ valid: boolean; email?: string; role?: string; workspaceError?: boolean }> {
+  // Unauthenticated token-guessing oracle — throttle per IP. Tokens carry
+  // 192 bits of entropy, so this is defense-in-depth against DB-load probing.
+  try {
+    if (!rateLimit(`invite-preview:${clientIp(await headers())}`, 30, 60_000)) {
+      return { valid: false };
+    }
+  } catch {
+    // headers() unavailable (e.g. certain test harnesses) — continue without
+    // the throttle rather than breaking the invite flow.
+  }
   const tokenHash = sha256Hex(token);
   const [invite] = db.select().from(teamInvites).where(eq(teamInvites.token_hash, tokenHash)).limit(1).all();
   if (!invite || invite.accepted_at || (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now())) {

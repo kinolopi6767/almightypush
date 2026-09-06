@@ -34,6 +34,13 @@ export async function runBackupScheduler(db: PushDb, dbFile: string, nowMs: numb
   // skip backups forever.
   if (markerIsRecent(lastRunAt, nowMs, intervalMs)) return false;
 
+  // Cooldown after a failed attempt: retry hourly instead of every tick
+  // (disk hammering) or next interval (data-loss gap). Applies only when the
+  // failure is newer than the last success (ISO-8601 strings compare
+  // chronologically for identical formats).
+  const lastAttempt = readSetting(db, "last_backup_attempt_at");
+  if (lastAttempt && (!lastRunAt || lastAttempt > lastRunAt) && markerIsRecent(lastAttempt, nowMs, 3_600_000)) return false;
+
   const created = await createSnapshot(db, dbFile, "auto", nowMs);
   if (created) pruneBackups(db, resolveRetention(db));
   return created;
@@ -62,11 +69,23 @@ export async function createSnapshot(db: PushDb, dbFile: string, kind: "manual" 
       /* non-fatal — e.g. exotic filesystems */
     }
   } catch {
-    // Failed attempt still counts: record it and mark last_backup_at so the
-    // scheduler backs off for the whole interval instead of hammering the
-    // (probably full/permission-broken) disk on every tick.
-    db.insert(backups).values({ kind, status: "failed", size_bytes: 0, location: target }).run();
-    writeSetting(db, "last_backup_at", new Date(nowMs).toISOString());
+    // Failed attempt must NOT advance last_backup_at: that marker gates the
+    // whole interval (daily/weekly/monthly), so a full disk or permission
+    // error would otherwise silence backups for the entire period. Record the
+    // failure row and a short-retry marker instead — the scheduler retries
+    // hourly after a failure rather than hammering every tick.
+    // Failure recording itself is best-effort (the DB may be the thing that
+    // is broken) — it must never throw out of the scheduler tick.
+    try {
+      db.insert(backups).values({ kind, status: "failed", size_bytes: 0, location: target }).run();
+    } catch {
+      void 0;
+    }
+    try {
+      writeSetting(db, "last_backup_attempt_at", new Date(nowMs).toISOString());
+    } catch {
+      void 0;
+    }
     return false;
   }
 

@@ -230,6 +230,221 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    "/api/v1/resubscribe": {
+      post: {
+        summary: "Reconcile a rotated subscription",
+        description: "Called by the SDK/service worker on pushsubscriptionchange or periodic sync. Idempotent per endpoint hash; 429 when the domain cap is reached.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["domainId", "subscription"],
+                properties: {
+                  domainId: { type: "integer" },
+                  oldEndpoint: { type: "string", format: "uri" },
+                  subscribeUrl: { type: "string" },
+                  subscription: {
+                    type: "object",
+                    required: ["endpoint", "keys"],
+                    properties: {
+                      endpoint: { type: "string", format: "uri" },
+                      keys: {
+                        type: "object",
+                        required: ["p256dh", "auth"],
+                        properties: { p256dh: { type: "string" }, auth: { type: "string" } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Reconciled (migrated, refreshed, created or deduped)" },
+          "400": { description: "Invalid payload" },
+          "404": { description: "Unknown domain" },
+          "429": { description: "Rate limited or subscriber cap reached" },
+        },
+      },
+    },
+    "/api/v1/optin": {
+      post: {
+        summary: "Prompt-funnel telemetry",
+        description: "Records prompt_shown / allowed / denied / dismissed stages for funnel analytics.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["domainId", "stage"],
+                properties: {
+                  domainId: { type: "integer" },
+                  stage: { enum: ["prompt_shown", "allowed", "denied", "dismissed"] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Recorded" },
+          "400": { description: "Invalid payload" },
+        },
+      },
+    },
+    "/api/v1/tags": {
+      post: {
+        summary: "Replace subscriber tags",
+        description: "Replace-all tag set for one endpoint (1-10 tags, key ≤64, value ≤200). Used for segmentation.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["domainId", "endpoint", "tags"],
+                properties: {
+                  domainId: { type: "integer" },
+                  endpoint: { type: "string", format: "uri" },
+                  tags: { type: "object", description: "key → value map" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Tags replaced" },
+          "404": { description: "Subscription not found" },
+        },
+      },
+    },
+    "/api/v1/track": {
+      post: {
+        summary: "Custom event ingest",
+        description: "Key-authenticated funnel events (e.g. cart_view). Resolves endpoint → subscriber when given, merges tags, writes an events row.",
+        security: [{ apiKey: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["domain", "event"],
+                properties: {
+                  domain: { type: "string", description: "domain id or name" },
+                  event: { type: "string" },
+                  endpoint: { type: "string", format: "uri" },
+                  tags: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "{ ok, matched }" },
+          "401": { description: "Missing/invalid/expired API key" },
+          "404": { description: "Unknown domain" },
+        },
+      },
+    },
+    "/api/v1/journeys": {
+      post: {
+        summary: "Create a journey",
+        description: "Session-authenticated (owner/admin/editor). Stores a draft journey row; the worker executes active journeys on its tick.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: {
+                  name: { type: "string", maxLength: 120 },
+                  trigger_type: { enum: ["subscribe", "rss", "event", "api", "inactivity"] },
+                  canvas_json: { type: "string" },
+                  domain_id: { type: "integer" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Journey created" },
+          "400": { description: "Invalid payload" },
+          "401": { description: "Unauthorized" },
+          "403": { description: "Viewers cannot create journeys" },
+        },
+      },
+    },
+    "/api/v1/ai/hook": {
+      post: {
+        summary: "Hook angles",
+        description: "Session-authenticated. Heuristic offline + LLM when AI_API_KEY is set.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["topic"], properties: { topic: { type: "string" }, count: { type: "integer" } } } } },
+        },
+        responses: { "200": { description: "Angles + model" } },
+      },
+    },
+    "/api/v1/ai/spam-score": {
+      post: {
+        summary: "Spam score",
+        description: "Heuristic 0-100 + low/medium/high verdict. No LLM, no DB write.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["title", "body"], properties: { title: { type: "string" }, body: { type: "string" } } } } },
+        },
+        responses: { "200": { description: "Score payload" } },
+      },
+    },
+    "/api/v1/ai/translate": {
+      post: {
+        summary: "Translate",
+        description: "Session-authenticated. LLM when configured, else [lang]-prefixed fallback.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["text", "lang"], properties: { text: { type: "string" }, lang: { type: "string" } } } } },
+        },
+        responses: { "200": { description: "Translation" } },
+      },
+    },
+    "/api/v1/ai/url-to-campaign": {
+      post: {
+        summary: "URL → campaign draft",
+        description: "SSRF-safe OG scrape with streaming size cap. Session-authenticated.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["url"], properties: { url: { type: "string", format: "uri" } } } } },
+        },
+        responses: { "200": { description: "{ title, description, image, url }" } },
+      },
+    },
+    "/api/v1/ai/image": {
+      post: {
+        summary: "Placeholder image",
+        description: "Deterministic local SVG placeholder (no external provider). Session-authenticated.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["prompt"], properties: { prompt: { type: "string" }, width: { type: "integer" }, height: { type: "integer" } } } } },
+        },
+        responses: { "200": { description: "{ image (data URL), url (picsum fallback) }" } },
+      },
+    },
+    "/api/v1/ai/research": {
+      post: {
+        summary: "Web research",
+        description: "you.com search/research grounding. 503 without YDC/YOU key.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["query"], properties: { query: { type: "string" }, mode: { type: "string" } } } } },
+        },
+        responses: { "200": { description: "Snippets or research answer" } },
+      },
+    },
   },
   components: {
     securitySchemes: {

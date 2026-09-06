@@ -119,7 +119,7 @@ test("a campaign started from a template pre-fills and records template_id", asy
 
   // deleting the template removes it from the list
   await page.goto("/dashboard/templates");
-  const row = page.locator("div.rounded-xl.border.bg-card", { hasText: templateName });
+  const row = page.locator('[data-entity="template"]', { hasText: templateName });
   page.once("dialog", (d) => d.accept());
   await row.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText(templateName)).toHaveCount(0);

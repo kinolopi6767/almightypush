@@ -131,9 +131,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ delivery
   if (!targetUrl) {
     return corsJson({ ok: true, url: null }, { status: 200 });
   }
+  // Protocol allowlist: only http(s) targets may be redirect destinations.
+  // Legacy/operator-edited rows containing javascript:/data: URLs must never
+  // become an execution sink via the panel's trusted origin.
+  if (!isHttpUrl(targetUrl)) {
+    return corsJson({ ok: true, url: null }, { status: 200 });
+  }
   // ACAO on the redirect too: a cross-origin fetch() following the hop needs
   // CORS on every response in the chain or the beacon rejects.
   return NextResponse.redirect(targetUrl, { status: 302, headers: { "Access-Control-Allow-Origin": "*" } });
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function recordEvent(

@@ -15,7 +15,7 @@ export type AuthFormState = { error?: string; ok?: boolean } | undefined;
 
 const credentialsSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1),
+  password: z.string().min(1).max(256),
 });
 
 const LOGIN_LIMIT = () => envRateLimit("LOGIN_RATE_LIMIT", 10);
@@ -32,7 +32,7 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
   // Verify first so failures surface as inline errors instead of a NextAuth
   // redirect to /login?error=... (v5 throws NEXT_REDIRECT on failures too).
   const parsed = z
-    .object({ email: z.string().email(), password: z.string().min(1), totp: z.string().optional() })
+    .object({ email: z.string().email(), password: z.string().min(1).max(256), totp: z.string().optional() })
     .safeParse({
       email: formData.get("email"),
       password: formData.get("password"),

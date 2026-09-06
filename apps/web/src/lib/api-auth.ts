@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apiKeys, settings } from "@pushpanel/db/schema";
-import { rateLimitWithHeaders, envRateLimit } from "@/lib/rate-limit";
+import { clientIp, rateLimitWithHeaders, envRateLimit, rateLimit } from "@/lib/rate-limit";
 import { sha256Hex } from "@pushpanel/core";
 
 /**
@@ -43,6 +43,13 @@ export function requireApiKey(headers: Headers): ApiKeyResult {
   const token = headers.get("x-api-key");
   if (!token || token.length < 16 || token.length > 256) {
     return { ok: false, error: "Missing or malformed X-Api-Key", status: 401 };
+  }
+
+  // Throttle invalid guesses per client IP: without this, key-guessing is
+  // unbounded (each guess costs a DB lookup). Valid keys are throttled per
+  // key below; this bucket only gates failures.
+  if (!rateLimit(`apikey-invalid:${clientIp(headers)}`, envRateLimit("API_KEY_INVALID_RPM", 60), 60_000)) {
+    return { ok: false, error: "Rate limit exceeded", status: 429 };
   }
 
   const [key] = db

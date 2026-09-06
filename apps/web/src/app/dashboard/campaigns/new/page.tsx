@@ -9,31 +9,31 @@ import { PageHeader } from "@/components/page-header";
 export const metadata = { title: "New campaign" };
 
 export default async function NewCampaignPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  const workspaceId = Number(session?.user?.workspaceId ?? 0);
-  if (!workspaceId) redirect("/setup");
-  const domainRows = db.select({ id: domains.id, name: domains.name }).from(domains).where(eq(domains.workspace_id, workspaceId)).all();
-  const segmentRows = db
-    .select({ id: segments.id, name: segments.name, estimate_count: segments.estimate_count })
-    .from(segments)
-    .where(eq(segments.workspace_id, workspaceId))
-    .all();
-  const templateRows = db
-    .select({ id: templates.id, name: templates.name, title: templates.title, message: templates.message, launch_url: templates.launch_url })
-    .from(templates)
-    .where(eq(templates.workspace_id, workspaceId))
-    .all();
+ const session = await auth();
+ if (!session?.user) redirect("/login");
+ const workspaceId = Number(session?.user?.workspaceId ?? 0);
+ if (!workspaceId) redirect("/setup");
+ const domainRows = db.select({ id: domains.id, name: domains.name }).from(domains).where(eq(domains.workspace_id, workspaceId)).all();
+ const segmentRows = db
+  .select({ id: segments.id, name: segments.name, estimate_count: segments.estimate_count })
+  .from(segments)
+  .where(eq(segments.workspace_id, workspaceId))
+  .all();
+ const templateRows = db
+  .select({ id: templates.id, name: templates.name, title: templates.title, message: templates.message, launch_url: templates.launch_url })
+  .from(templates)
+  .where(eq(templates.workspace_id, workspaceId))
+  .all();
 
-  return (
-    <>
-      <PageHeader
-        title="New campaign"
-        description="Send a push to every active subscriber of a domain — or to a saved segment — immediately or on a schedule."
-      />
-      <div className="mt-8 max-w-xl">
-        <CampaignForm domains={domainRows} segments={segmentRows} templates={templateRows} />
-      </div>
-    </>
-  );
+ return (
+  <>
+   <PageHeader eyebrow="Operate · Campaigns"
+    title="New campaign"
+    description="Send a push to every active subscriber of a domain — or to a saved segment — immediately or on a schedule."
+   />
+   <div className="mt-8 max-w-xl">
+    <CampaignForm domains={domainRows} segments={segmentRows} templates={templateRows} />
+   </div>
+  </>
+ );
 }

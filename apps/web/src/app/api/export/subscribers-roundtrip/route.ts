@@ -1,6 +1,7 @@
 import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auth } from "@/auth";
+import { logAudit } from "@/lib/audit";
+import { requireExportAccess } from "@/lib/export-guard";
 import { domains, subscribers } from "@pushpanel/db/schema";
 import { createCipher, csvCell } from "@pushpanel/core";
 
@@ -13,10 +14,11 @@ export const dynamic = "force-dynamic";
  * memory, and the megabyte payload never passes through a server action.
  */
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) return new Response("Unauthorized", { status: 401 });
-  const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
-  if (!wsId) return new Response("No workspace", { status: 400 });
+  // Round-trip exports contain live push credentials — owner/admin/editor
+  // only (viewers blocked), audited after the rate-limit passes.
+  const gate = await requireExportAccess();
+  if (!gate.ok) return gate.response;
+  const wsId = gate.ctx.wsId;
 
   const url = new URL(req.url);
   const domainId = Number(url.searchParams.get("domainId"));
@@ -35,6 +37,14 @@ export async function GET(req: Request) {
   const rl = rateLimitWithHeaders(`export:roundtrip:${wsId}:${clientIp(req.headers)}`, 10, 60_000);
   if (!rl.allowed) return new Response("Too many requests", { status: 429, headers: rateLimitHeaders(rl, 10) });
 
+  logAudit(db, {
+    workspaceId: wsId,
+    userId: Number.isFinite(gate.ctx.userId) ? gate.ctx.userId : undefined,
+    action: "data.export",
+    entityType: "export",
+    meta: { kind: "subscribers-roundtrip", domainId },
+  });
+
   const encKey = process.env.APP_ENC_KEY;
   if (!encKey) return new Response("Server encryption key not configured", { status: 500 });
   const cipher = createCipher(encKey);
@@ -50,10 +60,11 @@ export async function GET(req: Request) {
 
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
-      if (done) {
-        controller.close();
-        return;
-      }
+      try {
+        if (done) {
+          controller.close();
+          return;
+        }
       if (!sentHeader) {
         controller.enqueue(encoder.encode(header + "\n"));
         sentHeader = true;
@@ -109,6 +120,10 @@ export async function GET(req: Request) {
       if (rows.length < PAGE) {
         done = true;
         controller.close();
+      }
+      } catch (err) {
+        done = true;
+        controller.error(err instanceof Error ? err : new Error("Export failed"));
       }
     },
   });

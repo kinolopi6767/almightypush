@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { lpLinks, domains } from "@pushpanel/db/schema";
 import { logAudit } from "@/lib/audit";
 
@@ -41,6 +42,7 @@ function makeCode(): string {
 export async function createLinkAction(_prev: LinkFormState | undefined, formData: FormData): Promise<LinkFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = Number(session.user.workspaceId);
 
   const parsed = linkSchema.safeParse({
@@ -67,44 +69,57 @@ export async function createLinkAction(_prev: LinkFormState | undefined, formDat
     domainId = domain.id;
   }
 
-  const code = makeCode();
-  db.insert(lpLinks)
-    .values({
-      workspace_id: workspaceId,
-      code,
-      target_url: parsed.data.target_url,
-      prompt_text: parsed.data.prompt_text || null,
-      force_subscribe: parsed.data.force_subscribe,
-      domain_id: domainId,
-      deleted_target_url: parsed.data.deleted_target_url || null,
-    })
-    .run();
-  logAudit(db, { workspaceId, action: "link.create", entityType: "link", meta: { code } });
-  revalidatePath("/dashboard/links");
-  return { ok: true };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = makeCode();
+    try {
+      db.insert(lpLinks)
+        .values({
+          workspace_id: workspaceId,
+          code,
+          target_url: parsed.data.target_url,
+          prompt_text: parsed.data.prompt_text || null,
+          force_subscribe: parsed.data.force_subscribe,
+          domain_id: domainId,
+          deleted_target_url: parsed.data.deleted_target_url || null,
+        })
+        .run();
+      logAudit(db, { workspaceId, action: "link.create", entityType: "link", meta: { code } });
+      revalidatePath("/dashboard/links");
+      return { ok: true };
+    } catch {
+      // UNIQUE collision on `code` (8 chars ≈ 48 bits) — retry with a fresh
+      // code instead of surfacing a 500.
+    }
+  }
+  return { error: "Could not generate a unique link code — try again" };
 }
 
 export async function deleteLinkAction(id: number): Promise<void> {
   const session = await auth();
   if (!session?.user?.workspaceId) return;
+  if (requireEditorRole(session.user.role)) return;
+  const workspaceId = Number(session.user.workspaceId);
 
   const [row] = db
     .select({ id: lpLinks.id, deleted_target_url: lpLinks.deleted_target_url })
     .from(lpLinks)
-    .where(and(eq(lpLinks.id, id), eq(lpLinks.workspace_id, Number(session.user.workspaceId))))
+    .where(and(eq(lpLinks.id, id), eq(lpLinks.workspace_id, workspaceId)))
     .limit(1)
     .all();
+  // Unknown id or another workspace's link: no-op (never fall through to an
+  // unscoped delete — the else branch below must only run for owned rows).
+  if (!row) return;
 
-  if (row?.deleted_target_url) {
+  if (row.deleted_target_url) {
     // Tombstone: keep the code but point it at the fallback target.
     db.update(lpLinks)
       .set({ target_url: row.deleted_target_url, force_subscribe: 0, prompt_text: null, deleted_at: new Date().toISOString() })
-      .where(eq(lpLinks.id, id))
+      .where(and(eq(lpLinks.id, id), eq(lpLinks.workspace_id, workspaceId)))
       .run();
   } else {
-    db.delete(lpLinks).where(eq(lpLinks.id, id)).run();
+    db.delete(lpLinks).where(and(eq(lpLinks.id, id), eq(lpLinks.workspace_id, workspaceId))).run();
   }
-  logAudit(db, { workspaceId: Number(session.user.workspaceId), action: "link.delete", entityType: "link", entityId: id });
+  logAudit(db, { workspaceId, action: "link.delete", entityType: "link", entityId: id });
   revalidatePath("/dashboard/links");
 }
 

@@ -39,4 +39,13 @@ describe("totp", () => {
     expect(uri).toContain("issuer=PushPanel");
     expect(uri).toContain("digits=6");
   });
+
+  it("fails closed (no throw) on corrupt, empty, or missing secrets", () => {
+    const code = totpCode(secret);
+    expect(verifyTotp("!!!not-base32!!!", code)).toBe(false);
+    expect(verifyTotp("", code)).toBe(false);
+    expect(verifyTotp(null, code)).toBe(false);
+    expect(verifyTotp(undefined, code)).toBe(false);
+    expect(verifyTotp(secret, code)).toBe(true);
+  });
 });

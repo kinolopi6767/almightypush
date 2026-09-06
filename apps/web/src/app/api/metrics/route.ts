@@ -13,7 +13,18 @@ export async function GET() {
   if (!session?.user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  const metrics = await collectMetrics();
+  // DB path, queue depth and automation errors are operator internals —
+  // owner/admin only (viewers/editors use the Server Status page summary).
+  const role = (session.user as { role?: string }).role;
+  if (role !== "owner" && role !== "admin") {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+  let metrics;
+  try {
+    metrics = await collectMetrics();
+  } catch {
+    return NextResponse.json({ ok: false, error: "Metrics unavailable" }, { status: 503 });
+  }
   return NextResponse.json(metrics, {
     headers: {
       "Cache-Control": "no-store, max-age=0",

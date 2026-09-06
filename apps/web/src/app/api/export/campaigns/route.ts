@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auth } from "@/auth";
+import { requireExportAccess } from "@/lib/export-guard";
+import { logAudit } from "@/lib/audit";
 import { campaigns, domains, events } from "@pushpanel/db/schema";
 import { csvCell, type CampaignAnalyticsRow } from "@pushpanel/core";
 
@@ -12,14 +13,21 @@ export const dynamic = "force-dynamic";
  * delivered/failed/per-button from the campaign stats_json.
  */
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) return new Response("Unauthorized", { status: 401 });
-  const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
-  if (!wsId) return new Response("No workspace", { status: 400 });
+  const gate = await requireExportAccess();
+  if (!gate.ok) return gate.response;
+  const wsId = gate.ctx.wsId;
 
   const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
   const rl = rateLimitWithHeaders(`export:campaigns:${wsId}:${clientIp(req.headers)}`, 20, 60_000);
   if (!rl.allowed) return new Response("Too many requests", { status: 429, headers: rateLimitHeaders(rl, 20) });
+
+  logAudit(db, {
+    workspaceId: wsId,
+    userId: Number.isFinite(gate.ctx.userId) ? gate.ctx.userId : undefined,
+    action: "data.export",
+    entityType: "export",
+    meta: { kind: "campaigns" },
+  });
 
   // True keyset pagination: campaigns AND their click aggregates are pulled
   // in bounded batches inside the stream. Materializing everything first
@@ -33,10 +41,13 @@ export async function GET(req: Request) {
   let done = false;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
-      if (done) {
-        controller.close();
-        return;
-      }
+      // A DB throw mid-stream would otherwise truncate the CSV with a 200
+      // status and no error signal — fail the stream so the client sees it.
+      try {
+        if (done) {
+          controller.close();
+          return;
+        }
       if (!sentHeader) {
         controller.enqueue(encoder.encode(header));
         sentHeader = true;
@@ -120,6 +131,10 @@ export async function GET(req: Request) {
       if (batch.length < batchSize) {
         done = true;
         controller.close();
+      }
+      } catch (err) {
+        done = true;
+        controller.error(err instanceof Error ? err : new Error("Export failed"));
       }
     },
   });

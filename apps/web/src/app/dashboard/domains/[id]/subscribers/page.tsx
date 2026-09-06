@@ -12,246 +12,246 @@ export const metadata = { title: "Subscribers" };
 const PAGE_SIZE = 25;
 
 interface Props {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string; status?: string; page?: string }>;
+ params: Promise<{ id: string }>;
+ searchParams: Promise<{ q?: string; status?: string; page?: string }>;
 }
 
 export default async function SubscribersPage({ params, searchParams }: Props) {
-  const { id } = await params;
-  const domainId = Number(id);
-  if (!Number.isInteger(domainId)) notFound();
+ const { id } = await params;
+ const domainId = Number(id);
+ if (!Number.isInteger(domainId)) notFound();
 
-  const session = await auth();
-  if (!session?.user) notFound();
-  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+ const session = await auth();
+ if (!session?.user) notFound();
+ const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
 
-  const [domain] = db
-    .select({
-      id: domains.id,
-      name: domains.name,
-      workspace_id: domains.workspace_id,
-      subscribers_count: domains.subscribers_count,
-    })
-    .from(domains)
-    .where(eq(domains.id, domainId))
-    .limit(1)
-    .all();
-  if (!domain || (workspaceId && domain.workspace_id !== workspaceId)) notFound();
+ const [domain] = db
+  .select({
+   id: domains.id,
+   name: domains.name,
+   workspace_id: domains.workspace_id,
+   subscribers_count: domains.subscribers_count,
+  })
+  .from(domains)
+  .where(eq(domains.id, domainId))
+  .limit(1)
+  .all();
+ if (!domain || (workspaceId && domain.workspace_id !== workspaceId)) notFound();
 
-  const sp = await searchParams;
-  const q = (sp.q ?? "").trim();
-  const status = sp.status ?? "all";
-  const rawPage = Number(sp.page);
-  const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+ const sp = await searchParams;
+ const q = (sp.q ?? "").trim();
+ const status = sp.status ?? "all";
+ const rawPage = Number(sp.page);
+ const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
 
-  const escapeLike = (value: string) => value.replace(/[\\%_]/g, (m) => `\\${m}`);
-  // Bound as a parameter: an inline `ESCAPE ${likeEscape}` in the drizzle template
-  // reaches SQLite mangled and throws "must be a single character".
-  const likeEscape = "\\";
-  const term = q ? `%${escapeLike(q)}%` : undefined;
+ const escapeLike = (value: string) => value.replace(/[\\%_]/g, (m) => `\\${m}`);
+ // Bound as a parameter: an inline `ESCAPE ${likeEscape}` in the drizzle template
+ // reaches SQLite mangled and throws "must be a single character".
+ const likeEscape = "\\";
+ const term = q ? `%${escapeLike(q)}%` : undefined;
 
-  const where = and(
-    eq(subscribers.domain_id, domainId),
-    status === "active" ? isNull(subscribers.unsubscribed_at) : undefined,
-    status === "unsubscribed" ? isNotNull(subscribers.unsubscribed_at) : undefined,
-    q && term
-      ? or(
-          sql`${subscribers.browser} LIKE ${term} ESCAPE ${likeEscape}`,
-          sql`${subscribers.os} LIKE ${term} ESCAPE ${likeEscape}`,
-          sql`${subscribers.device} LIKE ${term} ESCAPE ${likeEscape}`,
-          sql`${subscribers.country} LIKE ${term} ESCAPE ${likeEscape}`,
-          sql`${subscribers.state} LIKE ${term} ESCAPE ${likeEscape}`,
-          sql`${subscribers.city} LIKE ${term} ESCAPE ${likeEscape}`,
-        )
-      : undefined,
-  );
+ const where = and(
+  eq(subscribers.domain_id, domainId),
+  status === "active" ? isNull(subscribers.unsubscribed_at) : undefined,
+  status === "unsubscribed" ? isNotNull(subscribers.unsubscribed_at) : undefined,
+  q && term
+   ? or(
+     sql`${subscribers.browser} LIKE ${term} ESCAPE ${likeEscape}`,
+     sql`${subscribers.os} LIKE ${term} ESCAPE ${likeEscape}`,
+     sql`${subscribers.device} LIKE ${term} ESCAPE ${likeEscape}`,
+     sql`${subscribers.country} LIKE ${term} ESCAPE ${likeEscape}`,
+     sql`${subscribers.state} LIKE ${term} ESCAPE ${likeEscape}`,
+     sql`${subscribers.city} LIKE ${term} ESCAPE ${likeEscape}`,
+    )
+   : undefined,
+ );
 
-  const [totalRow, activeRow, unsubRow, list] = await Promise.all([
-    db.select({ value: count() }).from(subscribers).where(eq(subscribers.domain_id, domainId)).get(),
-    db
-      .select({ value: count() })
-      .from(subscribers)
-      .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
-      .get(),
-    db
-      .select({ value: count() })
-      .from(subscribers)
-      .where(and(eq(subscribers.domain_id, domainId), isNotNull(subscribers.unsubscribed_at)))
-      .get(),
-    db
-      .select({
-        id: subscribers.id,
-        browser: subscribers.browser,
-        os: subscribers.os,
-        device: subscribers.device,
-        country: subscribers.country,
-        state: subscribers.state,
-        subscribe_url: subscribers.subscribe_url,
-        subscribe_at: subscribers.subscribe_at,
-        last_active_at: subscribers.last_active_at,
-        unsubscribed_at: subscribers.unsubscribed_at,
-        unsub_reason: subscribers.unsub_reason,
-      })
-      .from(subscribers)
-      .where(where)
-      .orderBy(desc(subscribers.id))
-      .limit(PAGE_SIZE)
-      .offset((page - 1) * PAGE_SIZE)
-      .all(),
-  ]);
+ const [totalRow, activeRow, unsubRow, list] = await Promise.all([
+  db.select({ value: count() }).from(subscribers).where(eq(subscribers.domain_id, domainId)).get(),
+  db
+   .select({ value: count() })
+   .from(subscribers)
+   .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+   .get(),
+  db
+   .select({ value: count() })
+   .from(subscribers)
+   .where(and(eq(subscribers.domain_id, domainId), isNotNull(subscribers.unsubscribed_at)))
+   .get(),
+  db
+   .select({
+    id: subscribers.id,
+    browser: subscribers.browser,
+    os: subscribers.os,
+    device: subscribers.device,
+    country: subscribers.country,
+    state: subscribers.state,
+    subscribe_url: subscribers.subscribe_url,
+    subscribe_at: subscribers.subscribe_at,
+    last_active_at: subscribers.last_active_at,
+    unsubscribed_at: subscribers.unsubscribed_at,
+    unsub_reason: subscribers.unsub_reason,
+   })
+   .from(subscribers)
+   .where(where)
+   .orderBy(desc(subscribers.id))
+   .limit(PAGE_SIZE)
+   .offset((page - 1) * PAGE_SIZE)
+   .all(),
+ ]);
 
-  const total = totalRow?.value ?? 0;
-  const active = activeRow?.value ?? 0;
-  const unsubscribed = unsubRow?.value ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+ const total = totalRow?.value ?? 0;
+ const active = activeRow?.value ?? 0;
+ const unsubscribed = unsubRow?.value ?? 0;
+ const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const qs = (extra: Record<string, string | undefined>) => {
-    const p = new URLSearchParams();
-    if (q) p.set("q", q);
-    if (status !== "all") p.set("status", status);
-    for (const [k, v] of Object.entries(extra)) {
-      if (v) p.set(k, v);
-      // eslint-disable-next-line drizzle/enforce-delete-with-where -- p is URLSearchParams, not a Drizzle table.
-      else p.delete(k);
-    }
-    const s = p.toString();
-    return s ? `?${s}` : "";
-  };
+ const qs = (extra: Record<string, string | undefined>) => {
+  const p = new URLSearchParams();
+  if (q) p.set("q", q);
+  if (status !== "all") p.set("status", status);
+  for (const [k, v] of Object.entries(extra)) {
+   if (v) p.set(k, v);
+   // eslint-disable-next-line drizzle/enforce-delete-with-where -- p is URLSearchParams, not a Drizzle table.
+   else p.delete(k);
+  }
+  const s = p.toString();
+  return s ? `?${s}` : "";
+ };
 
-  const subsPath = `/dashboard/domains/${domainId}/subscribers`;
+ const subsPath = `/dashboard/domains/${domainId}/subscribers`;
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <Link href={`/dashboard/domains/${domainId}`} className="text-sm text-muted-foreground hover:underline">
-            ← {domain.name}
-          </Link>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Subscribers</h1>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">{active} active</span>
-            {" · "}
-            <span>{unsubscribed} unsubscribed</span>
-            {" · "}
-            <span>{total} total</span>
-          </p>
-        </div>
-      </div>
-
-      <SubscribersTools domainId={domainId} />
-
-      <form method="GET" className="flex flex-wrap items-center gap-2">
-        <input
-          type="search"
-          name="q"
-          defaultValue={q}
-          aria-label="Search subscribers"
-          placeholder="Search browser, OS, device, country…"
-          className="h-9 w-full max-w-64 rounded-lg border border-input bg-background px-3 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40 sm:w-64"
-        />
-        <select name="status" aria-label="Filter by subscriber status" defaultValue={status} className="h-9 rounded-lg border border-input bg-background px-2 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40">
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="unsubscribed">Unsubscribed</option>
-        </select>
-        <button type="submit" className="inline-flex h-9 items-center rounded-lg bg-secondary px-4 text-sm font-medium transition-colors hover:bg-secondary/80">
-          Filter
-        </button>
-      </form>
-
-      <div className="overflow-x-auto rounded-xl border bg-card shadow-[var(--shadow-card)]">
-        {list.length === 0 ? (
-          <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-            No subscribers yet — add the SDK snippet to your site or import a list.
-          </p>
-        ) : (
-          <table className="w-full min-w-[760px] text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-muted-foreground">
-                <th className="px-4 py-2.5 font-medium">Client</th>
-                <th className="px-4 py-2.5 font-medium">Location</th>
-                <th className="px-4 py-2.5 font-medium">Subscribe URL</th>
-                <th className="px-4 py-2.5 font-medium">Subscribed</th>
-                <th className="px-4 py-2.5 font-medium">Last active</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((s) => {
-                const client = [s.browser, s.os, s.device].filter(Boolean).join(" · ") || "—";
-                const location = [s.country, s.state].filter(Boolean).join(", ") || "—";
-                return (
-                  <tr key={s.id} className="border-b transition-colors last:border-0 hover:bg-accent/30">
-                    <td className="px-4 py-2">
-                      <Link href={subsPath} title={client} className="line-clamp-1 max-w-[220px] text-primary hover:underline">
-                        {client}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">{location}</td>
-                    <td className="max-w-[220px] truncate px-4 py-2 text-muted-foreground" title={s.subscribe_url ?? ""}>
-                      {safeHostname(s.subscribe_url)}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">{new Date(s.subscribe_at ?? Date.now()).toLocaleString()}</td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {s.last_active_at ? new Date(s.last_active_at).toLocaleString() : "—"}
-                    </td>
-                    <td className="px-4 py-2">
-                      {s.unsubscribed_at ? (
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                          unsubscribed{s.unsub_reason ? ` · ${s.unsub_reason}` : ""}
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600 dark:text-emerald-400">
-                          active
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      {!s.unsubscribed_at && <UnsubscribeButton domainId={domainId} subscriberId={s.id} />}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {pages > 1 && (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">
-            Page {page} of {pages}
-          </p>
-          <div className="flex gap-2">
-            {page > 1 && (
-              <Link
-                href={qs({ page: String(page - 1) })}
-                className="inline-flex h-9 items-center rounded-lg border border-input px-3 text-sm hover:bg-muted"
-              >
-                ← Previous
-              </Link>
-            )}
-            {page < pages && (
-              <Link
-                href={qs({ page: String(page + 1) })}
-                className="inline-flex h-9 items-center rounded-lg border border-input px-3 text-sm hover:bg-muted"
-              >
-                Next →
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
+ return (
+  <div className="space-y-6">
+   <div className="flex items-start justify-between">
+    <div>
+     <Link href={`/dashboard/domains/${domainId}`} className="text-sm text-muted-foreground hover:underline">
+      ← {domain.name}
+     </Link>
+     <h1 className="mt-1 text-2xl font-semibold tracking-tight">Subscribers</h1>
+     <p className="text-sm text-muted-foreground">
+      <span className="font-medium text-emerald-600 dark:text-emerald-400">{active} active</span>
+      {" · "}
+      <span>{unsubscribed} unsubscribed</span>
+      {" · "}
+      <span>{total} total</span>
+     </p>
     </div>
-  );
+   </div>
+
+   <SubscribersTools domainId={domainId} />
+
+   <form method="GET" className="flex flex-wrap items-center gap-2">
+    <input
+     type="search"
+     name="q"
+     defaultValue={q}
+     aria-label="Search subscribers"
+     placeholder="Search browser, OS, device, country…"
+     className="input sm:w-64"
+    />
+    <select name="status" aria-label="Filter by subscriber status" defaultValue={status} className="input">
+     <option value="all">All statuses</option>
+     <option value="active">Active</option>
+     <option value="unsubscribed">Unsubscribed</option>
+    </select>
+    <button type="submit" className="btn btn-secondary">
+     Filter
+    </button>
+   </form>
+
+   <div className="overflow-x-auto rounded-md border bg-card">
+    {list.length === 0 ? (
+     <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+      No subscribers yet — add the SDK snippet to your site or import a list.
+     </p>
+    ) : (
+     <table className="w-full min-w-[760px] text-sm">
+      <thead>
+       <tr className="border-b bg-muted/40 text-left text-muted-foreground">
+        <th className="px-4 py-2.5 font-medium">Client</th>
+        <th className="px-4 py-2.5 font-medium">Location</th>
+        <th className="px-4 py-2.5 font-medium">Subscribe URL</th>
+        <th className="px-4 py-2.5 font-medium">Subscribed</th>
+        <th className="px-4 py-2.5 font-medium">Last active</th>
+        <th className="px-4 py-2.5 font-medium">Status</th>
+        <th className="px-4 py-2.5 font-medium" />
+       </tr>
+      </thead>
+      <tbody>
+       {list.map((s) => {
+        const client = [s.browser, s.os, s.device].filter(Boolean).join(" · ") || "—";
+        const location = [s.country, s.state].filter(Boolean).join(", ") || "—";
+        return (
+         <tr key={s.id} className="border-b transition-colors last:border-0 hover:bg-accent/30">
+          <td className="px-4 py-2">
+           <Link href={subsPath} title={client} className="line-clamp-1 max-w-[220px] text-primary hover:underline">
+            {client}
+           </Link>
+          </td>
+          <td className="px-4 py-2 text-muted-foreground">{location}</td>
+          <td className="max-w-[220px] truncate px-4 py-2 text-muted-foreground" title={s.subscribe_url ?? ""}>
+           {safeHostname(s.subscribe_url)}
+          </td>
+          <td className="px-4 py-2 text-muted-foreground">{new Date(s.subscribe_at ?? Date.now()).toLocaleString()}</td>
+          <td className="px-4 py-2 text-muted-foreground">
+           {s.last_active_at ? new Date(s.last_active_at).toLocaleString() : "—"}
+          </td>
+          <td className="px-4 py-2">
+           {s.unsubscribed_at ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+             unsubscribed{s.unsub_reason ? ` · ${s.unsub_reason}` : ""}
+            </span>
+           ) : (
+            <span className="badge badge-ok">
+             active
+            </span>
+           )}
+          </td>
+          <td className="px-4 py-2 text-right">
+           {!s.unsubscribed_at && <UnsubscribeButton domainId={domainId} subscriberId={s.id} />}
+          </td>
+         </tr>
+        );
+       })}
+      </tbody>
+     </table>
+    )}
+   </div>
+
+   {pages > 1 && (
+    <div className="flex items-center justify-between text-sm">
+     <p className="text-muted-foreground">
+      Page {page} of {pages}
+     </p>
+     <div className="flex gap-2">
+      {page > 1 && (
+       <Link
+        href={qs({ page: String(page - 1) })}
+        className="btn btn-secondary"
+       >
+        ← Previous
+       </Link>
+      )}
+      {page < pages && (
+       <Link
+        href={qs({ page: String(page + 1) })}
+        className="btn btn-secondary"
+       >
+        Next →
+       </Link>
+      )}
+     </div>
+    </div>
+   )}
+  </div>
+ );
 }
 
 function safeHostname(url: string | null | undefined): string {
-  if (!url) return "—";
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "—";
-  }
+ if (!url) return "—";
+ try {
+  return new URL(url).hostname;
+ } catch {
+  return "—";
+ }
 }

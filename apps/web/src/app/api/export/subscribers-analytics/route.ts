@@ -1,6 +1,7 @@
 import { and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auth } from "@/auth";
+import { logAudit } from "@/lib/audit";
+import { requireExportAccess } from "@/lib/export-guard";
 import { domains, subscribers } from "@pushpanel/db/schema";
 import { csvCell } from "@pushpanel/core";
 import { parseSubscriberFilters, subscriberConditions } from "@/lib/subscriber-filters";
@@ -14,14 +15,21 @@ export const dynamic = "force-dynamic";
  * round-trip export).
  */
 export async function GET(request: Request) {
-  const session = await auth();
-  if (!session?.user) return new Response("Unauthorized", { status: 401 });
-  const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
-  if (!wsId) return new Response("No workspace", { status: 400 });
+  const gate = await requireExportAccess();
+  if (!gate.ok) return gate.response;
+  const wsId = gate.ctx.wsId;
 
   const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
   const rl = rateLimitWithHeaders(`export:subs:${wsId}:${clientIp(request.headers)}`, 20, 60_000);
   if (!rl.allowed) return new Response("Too many requests", { status: 429, headers: rateLimitHeaders(rl, 20) });
+
+  logAudit(db, {
+    workspaceId: wsId,
+    userId: Number.isFinite(gate.ctx.userId) ? gate.ctx.userId : undefined,
+    action: "data.export",
+    entityType: "export",
+    meta: { kind: "subscribers-analytics" },
+  });
 
   const url = new URL(request.url);
   const filter = parseSubscriberFilters(url.searchParams);
@@ -40,10 +48,11 @@ export async function GET(request: Request) {
   let done = false;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
-      if (done) {
-        controller.close();
-        return;
-      }
+      try {
+        if (done) {
+          controller.close();
+          return;
+        }
       if (!sentHeader) {
         controller.enqueue(encoder.encode(header));
         sentHeader = true;
@@ -79,6 +88,10 @@ export async function GET(request: Request) {
       if (batch.length < batchSize) {
         done = true;
         controller.close();
+      }
+      } catch (err) {
+        done = true;
+        controller.error(err instanceof Error ? err : new Error("Export failed"));
       }
     },
   });

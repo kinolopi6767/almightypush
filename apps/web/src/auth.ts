@@ -10,7 +10,9 @@ import { z } from "zod";
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1),
+  // Max bound: each login attempt costs up to 2 argon2id verifies (~64MB
+  // each) — an unbounded password field is a memory/CPU DoS vector.
+  password: z.string().min(1).max(256),
   totp: z.string().optional(),
 });
 
@@ -33,7 +35,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   providers: [
     Credentials({
-      credentials: { email: {}, password: {} },
+      credentials: { email: {}, password: {}, totp: {} },
       authorize: async (credentials) => {
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
@@ -49,8 +51,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user) return null;
 
         // Two-factor: the code must be present and valid when enabled.
+        // decryptTotpSecret falls back to the raw stored value for legacy
+        // rows; verifyTotp fails closed on corrupt secrets (no throw).
         if (user.totp_enabled) {
-          const secret = decryptTotpSecret(user.totp_secret);
+          let secret: string | null = null;
+          try {
+            secret = decryptTotpSecret(user.totp_secret);
+          } catch {
+            secret = null;
+          }
           if (!verifyTotp(secret, parsed.data.totp ?? "")) return null;
         }
 
@@ -71,13 +80,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = user.role;
         token.workspaceId = user.workspaceId;
         // Bind this JWT to the credential state at sign-in (one extra indexed
-        // read per sign-in only).
-        const [row] = await db
-          .select({ password_hash: users.password_hash })
-          .from(users)
-          .where(eq(users.id, Number(user.id)))
-          .limit(1);
-        token.cv = credentialVersionOf({ password_hash: row?.password_hash ?? null });
+        // read per sign-in only). A DB failure here must not break sign-in —
+        // fall back to an empty fingerprint (the session() re-check still
+        // applies on subsequent requests).
+        try {
+          const [row] = await db
+            .select({ password_hash: users.password_hash })
+            .from(users)
+            .where(eq(users.id, Number(user.id)))
+            .limit(1);
+          token.cv = credentialVersionOf({ password_hash: row?.password_hash ?? null });
+        } catch {
+          token.cv = credentialVersionOf({ password_hash: null });
+        }
       }
       return token;
     },

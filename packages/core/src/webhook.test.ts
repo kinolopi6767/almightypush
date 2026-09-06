@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newWebhookSecret, signWebhook, verifyWebhook } from "./webhook";
+import { isFreshWebhookTimestamp, newWebhookSecret, signWebhook, verifyWebhook } from "./webhook";
 
 describe("webhook signing", () => {
   const secret = newWebhookSecret();
@@ -30,5 +30,15 @@ describe("webhook signing", () => {
 
   it("generates distinct secrets", () => {
     expect(newWebhookSecret()).not.toBe(newWebhookSecret());
+  });
+
+  it("enforces timestamp freshness", () => {
+    const now = 1_700_000_000_000;
+    expect(isFreshWebhookTimestamp(now, now)).toBe(true);
+    expect(isFreshWebhookTimestamp(now - 4 * 60_000, now)).toBe(true);
+    expect(isFreshWebhookTimestamp(now - 6 * 60_000, now)).toBe(false);
+    expect(isFreshWebhookTimestamp(now + 6 * 60_000, now)).toBe(false);
+    expect(isFreshWebhookTimestamp(0, now)).toBe(false);
+    expect(isFreshWebhookTimestamp(Number.NaN, now)).toBe(false);
   });
 });

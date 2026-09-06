@@ -92,14 +92,11 @@ function buildZip(entries: { name: string; data: Buffer }[]): Buffer {
 
 /** Downloadable WordPress plugin (push on publish webhook client). */
 export async function GET(req: Request) {
-  // Light rate-limit: 30/min per IP to avoid zip-build abuse
-  try {
-    const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
-    const rl = rateLimitWithHeaders(`wp-zip:${clientIp(req.headers)}`, 30, 60_000);
-    if (!rl.allowed) return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
-  } catch {
-    // ignore rate-limit import failure — still serve
-  }
+  // Light rate-limit: 30/min per IP to avoid zip-build abuse. Fail CLOSED —
+  // if the limiter itself errors, refuse rather than serving unbounded builds.
+  const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
+  const rl = rateLimitWithHeaders(`wp-zip:${clientIp(req.headers)}`, 30, 60_000);
+  if (!rl.allowed) return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
   try {
     const pluginDir = await resolvePluginDir();
     const entries = await Promise.all(

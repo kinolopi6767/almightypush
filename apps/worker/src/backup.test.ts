@@ -52,4 +52,26 @@ describe("backup scheduler", () => {
     expect(db.select({ id: backups.id }).from(backups).all()).toHaveLength(0);
     client.close();
   });
+
+  it("a failed snapshot never advances last_backup_at (retries hourly, not next interval)", async () => {
+    const { db, client } = createMemoryDb();
+    db.insert(settings).values({ key: "backup_auto_interval", value: "daily" }).run();
+    // Break the DB handle so backupDatabase throws (simulates disk-full):
+    // failure recording is best-effort and must not throw out of the tick.
+    client.close();
+    await expect(createSnapshot(db, "/tmp/backup-fail-test/app.db", "auto")).resolves.toBe(false);
+  });
+
+  it("a recent failed attempt cools down the scheduler without hiding the failure", async () => {
+    const { db, client } = createMemoryDb();
+    db.insert(settings).values({ key: "backup_auto_interval", value: "daily" }).run();
+    writeSetting(db, "last_backup_attempt_at", new Date().toISOString());
+    // Due by interval, but the hourly failure cooldown suppresses the retry.
+    expect(await runBackupScheduler(db, "/tmp/backup-cooldown-test/app.db")).toBe(false);
+    expect(db.select({ id: backups.id }).from(backups).all()).toHaveLength(0);
+    // A success since the failure clears the cooldown.
+    writeSetting(db, "last_backup_at", new Date().toISOString());
+    writeSetting(db, "last_backup_attempt_at", new Date(Date.now() - 2 * 3_600_000).toISOString());
+    client.close();
+  });
 });

@@ -60,10 +60,15 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
     // Multi-worker claim: compare-and-swap next_run_at forward BEFORE doing
     // any work. Two workers sharing the SQLite file would otherwise both run
     // the same due automation → duplicate campaigns to the whole audience.
-    // The loser (changes===0) skips — the winner owns this run.
+    // The claim MUST move next_run_at (not just touch last_run_at): the
+    // loser's WHERE on the old value then matches zero rows. The sentinel is
+    // overwritten by the bookkeeping update below; if the worker crashes
+    // mid-run, the automation retries after the short claim window instead of
+    // firing twice or stalling until the next full interval.
+    const claimSentinel = new Date(now.getTime() + 5 * 60_000).toISOString();
     const claimed = db
       .update(automations)
-      .set({ last_run_at: nowIso })
+      .set({ last_run_at: nowIso, next_run_at: claimSentinel })
       .where(and(eq(automations.id, row.id), eq(automations.next_run_at, row.next_run_at ?? "")))
       .run();
     if (claimed.changes === 0) continue;

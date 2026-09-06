@@ -52,6 +52,17 @@ function isValidHttpUrl(value: string): boolean {
  * them up on its next tick.
  */
 export async function POST(req: Request) {
+  // Any unexpected throw (locked DB, disk-full, oversized row) must surface
+  // as the JSON error envelope — never a Next.js 500 HTML page that breaks
+  // API clients and leaks stack traces.
+  try {
+    return await createCampaign(req);
+  } catch {
+    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+  }
+}
+
+async function createCampaign(req: Request) {
   const auth = requireApiKey(req.headers);
   if (!auth.ok) return corsJson({ ok: false, error: auth.error }, { status: auth.status });
 

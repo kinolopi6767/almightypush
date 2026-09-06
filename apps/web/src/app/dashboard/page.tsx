@@ -9,269 +9,205 @@ import { StatCard } from "@/components/stat-card";
 
 export const metadata = { title: "Dashboard" };
 
-const ICONS = {
-  users: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
-  globe: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z",
-  send: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
-  click: "M9 9l5 12 1.8-5.2L21 14zM7.2 2.2 8 5.1M5.1 8 2.2 7.2M14 4.1 12 6M6 12l-1.9 2",
-  shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
-  spark: "M12 3l1.9 5.8L19.7 10l-5.8 1.9L12 17.7l-1.9-5.8L4.3 10l5.8-1.2zM19 15l.9 2.6L22.5 18.5l-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z",
-  cloud: "M17.5 19H9a4 4 0 0 1 0-8 5 5 0 0 1 9.5-1.5A3.5 3.5 0 0 1 17.5 19z",
-};
-
 function greeting(timeZone?: string): string {
-  let h = new Date().getHours();
-  if (timeZone) {
-    try {
-      // Panel-timezone hour, not server-local — scheduling uses settings.timezone.
-      const parts = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone }).formatToParts(new Date());
-      const hh = Number(parts.find((p) => p.type === "hour")?.value);
-      if (Number.isFinite(hh)) h = hh % 24;
-    } catch {
-      // unknown tz (legacy stored value) — fall back to server-local hour
-    }
+ let h = new Date().getHours();
+ if (timeZone) {
+  try {
+   const parts = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone }).formatToParts(new Date());
+   const hh = Number(parts.find((p) => p.type === "hour")?.value);
+   if (Number.isFinite(hh)) h = hh % 24;
+  } catch {
+   // unknown tz (legacy stored value) — fall back to server-local hour
   }
-  if (h < 5) return "Burning the midnight oil";
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+ }
+ if (h < 5) return "Burning the midnight oil";
+ if (h < 12) return "Good morning";
+ if (h < 18) return "Good afternoon";
+ return "Good evening";
 }
 
 function todayLabel(timeZone?: string): string {
-  try {
-    return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", ...(timeZone ? { timeZone } : {}) });
-  } catch {
-    return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  }
+ try {
+  return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", ...(timeZone ? { timeZone } : {}) });
+ } catch {
+  return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+ }
 }
 
-/** Backup kind enum → human label for the services card. */
 const KIND_LABEL: Record<string, string> = {
-  manual: "Manual snapshot",
-  auto: "Auto snapshot",
-  gdrive: "Drive snapshot",
+ manual: "Manual snapshot",
+ auto: "Auto snapshot",
+ gdrive: "Drive snapshot",
 };
 
 export default async function DashboardPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
-  if (!wsId) redirect("/setup");
+ const session = await auth();
+ if (!session?.user) redirect("/login");
+ const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+ if (!wsId) redirect("/setup");
 
-  const [subsRow] = await db
-    .select({ value: count() })
-    .from(subscribers)
-    .innerJoin(domains, eq(subscribers.domain_id, domains.id))
-    .where(and(isNull(subscribers.unsubscribed_at), eq(domains.workspace_id, wsId)));
+ const [subsRow] = await db
+  .select({ value: count() })
+  .from(subscribers)
+  .innerJoin(domains, eq(subscribers.domain_id, domains.id))
+  .where(and(isNull(subscribers.unsubscribed_at), eq(domains.workspace_id, wsId)));
 
-  const [domainsRow] = await db.select({ value: count() }).from(domains).where(eq(domains.workspace_id, wsId));
+ const [domainsRow] = await db.select({ value: count() }).from(domains).where(eq(domains.workspace_id, wsId));
 
-  const [sentRow] = await db
-    .select({ value: count() })
-    .from(campaigns)
-    .where(and(eq(campaigns.status, "done"), eq(campaigns.workspace_id, wsId)));
+ const [sentRow] = await db
+  .select({ value: count() })
+  .from(campaigns)
+  .where(and(eq(campaigns.status, "done"), eq(campaigns.workspace_id, wsId)));
 
-  const [clicksRow] = await db
-    .select({ value: count() })
-    .from(events)
-    .innerJoin(domains, eq(domains.id, events.domain_id))
-    .where(and(eq(events.type, "clicked"), eq(domains.workspace_id, wsId)));
+ const [clicksRow] = await db
+  .select({ value: count() })
+  .from(events)
+  .innerJoin(domains, eq(domains.id, events.domain_id))
+  .where(and(eq(events.type, "clicked"), eq(domains.workspace_id, wsId)));
 
-  const [lastBackup] = wsId
-    ? db.select({ created_at: backups.created_at, kind: backups.kind }).from(backups).orderBy(desc(backups.created_at)).limit(1).all()
-    : [];
-  const gdriveEnabled = wsId
-    ? db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_enabled")).get()?.value === "1"
-    : false;
-  const hasAiKey = wsId ? !!db.select({ value: settings.value }).from(settings).where(eq(settings.key, "secret:ai_api_key")).get()?.value : false;
-  const panelTz = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "timezone")).get()?.value || undefined;
+ const [lastBackup] = wsId
+  ? db.select({ created_at: backups.created_at, kind: backups.kind }).from(backups).orderBy(desc(backups.created_at)).limit(1).all()
+  : [];
+ const gdriveEnabled = wsId
+  ? db.select({ value: settings.value }).from(settings).where(eq(settings.key, "gdrive_enabled")).get()?.value === "1"
+  : false;
+ const hasAiKey = wsId ? !!db.select({ value: settings.value }).from(settings).where(eq(settings.key, "secret:ai_api_key")).get()?.value : false;
+ const panelTz = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "timezone")).get()?.value || undefined;
 
-  const firstName = (session.user.name ?? session.user.email ?? "").split(/[\s@]/)[0];
+ const firstName = (session.user.name ?? session.user.email ?? "").split(/[\s@]/)[0];
+ const subs = subsRow?.value ?? 0;
+ const doms = domainsRow?.value ?? 0;
 
-  return (
-    <div className="space-y-8">
-      {/* Masthead — editorial, not a card */}
-      <div className="rise border-b pb-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2.5">
-            <p className="kicker text-muted-foreground">{todayLabel(panelTz)}</p>
-            <h1 className="text-[30px] font-semibold leading-none tracking-tight md:text-[34px]">
-              {greeting(panelTz)}
-              <span className="font-light text-muted-foreground">{firstName ? `, ${firstName}` : ""}</span>
-            </h1>
-            <p className="max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-              Your push notification command center.{" "}
-              <span className="font-medium text-foreground">{(subsRow?.value ?? 0).toLocaleString()} active subscribers</span> across{" "}
-              {domainsRow?.value ?? 0} domains.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              href="/dashboard/domains"
-              className="inline-flex h-9 items-center justify-center rounded-lg border bg-card px-4 text-sm font-medium shadow-xs transition-colors hover:border-border-strong hover:bg-accent"
-            >
-              Add domain
-            </Link>
-            <Link
-              href="/dashboard/campaigns/new"
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_2px_12px_-2px_color-mix(in_oklab,var(--primary)_55%,transparent)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-primary-hover active:scale-[0.97]"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-3.5" aria-hidden>
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              New campaign
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Primary metrics — premium bento: hero + 3 */}
-      <div className="grid gap-4 lg:grid-cols-12">
-        <div className="rise lg:col-span-5">
-          <div
-            className="premium-card surface-premium relative flex h-full flex-col overflow-hidden rounded-2xl p-7"
-            data-testid="stat-subscribers"
-          >
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 h-32 opacity-60"
-              style={{ background: "radial-gradient(32rem 12rem at 18% -30%, color-mix(in oklab, var(--primary) 14%, transparent), transparent 70%)" }}
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-8 -top-8 size-32 rounded-full bg-gradient-to-br from-primary/10 to-transparent blur-2xl"
-            />
-            <div className="relative flex items-center justify-between">
-              <p className="kicker text-muted-foreground">Total subscribers</p>
-              <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15 shadow-xs dark:bg-primary/15 dark:ring-primary/20">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="size-5" aria-hidden>
-                  <path d={ICONS.users} />
-                </svg>
-              </span>
-            </div>
-            <p className="tabular relative mt-6 text-[46px] font-semibold leading-none tracking-tight">
-              {(subsRow?.value ?? 0).toLocaleString()}
-            </p>
-            <p className="relative mt-3 text-sm text-muted-foreground">
-              Active across all domains ·{" "}
-              <Link href="/dashboard/analytics" className="font-medium text-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-foreground hover:text-primary">
-                View analytics →
-              </Link>
-            </p>
-            <div className="relative mt-auto flex items-center gap-2.5 pt-8 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-600 ring-1 ring-inset ring-emerald-500/15 dark:text-emerald-400 dark:ring-emerald-500/20">
-                <span className="size-1.5 rounded-full bg-current pulse-dot shadow-[0_0_8px_currentColor]" aria-hidden /> Live
-              </span>
-              <span>Updated just now · enterprise-grade</span>
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-3 lg:col-span-7 lg:grid-cols-3">
-          <div className="rise rise-1">
-            <StatCard label="Domains" value={(domainsRow?.value ?? 0).toLocaleString()} icon={<path d={ICONS.globe} />} tone="sky" href="/dashboard/domains" hint="VAPID per domain" />
-          </div>
-          <div className="rise rise-2">
-            <StatCard label="Campaigns sent" value={(sentRow?.value ?? 0).toLocaleString()} icon={<path d={ICONS.send} />} tone="emerald" href="/dashboard/campaigns" hint="Completed sends" />
-          </div>
-          <div className="rise rise-3">
-            <StatCard label="Total clicks" value={(clicksRow?.value ?? 0).toLocaleString()} icon={<path d={ICONS.click} />} tone="amber" hint="All-time" />
-          </div>
-          <div className="sm:col-span-3">
-            <div className="premium-card flex items-center justify-between rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <span className="icon-chip icon-chip-premium hidden size-9 sm:inline-flex">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-5" aria-hidden>
-                    <path d={ICONS.shield} />
-                  </svg>
-                </span>
-                <div>
-                  <p className="text-sm font-semibold tracking-tight">Infrastructure</p>
-                  <p className="text-xs text-muted-foreground">SQLite WAL · Premium scale · Enterprise hardened</p>
-                </div>
-              </div>
-              <Link href="/dashboard/status" className="shrink-0 rounded-xl border bg-card px-3.5 py-2 text-xs font-medium shadow-xs transition-all hover:border-border-strong hover:bg-accent hover:shadow-sm">
-                System health →
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary — feature cards + live */}
-      <div className="grid gap-6 lg:grid-cols-12">
-        <div className="space-y-4 lg:col-span-7">
-          <h2 className="kicker text-muted-foreground">Services</h2>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <QuickCard
-              title="Backups"
-              value={lastBackup ? KIND_LABEL[lastBackup.kind] ?? lastBackup.kind : "No backups yet"}
-              sub={lastBackup ? new Date(lastBackup.created_at).toLocaleDateString() : `Drive ${gdriveEnabled ? "on" : "off"} · snapshot backup`}
-              href="/dashboard/settings"
-              action="Manage"
-              icon={<path d="M21 12a9 9 0 1 0-9-9 2.5 2.5 0 0 1 2.5 2.5V8a2 2 0 0 1 2 2v1a3 3 0 0 1 3 3v1a2 2 0 0 1-2 2H9a4 4 0 0 1 0-8h1" />}
-            />
-            <QuickCard
-              title="AI Studio"
-              value={hasAiKey ? "Connected" : "Heuristic mode"}
-              sub={hasAiKey ? "Model ready · hooks · translate" : "Add key for LLM features"}
-              href="/dashboard/ai"
-              action="Open"
-              icon={<path d={ICONS.spark} />}
-            />
-            <QuickCard
-              title="Outbound webhooks"
-              value="n8n / Zapier"
-              sub="Subscribed · clicked · done"
-              href="/dashboard/settings"
-              action="Configure"
-              icon={<path d="M10 13a5 5 0 0 0 7.5 0l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 11a5 5 0 0 0-7.5 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />}
-            />
-          </div>
-        </div>
-        <div className="lg:col-span-5">
-          <div className="flex items-center justify-between">
-            <h2 className="kicker text-muted-foreground">Live activity</h2>
-            <Link href="/dashboard/analytics" className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Analytics →
-            </Link>
-          </div>
-          <div className="mt-3">
-            <LiveFeed limit={8} />
-          </div>
-        </div>
-      </div>
+ return (
+  <div className="space-y-6">
+   {/* Console head — eyebrow + title + actions */}
+   <div className="enter">
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+     <div className="min-w-0 space-y-1.5">
+      <p className="page-eyebrow">{todayLabel(panelTz)} · Overview</p>
+      <h1 className="page-title text-[24px]">
+       {greeting(panelTz)}
+       <span className="font-normal text-[var(--ink-2)]">{firstName ? `, ${firstName}` : ""}</span>
+      </h1>
+      <p className="page-desc">
+       <span className="tabular font-semibold text-[var(--ink)]">{subs.toLocaleString()} active subscribers</span> across {doms} domains.
+      </p>
+     </div>
+     <div className="flex shrink-0 items-center gap-2">
+      <Link href="/dashboard/domains" className="btn btn-secondary">
+       Add domain
+      </Link>
+      <Link href="/dashboard/campaigns/new" className="btn btn-primary">
+       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="size-3.5" aria-hidden>
+        <path d="M12 5v14M5 12h14" />
+       </svg>
+       New send
+      </Link>
+     </div>
     </div>
-  );
+    <hr aria-hidden className="divider mt-4" />
+   </div>
+
+   {/* KPI row — dense Stripe grid. testIds preserved for e2e. */}
+   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="enter sm:col-span-2 xl:col-span-1" data-testid="stat-subscribers">
+     <div className="kpi h-full">
+      <div className="flex items-center justify-between gap-2">
+       <p className="kpi-label">Subscribers</p>
+       <span className="badge badge-ok"><span className="badge-dot livedot pulsing" aria-hidden />Live</span>
+      </div>
+      <p className="kpi-value tabular">{subs.toLocaleString()}</p>
+            <div className="kpi-sub">
+              Active across all domains ·{" "}
+              <Link href="/dashboard/analytics" className="whitespace-nowrap font-medium text-[var(--brand)] underline underline-offset-4 hover:opacity-80">
+                View analytics
+              </Link>
+            </div>
+     </div>
+    </div>
+    <div className="enter enter-1">
+     <StatCard label="Domains" value={doms.toLocaleString()} tone="info" href="/dashboard/domains" hint="VAPID per domain" />
+    </div>
+    <div className="enter enter-2">
+     <StatCard label="Campaigns sent" value={(sentRow?.value ?? 0).toLocaleString()} tone="ok" href="/dashboard/campaigns" hint="Completed sends" />
+    </div>
+    <div className="enter enter-3">
+     <StatCard label="Total clicks" value={(clicksRow?.value ?? 0).toLocaleString()} tone="warn" hint="All-time" />
+    </div>
+   </div>
+
+   {/* Ops strip */}
+   <div className="enter panel">
+    <div className="panel-head">
+     <p className="panel-title">Operations</p>
+     <Link href="/dashboard/status" className="btn btn-ghost btn-sm">System health</Link>
+    </div>
+    <div className="grid divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0" style={{ borderColor: "var(--line)" }}>
+     <OpsCell
+      label="Backups"
+      value={lastBackup ? KIND_LABEL[lastBackup.kind] ?? lastBackup.kind : "No backups yet"}
+      sub={lastBackup ? new Date(lastBackup.created_at).toLocaleDateString() : `Drive ${gdriveEnabled ? "on" : "off"}`}
+      href="/dashboard/settings"
+      action="Manage"
+     />
+     <OpsCell
+      label="AI Studio"
+      value={hasAiKey ? "Connected" : "Heuristic mode"}
+      sub={hasAiKey ? "Model ready" : "Add key for LLM features"}
+      href="/dashboard/ai"
+      action="Open"
+     />
+     <OpsCell
+      label="Outbound webhooks"
+      value="n8n / Zapier"
+      sub="subscribed · clicked · done"
+      href="/dashboard/settings"
+      action="Configure"
+     />
+    </div>
+   </div>
+
+   {/* Live */}
+   <div className="grid gap-4 lg:grid-cols-5">
+    <div className="enter lg:col-span-3">
+     <div className="panel">
+      <div className="panel-head">
+       <p className="panel-title">Sending pipeline</p>
+       <Link href="/dashboard/campaigns" className="btn btn-ghost btn-sm">All campaigns</Link>
+      </div>
+      <div className="panel-body space-y-2 text-[13px] text-[var(--ink-2)]">
+       <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: "var(--line)" }}>
+        <span>Queue engine</span>
+        <span className="badge badge-neutral">worker · 60s tick</span>
+       </div>
+       <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: "var(--line)" }}>
+        <span>Storage</span>
+        <span className="tabular font-mono text-[12px]">SQLite WAL · single-writer</span>
+       </div>
+       <div className="flex items-center justify-between">
+        <span>Delivery</span>
+        <span className="tabular font-mono text-[12px]">VAPID · TTL 86400</span>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div className="enter enter-1 lg:col-span-2">
+     <LiveFeed limit={8} />
+    </div>
+   </div>
+  </div>
+ );
 }
 
-function QuickCard({
-  title,
-  value,
-  sub,
-  href,
-  action,
-  icon,
-}: {
-  title: string;
-  value: string;
-  sub: string;
-  href: string;
-  action: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Link href={href} className="premium-card card-lift group block rounded-xl p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
-      <span aria-hidden className="icon-chip size-9 transition-all duration-200 group-hover:bg-primary/10 group-hover:text-primary group-hover:border-primary/15 group-hover:shadow-xs">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="size-4.5">
-          {icon}
-        </svg>
-      </span>
-      <p className="kicker mt-4 text-muted-foreground">{title}</p>
-      <p className="mt-1.5 text-sm font-semibold leading-tight tracking-tight">{value}</p>
-      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{sub}</p>
-      <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary">
-        {action} <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-1">→</span>
-      </span>
-    </Link>
-  );
+function OpsCell({ label, value, sub, href, action }: { label: string; value: string; sub: string; href: string; action: string }) {
+ return (
+  <Link href={href} className="group block p-4 transition-colors hover:bg-[var(--panel-2)]">
+   <p className="micro-label">{label}</p>
+   <p className="mt-1.5 text-[13.5px] font-semibold tracking-tight">{value}</p>
+   <p className="mt-0.5 truncate text-[12px] text-[var(--ink-3)]">{sub}</p>
+   <span className="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-[var(--brand)]">
+    {action} <span aria-hidden>→</span>
+   </span>
+  </Link>
+ );
 }

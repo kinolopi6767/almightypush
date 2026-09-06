@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { assertPublicHttpUrl, createCipher, parseCsv, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
@@ -31,6 +32,7 @@ export async function requireOwnedDomain(domainId: number) {
   if (!session?.user) redirect("/login");
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) redirect("/login");
+  if (requireEditorRole(session.user.role)) redirect("/dashboard/domains");
   const [domain] = db
     .select({ id: domains.id })
     .from(domains)

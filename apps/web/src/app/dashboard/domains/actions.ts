@@ -2,6 +2,7 @@
 
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { createVapidConfig } from "@pushpanel/core";
 import { campaigns, deliveries, domains, subscribers } from "@pushpanel/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -37,6 +38,7 @@ export async function createDomainAction(
 ): Promise<NonNullable<DomainFormState>> {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace — run setup first" };
 
@@ -112,6 +114,7 @@ export async function sendTestPushAction(
 ): Promise<NonNullable<DomainFormState>> {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
 
@@ -192,6 +195,7 @@ export async function updateDomainPromptAction(
 ): Promise<NonNullable<DomainFormState>> {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
 
@@ -234,7 +238,7 @@ export async function updateDomainPromptAction(
   };
   // White-label: if customCss contains branding removal, keep as is; UI handles
 
-  db.update(domains).set({ app_config_json: JSON.stringify(cfg) }).where(eq(domains.id, domainId)).run();
+  db.update(domains).set({ app_config_json: JSON.stringify(cfg) }).where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId))).run();
   logAudit(db, { workspaceId, action: "domain.update", entityType: "domain", entityId: domainId, meta: { prompt: parsed.data.kind } });
   return { ok: true, id: domainId };
 }

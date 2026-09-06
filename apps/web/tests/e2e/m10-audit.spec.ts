@@ -19,7 +19,7 @@ test("creating a domain and a segment records audit entries", async ({ page }) =
   await page.getByLabel("Condition 1.1 field").selectOption("device");
   await page.getByLabel("Condition 1.1 value").fill("android");
   await page.getByRole("button", { name: "Create segment" }).click();
-  await expect(page.locator("div.rounded-xl.border.bg-card", { hasText: segName })).toBeVisible();
+  await expect(page.locator('[data-entity="segment"]', { hasText: segName })).toBeVisible();
 
   await page.goto("/dashboard/settings");
   await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();

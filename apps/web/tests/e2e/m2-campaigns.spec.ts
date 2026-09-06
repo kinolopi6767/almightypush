@@ -73,7 +73,7 @@ test("send-now campaign: UI → scheduler → delivery → stats", async ({ page
   // --- detail page reflects the delivery ---
   await page.goto(`/dashboard/campaigns/${campaignId}`);
   await expect(page.getByText("1", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText(/statuses right now: sent 1/i)).toBeVisible();
+  await expect(page.getByText(/whole-campaign totals: sent 1/i)).toBeVisible();
 
   // --- click beacon records the click ---
   const delivery = db
@@ -91,11 +91,12 @@ test("send-now campaign: UI → scheduler → delivery → stats", async ({ page
     })
     .toBe(1);
 
-  // --- the campaigns list shows the summary ---
+  // --- the campaigns list shows the summary (table columns: delivered, clicks) ---
   await page.goto("/dashboard/campaigns");
-  const row = page.getByRole("link", { name: /Big sale this weekend/ });
+  const row = page.locator('tr[data-entity="campaign"]', { has: page.getByRole("link", { name: /Big sale this weekend/ }) });
   await expect(row).toBeVisible();
-  await expect(row).toContainText(/1 delivered · 1 clicks/i);
+  await expect(row.locator("td").nth(2)).toContainText(/^1$/);
+  await expect(row.locator("td").nth(3)).toContainText(/^1$/);
 });
 
 test("future campaign stays scheduled until its time, then cancels", async ({ page, request }) => {

@@ -11,7 +11,9 @@ import type { AuthFormState } from "@/app/(auth)/actions";
 const setupSchema = z.object({
   name: z.string().trim().min(1).default("Owner"),
   email: z.string().email(),
-  password: z.string().min(10, "Password must be at least 10 characters"),
+  // Upper bound matters: argon2id costs ~64MB/attempt, so a multi-MB password
+  // is a trivial memory/CPU DoS on the login path.
+  password: z.string().min(10, "Password must be at least 10 characters").max(256, "Password must be at most 256 characters"),
 });
 
 /**

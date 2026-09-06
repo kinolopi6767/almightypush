@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireAiAccess } from "@/lib/ai-guard";
 import { checkSpamScore } from "@pushpanel/core";
 import { z } from "zod";
 
@@ -11,8 +11,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const gate = await requireAiAccess(req);
+  if (!gate.ok) return gate.response;
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());

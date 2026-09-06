@@ -13,6 +13,14 @@ export const dynamic = "force-dynamic";
  * per-campaign rollup — the same numbers the dashboard shows.
  */
 export async function GET(req: Request) {
+  try {
+    return await getStats(req);
+  } catch {
+    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+  }
+}
+
+async function getStats(req: Request) {
   const auth = requireApiKey(req.headers);
   if (!auth.ok) return corsJson({ ok: false, error: auth.error }, { status: auth.status });
   const { workspaceId } = auth.context;

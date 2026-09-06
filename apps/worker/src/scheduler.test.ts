@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { createMemoryDb } from "@pushpanel/db";
 import { campaigns, deliveries, domains, subscribers, workspaces } from "@pushpanel/db/schema";
 import { createVapidConfig } from "@pushpanel/core";
@@ -112,15 +113,61 @@ describe("runScheduler", () => {
     client.close();
   });
 
-  it("does not touch drafts or already-running campaigns", () => {
+  it("does not touch drafts or in-flight campaigns with pending deliveries", () => {
     const { db, client } = createMemoryDb();
     const { workspaceId, domainId } = seed(db);
     insertCampaign(db, workspaceId, domainId, { status: "draft", schedule_at: new Date(Date.now() - 60_000).toISOString() });
-    insertCampaign(db, workspaceId, domainId, { status: "sending", schedule_at: new Date(Date.now() - 60_000).toISOString() });
+    const sendingId = insertCampaign(db, workspaceId, domainId, { status: "sending", schedule_at: new Date(Date.now() - 60_000).toISOString() });
+    // In-flight: a queued delivery exists, so the reaper must leave it alone.
+    db.insert(deliveries).values({ campaign_id: sendingId, subscriber_id: null, domain_id: domainId }).run();
 
     const stats = runScheduler(db);
     expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 0 });
-    expect(db.select().from(deliveries).all()).toHaveLength(0);
+    expect(db.select().from(deliveries).all()).toHaveLength(1);
+
+    const [sending] = db.select().from(campaigns).where(eq(campaigns.id, sendingId)).all();
+    expect(sending?.status).toBe("sending");
     client.close();
+  });
+
+  describe("stuck-campaign reaper", () => {
+    it("fails a sending campaign left with zero deliveries by a crash", () => {
+      const { db, client } = createMemoryDb();
+      const { workspaceId, domainId } = seed(db);
+      const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+
+      const stats = runScheduler(db);
+      expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 0 });
+
+      const [stuck] = db.select().from(campaigns).where(eq(campaigns.id, stuckId)).all();
+      expect(stuck?.status).toBe("failed");
+      expect(stuck?.sent_at).toBeTruthy();
+      client.close();
+    });
+
+    it("marks done (not failed) when something was already sent", () => {
+      const { db, client } = createMemoryDb();
+      const { workspaceId, domainId } = seed(db);
+      const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      db.insert(deliveries).values({ campaign_id: stuckId, subscriber_id: null, domain_id: domainId, status: "sent", sent_at: Date.now() }).run();
+
+      runScheduler(db);
+
+      const [stuck] = db.select().from(campaigns).where(eq(campaigns.id, stuckId)).all();
+      expect(stuck?.status).toBe("done");
+      client.close();
+    });
+
+    it("never touches cancelled campaigns", () => {
+      const { db, client } = createMemoryDb();
+      const { workspaceId, domainId } = seed(db);
+      const cancelledId = insertCampaign(db, workspaceId, domainId, { status: "cancelled" });
+
+      runScheduler(db);
+
+      const [cancelled] = db.select().from(campaigns).where(eq(campaigns.id, cancelledId)).all();
+      expect(cancelled?.status).toBe("cancelled");
+      client.close();
+    });
   });
 });

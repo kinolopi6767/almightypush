@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { requireEditorRole } from "@/lib/roles";
 import { domains, segments } from "@pushpanel/db/schema";
 import { estimateSegmentRules, refreshSegmentEstimate } from "@pushpanel/db";
 import { logAudit } from "@/lib/audit";
@@ -73,6 +74,8 @@ function ownedDomainIds(workspaceId: number, domainIds: number[]): { ok: true; i
 export async function createSegmentAction(_prev: SegmentFormState | undefined, formData: FormData): Promise<SegmentFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  const roleErr = requireEditorRole(session.user.role);
+  if (roleErr) return { error: roleErr };
   const workspaceId = Number(session.user.workspaceId);
 
   const parsed = parseSegmentForm(formData);
@@ -104,6 +107,8 @@ export async function createSegmentAction(_prev: SegmentFormState | undefined, f
 export async function updateSegmentAction(id: number, formData: FormData): Promise<SegmentFormState> {
   const session = await auth();
   if (!session?.user?.workspaceId) return { error: "Not signed in" };
+  const roleErr = requireEditorRole(session.user.role);
+  if (roleErr) return { error: roleErr };
   const workspaceId = Number(session.user.workspaceId);
 
   const parsed = parseSegmentForm(formData);
@@ -137,6 +142,7 @@ export async function updateSegmentAction(id: number, formData: FormData): Promi
 export async function deleteSegmentAction(id: number): Promise<void> {
   const session = await auth();
   if (!session?.user?.workspaceId) return;
+  if (requireEditorRole(session.user.role)) return;
 
   db.delete(segments)
     .where(and(eq(segments.id, id), eq(segments.workspace_id, Number(session.user.workspaceId))))

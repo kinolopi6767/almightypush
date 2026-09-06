@@ -113,7 +113,7 @@ export async function POST(req: Request) {
         .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
         .all();
       if ((active?.value ?? 0) >= cap) {
-        return corsJson({ ok: false, error: "Subscriber cap reached" }, { status: 403 });
+        return corsJson({ ok: false, error: "Subscriber cap reached" }, { status: 429 });
       }
     }
 
