@@ -167,7 +167,10 @@ export async function estimateSegmentDraft(formData: FormData): Promise<SegmentE
   } catch {
     groups = [];
   }
-  const rules = normalizeRules({ groups });
+  // NOTE: the builder form posts `groups` as `{ groups: [...] }` (see
+  // segment-form.tsx estimate path), while create/update post the raw array
+  // via hidden fields — each server function matches its caller's shape.
+  const rules = normalizeRules(groups);
   if (!rules) return { count: 0, error: "Invalid conditions" };
 
   const owned = ownedDomainIds(Number(session.user.workspaceId), domainIds);

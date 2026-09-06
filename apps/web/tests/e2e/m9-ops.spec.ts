@@ -25,7 +25,9 @@ test("server status page renders live cards", async ({ page }) => {
   await expect(page.getByText("Memory (heap)")).toBeVisible();
   await expect(page.getByText("Database", { exact: true })).toBeVisible();
   await expect(page.getByText("Database readiness")).toBeVisible();
-  await expect(page.getByText(/ready|degraded/)).toBeVisible();
+  // Editorial copy renders "Operational"/"Degraded" (case-insensitive match
+  // covers both readiness states).
+  await expect(page.getByText(/operational|degraded/i)).toBeVisible();
 });
 
 test("openapi.json is served and describes the public endpoints", async ({ request }) => {
