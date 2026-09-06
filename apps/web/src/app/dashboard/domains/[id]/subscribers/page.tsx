@@ -149,7 +149,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
           placeholder="Search browser, OS, device, country…"
           className="h-9 w-full max-w-64 rounded-lg border border-input bg-background px-3 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40 sm:w-64"
         />
-        <select name="status" aria-label="Status" defaultValue={status} className="h-9 rounded-lg border border-input bg-background px-2 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40">
+        <select name="status" aria-label="Filter by subscriber status" defaultValue={status} className="h-9 rounded-lg border border-input bg-background px-2 text-sm focus:border-primary/50 focus:outline-none focus:ring-[3px] focus:ring-ring/40">
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="unsubscribed">Unsubscribed</option>

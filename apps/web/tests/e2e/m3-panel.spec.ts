@@ -46,13 +46,13 @@ test("subscribers page: list, filter, clean unsubscribed", async ({ page, reques
 
   // status filter
   await page.getByPlaceholder("Search browser, OS, device, country…").fill("");
-  await page.getByLabel("Status").selectOption("active");
+  await page.getByLabel("Filter by subscriber status").selectOption("active");
   await page.getByRole("button", { name: "Filter" }).click();
   await expect(page.getByText(/desktop/).first()).toBeVisible();
   await expect(page.getByText(/unsubscribed · api/)).not.toBeVisible();
 
   // clean unsubscribed
-  await page.getByLabel("Status").selectOption("all");
+  await page.getByLabel("Filter by subscriber status").selectOption("all");
   await page.getByRole("button", { name: "Filter" }).click();
   await expect(page.getByText("1 active · 1 unsubscribed · 2 total")).toBeVisible();
   page.once("dialog", (d) => d.accept());
