@@ -177,6 +177,19 @@ export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>,
   return { deliveries: prunedDel, events: prunedEvt };
 }
 
+/**
+ * Effective unsubscribed-purge retention in days. Default 30 matches the
+ * settings form's displayed default (`?? "30"` in settings/page.tsx).
+ * Unset/corrupt must not silently disable the purge (unbounded dead-row
+ * growth) — nor silently become a 0-day wipe. 0 disables explicitly.
+ */
+export function effectiveUnsubRetentionDays(raw: string | null): number {
+  // Number("") is 0 — an empty stored value means "unset", not "wipe daily".
+  if (raw === null || raw.trim() === "") return 30;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 30;
+}
+
 export function readSetting(db: BetterSQLite3Database<typeof allTables>, key: string): string | null {
   const row = db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
   return row?.value ?? null;

@@ -12,7 +12,7 @@ import { runAutomations } from "./automation";
 import { runBackupScheduler } from "./backup";
 import { runJourneys } from "./journey";
 import { runEmailCampaigns } from "./email";
-import { readSetting, runCleanup, runRetentionPruning } from "./cleanup";
+import { effectiveUnsubRetentionDays, readSetting, runCleanup, runRetentionPruning } from "./cleanup";
 import { nextPollMs } from "./poll";
 
 /** Env-number parse with fallback + clamp — NaN/garbage must not hot-loop. */
@@ -81,7 +81,9 @@ function main() {
       if (stats.claimed > 0) {
         logger.info({ ...stats }, "send cycle complete");
       }
-      const retention = Number(readSetting(db, "cleanup_unsubs_retention_days") ?? 0);
+      // Default 30 matches the settings form's displayed default (`?? "30"`
+      // in settings/page.tsx) — see effectiveUnsubRetentionDays.
+      const retention = effectiveUnsubRetentionDays(readSetting(db, "cleanup_unsubs_retention_days"));
       let cleaned = 0;
       if (retention > 0) {
         const cleanup = runCleanup(db, { retentionDays: retention });

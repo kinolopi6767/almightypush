@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryDb } from "@pushpanel/db";
 import { domains, subscribers, teamInvites, workspaces } from "@pushpanel/db/schema";
-import { runCleanup, runRetentionPruning, readSetting, writeSetting } from "./cleanup";
+import { runCleanup, runRetentionPruning, effectiveUnsubRetentionDays, readSetting, writeSetting } from "./cleanup";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
 
@@ -94,6 +94,14 @@ describe("settings", () => {
     writeSetting(db, "timezone", "UTC");
     expect(readSetting(db, "timezone")).toBe("UTC");
     expect(readSetting(db, "missing")).toBeNull();
+  });
+
+  it("effectiveUnsubRetentionDays defaults corrupt/unset to 30, honors explicit 0", () => {
+    expect(effectiveUnsubRetentionDays(null)).toBe(30);
+    expect(effectiveUnsubRetentionDays("abc")).toBe(30);
+    expect(effectiveUnsubRetentionDays("")).toBe(30);
+    expect(effectiveUnsubRetentionDays("45")).toBe(45);
+    expect(effectiveUnsubRetentionDays("0")).toBe(0);
   });
 });
 
