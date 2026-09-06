@@ -49,7 +49,8 @@ async function createAutomationViaUi(
   await page.getByRole("button", { name: "New automation" }).click();
   await page.getByLabel("Name").fill(fields.name);
   await page.getByLabel("Type").selectOption(fields.type);
-  if (fields.domainId) await page.getByLabel("Domain").selectOption(fields.domainId);
+  // exact: the nav also exposes "Domains" links that substring-match.
+  if (fields.domainId) await page.getByLabel("Domain", { exact: true }).selectOption(fields.domainId);
   await page.getByLabel("Notification title").fill(fields.title);
   if (fields.message) await page.getByLabel("Message").fill(fields.message);
   if (fields.launch_url) await page.getByLabel("Launch URL").fill(fields.launch_url);
