@@ -7,8 +7,11 @@
  */
 import { readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../..", import.meta.url).pathname;
+// scripts/ sits one level below the repo root; fileURLToPath both resolves
+// the parent and decodes %20 etc. (raw .pathname breaks on paths with spaces).
+const root = fileURLToPath(new URL("..", import.meta.url));
 const dataDir = path.join(root, "data");
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -44,7 +47,7 @@ try {
     removed++;
   }
 } catch (err) {
-  console.error(`[prune-e2e] ${dataDir} unreadable:`, (err as Error).message);
+  console.error(`[prune-e2e] ${dataDir} unreadable:`, err instanceof Error ? err.message : String(err));
   process.exit(1);
 }
 console.log(`[prune-e2e] removed=${removed} kept=${kept} dryRun=${dryRun}`);
