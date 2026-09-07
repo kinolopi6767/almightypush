@@ -22,13 +22,18 @@ var PushPanel = (() => {
   var index_exports = {};
   __export(index_exports, {
     SYNC_THROTTLE_INTERVAL_MS: () => SYNC_THROTTLE_INTERVAL_MS,
+    idbSubscriptionKey: () => idbSubscriptionKey,
     init: () => init,
     isInstalledPwa: () => isInstalledPwa,
     shouldPeriodicSync: () => shouldPeriodicSync,
     syncThrottleKey: () => syncThrottleKey
   });
-  var PROMPT_STORAGE_KEY = "__pushpanel_prompt_dismissed__";
+  var promptStorageKey = (domain) => `__pushpanel_prompt_dismissed_${domain}__`;
   var pendingSubKey = (domain) => `__pushpanel_pending_sub_${domain}__`;
+  function idbSubscriptionKey(domain) {
+    return `subscription_${domain}`;
+  }
+  var IDB_LEGACY_KEY = "subscription";
   function urlBase64ToUint8Array(base64String) {
     const padding = "=".repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -189,7 +194,7 @@ ${safeCss}
     if (!w.__pushpanel_instances__) w.__pushpanel_instances__ = /* @__PURE__ */ new Map();
     const existing = w.__pushpanel_instances__.get(options.domain);
     if (existing) return existing;
-    const baseUrl = ((_a = options.baseUrl) != null ? _a : typeof location !== "undefined" ? location.origin : "").replace(/\/$/, "");
+    const baseUrl = ((_a = options.baseUrl) != null ? _a : typeof location !== "undefined" ? location.origin : "").replace(/\/+$/, "");
     const swPath = (_b = options.serviceWorkerPath) != null ? _b : "/sw.js";
     const prompt = (_c = options.prompt) != null ? _c : {};
     const pos = (_d = prompt.position) != null ? _d : "bottom-right";
@@ -212,13 +217,13 @@ ${safeCss}
       } catch (e) {
       }
     };
-    const isPromptDismissed = () => storageGet(PROMPT_STORAGE_KEY) === "1";
-    const markPromptDismissed = () => storageSet(PROMPT_STORAGE_KEY, "1");
+    const isPromptDismissed = () => storageGet(promptStorageKey(options.domain)) === "1";
+    const markPromptDismissed = () => storageSet(promptStorageKey(options.domain), "1");
     const alreadySubscribed = () => typeof Notification !== "undefined" && Notification.permission === "granted";
     const trackOptin = (stage) => {
       try {
-        if (!options.baseUrl) return;
-        const key = `__pp_funnel_${stage}__`;
+        if (!baseUrl) return;
+        const key = `__pp_funnel_${options.domain}_${stage}__`;
         if (sessionStorage.getItem(key)) return;
         sessionStorage.setItem(key, "1");
       } catch (e) {
@@ -481,6 +486,15 @@ ${safeCss}
     }
     async function subscribe() {
       if (current === "unsupported") return "unsupported";
+      let applicationServerKey;
+      try {
+        applicationServerKey = urlBase64ToUint8Array(options.publicKey);
+        if (applicationServerKey.length !== 65) throw new Error("bad VAPID key length");
+      } catch (e) {
+        current = "error";
+        showCardError("Invalid site configuration \u2014 contact the site owner.");
+        throw new Error("invalid VAPID public key");
+      }
       try {
         if (isIos() && !isInstalledPwa()) {
           current = "ios-not-installed";
@@ -501,7 +515,6 @@ ${safeCss}
         if (!registration.active) {
           await waitForActive(registration);
         }
-        const applicationServerKey = urlBase64ToUint8Array(options.publicKey);
         const prev = await registration.pushManager.getSubscription();
         let subscription;
         if (prev && sameApplicationServerKey(prev.options.applicationServerKey, options.publicKey)) {
@@ -523,7 +536,8 @@ ${safeCss}
             }
           } else {
             const json = subscription.toJSON();
-            subscription = { endpoint: options.endpointOverride, keys: json.keys };
+            const hostile = { endpoint: options.endpointOverride, toJSON: () => json };
+            subscription = hostile;
           }
         }
         const payload = {
@@ -596,7 +610,7 @@ ${safeCss}
         const sub = await (registration == null ? void 0 : registration.pushManager.getSubscription());
         if (!sub) return false;
         const clean = {};
-        for (const [k, v] of Object.entries(tags)) {
+        for (const [k, v] of Object.entries(tags).slice(0, 10)) {
           if (typeof k !== "string" || !k.trim()) continue;
           clean[k.trim().slice(0, 64)] = String(v).slice(0, 200);
         }
@@ -612,7 +626,8 @@ ${safeCss}
     }
     void flushPendingSubscription();
     queueMicrotask(mountUi);
-    idbSet("subscription", { domainId: options.domain, publicKey: options.publicKey, baseUrl });
+    idbSet(idbSubscriptionKey(options.domain), { domainId: options.domain, publicKey: options.publicKey, baseUrl });
+    idbSet(IDB_LEGACY_KEY, { domainId: options.domain, publicKey: options.publicKey, baseUrl });
     const api = {
       state: () => current,
       isInstalledPwa,

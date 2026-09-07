@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldPeriodicSync, syncThrottleKey, SYNC_THROTTLE_INTERVAL_MS } from "./index";
+import { idbSubscriptionKey, shouldPeriodicSync, syncThrottleKey, SYNC_THROTTLE_INTERVAL_MS } from "./index";
 
 describe("per-domain periodic sync throttle", () => {
   it("keys throttle storage per domain", () => {
@@ -23,5 +23,13 @@ describe("per-domain periodic sync throttle", () => {
     const now = 1_800_000_000_000;
     expect(shouldPeriodicSync(now - SYNC_THROTTLE_INTERVAL_MS, now)).toBe(true);
     expect(shouldPeriodicSync(now - SYNC_THROTTLE_INTERVAL_MS - 1, now)).toBe(true);
+  });
+});
+
+describe("per-domain IDB subscription keys", () => {
+  it("keys SW reconciliation configs per domain", () => {
+    expect(idbSubscriptionKey(1)).toBe("subscription_1");
+    expect(idbSubscriptionKey(2)).toBe("subscription_2");
+    expect(idbSubscriptionKey(1)).not.toBe(idbSubscriptionKey(2));
   });
 });

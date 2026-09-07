@@ -157,6 +157,36 @@ async function idbGet(key) {
   }
 }
 
+/* Per-domain subscription configs (SDK writes `subscription_<domainId>` plus
+ * the legacy `subscription` key). Enumerate all of them so multi-domain pages
+ * reconcile every domain, not just the last one initialized. */
+async function idbGetAllSubscriptionConfigs() {
+  const configs = [];
+  try {
+    const db = await idbOpen();
+    const keys = await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result ?? []);
+      req.onerror = () => reject(req.error);
+    });
+    const wanted = keys.filter((k) => k === "subscription" || (typeof k === "string" && k.indexOf("subscription_") === 0));
+    const seen = new Set();
+    for (const key of wanted) {
+      const cfg = await idbGet(key);
+      if (!cfg || !cfg.domainId || !cfg.publicKey || !cfg.baseUrl) continue;
+      // The legacy key duplicates the newest per-domain entry — send once.
+      const fingerprint = `${cfg.domainId}|${cfg.publicKey}|${cfg.baseUrl}`;
+      if (seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
+      configs.push(cfg);
+    }
+  } catch {
+    // storage gone — nothing to reconcile
+  }
+  return configs;
+}
+
 function base64UrlToBytes(s) {
   const padding = "=".repeat((4 - (s.length % 4)) % 4);
   const b64 = (s + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -169,34 +199,39 @@ function base64UrlToBytes(s) {
 self.addEventListener("pushsubscriptionchange", (event) => {
   event.waitUntil(
     (async () => {
-      const cfg = await idbGet("subscription");
-      if (!cfg || !cfg.domainId || !cfg.publicKey || !cfg.baseUrl) return;
-      let newSub;
-      try {
-        newSub =
-          event.newSubscription ??
-          (await self.registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: base64UrlToBytes(cfg.publicKey),
-          }));
-      } catch {
-        // Permission revoked or storage gone — nothing to migrate.
-        return;
-      }
-      const oldEndpoint = event.oldSubscription ? event.oldSubscription.endpoint : undefined;
-      try {
-        await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/api/v1/resubscribe`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            domainId: cfg.domainId,
-            oldEndpoint,
-            subscription: { endpoint: newSub.endpoint, keys: newSub.toJSON().keys },
-          }),
-        });
-      } catch {
-        // Offline — the page-load sync will reconcile on next visit.
+      const configs = await idbGetAllSubscriptionConfigs();
+      for (const cfg of configs) {
+        await reconcileSubscription(event, cfg);
       }
     })(),
   );
 });
+
+async function reconcileSubscription(event, cfg) {
+  let newSub;
+  try {
+    newSub =
+      event.newSubscription ??
+      (await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToBytes(cfg.publicKey),
+      }));
+  } catch {
+    // Permission revoked or storage gone — nothing to migrate.
+    return;
+  }
+  const oldEndpoint = event.oldSubscription ? event.oldSubscription.endpoint : undefined;
+  try {
+    await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/api/v1/resubscribe`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        domainId: cfg.domainId,
+        oldEndpoint,
+        subscription: { endpoint: newSub.endpoint, keys: newSub.toJSON().keys },
+      }),
+    });
+  } catch {
+    // Offline — the page-load sync will reconcile on next visit.
+  }
+}

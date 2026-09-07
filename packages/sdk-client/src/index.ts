@@ -69,8 +69,16 @@ export interface PushPanelApi {
   setTags(tags: Record<string, string | number | boolean>): Promise<boolean>;
 }
 
-const PROMPT_STORAGE_KEY = "__pushpanel_prompt_dismissed__";
+/** Dismissal flags are per-domain: two domains on one origin prompt independently. */
+const promptStorageKey = (domain: number): string => `__pushpanel_prompt_dismissed_${domain}__`;
 const pendingSubKey = (domain: number): string => `__pushpanel_pending_sub_${domain}__`;
+/** IDB config key shared with the service worker (see public/sw.js) — per-domain. */
+export function idbSubscriptionKey(domain: number): string {
+  return `subscription_${domain}`;
+}
+/** Legacy single-domain IDB key — still written so older cached service
+ * workers keep reconciling until they update. */
+const IDB_LEGACY_KEY = "subscription";
 /** Module-level singleton: re-init() with the same domain must not mount duplicate UI. */
 interface PushPanelWindow extends Window {
   __pushpanel_instances__?: Map<number, PushPanelApi>;
@@ -299,7 +307,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
   const existing = w.__pushpanel_instances__.get(options.domain);
   if (existing) return existing;
 
-  const baseUrl = (options.baseUrl ?? (typeof location !== "undefined" ? location.origin : "")).replace(/\/$/, "");
+  const baseUrl = (options.baseUrl ?? (typeof location !== "undefined" ? location.origin : "")).replace(/\/+$/, "");
   const swPath = options.serviceWorkerPath ?? "/sw.js";
   const prompt: PushPromptConfig = options.prompt ?? {};
   const pos = prompt.position ?? "bottom-right";
@@ -326,17 +334,20 @@ export function init(options: PushPanelOptions): PushPanelApi {
     }
   };
 
-  const isPromptDismissed = (): boolean => storageGet(PROMPT_STORAGE_KEY) === "1";
-  const markPromptDismissed = (): void => storageSet(PROMPT_STORAGE_KEY, "1");
+  const isPromptDismissed = (): boolean => storageGet(promptStorageKey(options.domain)) === "1";
+  const markPromptDismissed = (): void => storageSet(promptStorageKey(options.domain), "1");
 
   const alreadySubscribed = (): boolean =>
     typeof Notification !== "undefined" && Notification.permission === "granted";
 
-  /** Opt-in funnel telemetry — once per stage per browsing session. */
+  /** Opt-in funnel telemetry — once per stage per browsing session per domain. */
   const trackOptin = (stage: "prompt_shown" | "prompt_allowed" | "prompt_denied" | "prompt_dismissed"): void => {
     try {
-      if (!options.baseUrl) return;
-      const key = `__pp_funnel_${stage}__`;
+      // The computed baseUrl (falling back to the current origin) is the
+      // endpoint — requiring an explicit options.baseUrl would silently drop
+      // telemetry for every default-origin install.
+      if (!baseUrl) return;
+      const key = `__pp_funnel_${options.domain}_${stage}__`;
       if (sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, "1");
     } catch {
@@ -632,6 +643,18 @@ export function init(options: PushPanelOptions): PushPanelApi {
 
   async function subscribe(): Promise<PushPanelState> {
     if (current === "unsupported") return "unsupported";
+    // Validate the VAPID key BEFORE asking for permission: a malformed key
+    // used to surface only after the user clicked Allow (granted permission
+    // + registered SW, then "error" state with no recovery path).
+    let applicationServerKey: Uint8Array<ArrayBuffer>;
+    try {
+      applicationServerKey = urlBase64ToUint8Array(options.publicKey);
+      if (applicationServerKey.length !== 65) throw new Error("bad VAPID key length");
+    } catch {
+      current = "error";
+      showCardError("Invalid site configuration — contact the site owner.");
+      throw new Error("invalid VAPID public key");
+    }
     try {
       // iOS push only exists on installed PWAs (iOS 16.4+ macOS, 18+ iOS).
       if (isIos() && !isInstalledPwa()) {
@@ -654,7 +677,6 @@ export function init(options: PushPanelOptions): PushPanelApi {
       if (!registration.active) {
         await waitForActive(registration);
       }
-      const applicationServerKey = urlBase64ToUint8Array(options.publicKey);
 
       // Endpoint reuse: push services rotate endpoints; blindly subscribing
       // again creates a SECOND live subscription for the same person (double
@@ -684,9 +706,11 @@ export function init(options: PushPanelOptions): PushPanelApi {
           }
         } else {
           // Spread of a PushSubscription copies nothing (IDL attributes live on
-          // the prototype) — rebuild from its JSON representation instead.
+          // the prototype) — rebuild from its JSON representation instead, and
+          // keep toJSON working: the payload builder below calls it.
           const json = subscription.toJSON() as { endpoint?: string; keys?: { p256dh: string; auth: string } };
-          subscription = { endpoint: options.endpointOverride, keys: json.keys } as unknown as PushSubscription;
+          const hostile = { endpoint: options.endpointOverride, toJSON: () => json };
+          subscription = hostile as unknown as PushSubscription;
         }
       }
       const payload = {
@@ -771,9 +795,10 @@ export function init(options: PushPanelOptions): PushPanelApi {
       const registration = await getOwnRegistration();
       const sub = await registration?.pushManager.getSubscription();
       if (!sub) return false;
-      // Stringify values (OneSignal-style flat tags), cap count/lengths server-side.
+      // Stringify values (OneSignal-style flat tags), cap count/lengths
+      // client-side too (the server rejects >10 with a 400).
       const clean: Record<string, string> = {};
-      for (const [k, v] of Object.entries(tags)) {
+      for (const [k, v] of Object.entries(tags).slice(0, 10)) {
         if (typeof k !== "string" || !k.trim()) continue;
         clean[k.trim().slice(0, 64)] = String(v).slice(0, 200);
       }
@@ -794,7 +819,10 @@ export function init(options: PushPanelOptions): PushPanelApi {
   void flushPendingSubscription();
   queueMicrotask(mountUi);
 
-  idbSet("subscription", { domainId: options.domain, publicKey: options.publicKey, baseUrl });
+  idbSet(idbSubscriptionKey(options.domain), { domainId: options.domain, publicKey: options.publicKey, baseUrl });
+  // Legacy single key for older cached service workers (last-writer-wins for
+  // multi-domain pages until their SW updates).
+  idbSet(IDB_LEGACY_KEY, { domainId: options.domain, publicKey: options.publicKey, baseUrl });
 
 
   const api: PushPanelApi = {
