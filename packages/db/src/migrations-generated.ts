@@ -82,5 +82,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0014_integrity_hardening",
     "idx": 14,
     "sql": "-- 0014: integrity hardening (idempotent).\n-- non_clickers resend joins events(delivery_id); previously only the partial\n-- unique for clicked rows existed — the join probe needs a plain index.\n-- Email contacts + subscriber tags duplicated without bounds (N sends per\n-- address); invite tokens must be unique for single-use security.\n\nCREATE INDEX IF NOT EXISTS idx_events_delivery_id ON events (delivery_id);\n\n-- Dedupe before adding UNIQUEs (existing personal DBs may already hold dupes).\nDELETE FROM email_contacts WHERE id NOT IN (SELECT MIN(id) FROM email_contacts GROUP BY workspace_id, email);\nDELETE FROM subscriber_tags WHERE id NOT IN (SELECT MIN(id) FROM subscriber_tags GROUP BY subscriber_id, tag);\n\n-- Dedupe email contacts per workspace (case handling stays in app code;\n-- index guards exact duplicates). NULL-safe: SQLite treats NULLs distinct.\nCREATE UNIQUE INDEX IF NOT EXISTS idx_email_contacts_ws_email_uniq ON email_contacts (workspace_id, email);\n\n-- One value per (subscriber, tag): setTags replace-all stays idempotent and\n-- personalization reads stay deterministic.\nCREATE UNIQUE INDEX IF NOT EXISTS idx_subscriber_tags_sub_tag_uniq ON subscriber_tags (subscriber_id, tag);\n\n-- Single-use invite tokens must be globally unique (stored as sha256 hash).\nCREATE UNIQUE INDEX IF NOT EXISTS idx_team_invites_token_uniq ON team_invites (token_hash);\n"
+  },
+  {
+    "tag": "0015_drop_sessions",
+    "idx": 15,
+    "sql": "-- 0015: drop dead `sessions` table (idempotent).\n-- Auth.js runs JWT strategy (stateless sessions in signed cookies) — no code\n-- path has ever read or written this table (verified by repo-wide grep).\n-- Precedent: 0011 dropped other never-used LumaPush-import tables the same way.\n-- Keeping it would mislead future contributors into building a DB-session\n-- flow against a table that migrations-created but nothing maintains.\n\nDROP TABLE IF EXISTS `sessions`;\n"
   }
 ];

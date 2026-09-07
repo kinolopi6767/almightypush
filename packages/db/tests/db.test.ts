@@ -21,7 +21,6 @@ describe("db", () => {
         "events",
         "lp_links",
         "segments",
-        "sessions",
         "settings",
         "subscribers",
         "templates",

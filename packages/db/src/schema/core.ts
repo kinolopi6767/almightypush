@@ -32,22 +32,9 @@ export const users = sqliteTable(
   // already emits `users_email_unique` (a second index was dropped in 0010).
 );
 
-export const sessions = sqliteTable(
-  "sessions",
-  {
-    id: text("id").primaryKey(),
-    user_id: integer("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    /** unix epoch ms */
-    expires_at: integer("expires_at").notNull(),
-    created_at: text("created_at")
-      .notNull()
-      .$defaultFn(() => new Date().toISOString()),
-    ip: text("ip"),
-  },
-  (t) => [index("idx_sessions_user").on(t.user_id)],
-);
+// NOTE: a `sessions` table existed here historically but was dropped in
+// migration 0015 — Auth.js runs JWT strategy (stateless), so no code path
+// ever read or wrote it. Do not re-add without a DB-backed session design.
 
 /** Global panel settings (key/value). */
 export const settings = sqliteTable("settings", {

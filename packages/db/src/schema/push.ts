@@ -4,9 +4,6 @@ import { id, workspaceRef } from "./common";
 import { workspaces } from "./core";
 import { campaigns } from "./marketing";
 
-/** A website with its own push credentials (VAPID keypair or FCM config),
- *  prompt settings and subscribers. */
-
 /**
  * A website with its own push credentials (VAPID keypair or FCM config),
  * prompt settings and subscribers.

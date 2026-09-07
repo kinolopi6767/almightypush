@@ -116,7 +116,10 @@ function parseDomainFilter(json: string | null, override?: number): number[] | n
   try {
     const parsed = json ? JSON.parse(json) : null;
     if (Array.isArray(parsed) && parsed.length > 0) {
-      fromStore = parsed.map(Number).filter((n) => Number.isInteger(n));
+      // Positive integers only: 0/negatives/NaN match nothing downstream, so
+      // reject them here instead of emitting dead IN-list entries.
+      fromStore = parsed.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+      if (fromStore.length === 0) fromStore = null;
     }
   } catch {
     fromStore = null;

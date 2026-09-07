@@ -22,7 +22,7 @@ export const campaigns = sqliteTable(
     launch_url: text("launch_url"),
     /** [{ label, icon, url }] */
     buttons_json: text("buttons_json"),
-    /** { kind: 'all' | 'manual' | 'segment', ids: [] } */
+    /** { kind: 'all' | 'manual' | 'segment' | 'non_clickers', ids: [] } */
     audience_json: text("audience_json").notNull().default("{}"),
     schedule_at: text("schedule_at"),
     schedule_tz: text("schedule_tz"),
@@ -32,7 +32,7 @@ export const campaigns = sqliteTable(
     /** panel | api | wordpress | automation | journey | ai */
     source: text("source").notNull().default("panel"),
     template_id: integer("template_id"),
-    /** LumaPush delivery controls: topic 64ch collapse, TTL 0-86400, urgency */
+    /** LumaPush delivery controls: topic 64ch collapse, TTL 0-2419200s, urgency */
     topic: text("topic"),
     ttl: integer("ttl").notNull().default(86400),
     urgency: text("urgency").notNull().default("normal"),
