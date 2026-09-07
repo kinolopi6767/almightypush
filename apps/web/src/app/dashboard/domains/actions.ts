@@ -337,3 +337,81 @@ export async function deleteDomainAction(domainId: number): Promise<DomainFormSt
   logAudit(db, { workspaceId, action: "domain.delete", entityType: "domain", entityId: domainId, meta: { name: domain.name } });
   return { ok: true, id: domainId };
 }
+
+const cloneDomainSchema = z.object({
+  name: z.string().trim().toLowerCase().regex(HOSTNAME_RE, "Enter a valid hostname, e.g. app.example.com"),
+});
+
+/**
+ * B10: clone a domain's configuration into a new hostname. Copies the prompt
+ * settings (kind/position/texts/…) so multi-site rollouts don't re-enter them
+ * per site; mints a FRESH VAPID keypair (keys are per-hostname for
+ * deliverability and must never be shared). No subscribers, campaigns,
+ * automations or keys are carried over.
+ */
+export async function cloneDomainAction(
+  sourceId: number,
+  _prev: DomainFormState,
+  formData: FormData,
+): Promise<NonNullable<DomainFormState>> {
+  if (!Number.isInteger(sourceId) || sourceId <= 0) return { error: "Invalid domain" };
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!workspaceId) return { error: "No workspace" };
+
+  const parsed = cloneDomainSchema.safeParse({ name: sanitizeHostname(String(formData.get("name") ?? "")) });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid hostname" };
+
+  const [source] = db
+    .select({ id: domains.id, app_config_json: domains.app_config_json })
+    .from(domains)
+    .where(and(eq(domains.id, sourceId), eq(domains.workspace_id, workspaceId)))
+    .limit(1)
+    .all();
+  if (!source) return { error: "Source domain not found" };
+
+  const existing = db
+    .select({ id: domains.id })
+    .from(domains)
+    .where(and(eq(domains.workspace_id, workspaceId), eq(domains.name, parsed.data.name)))
+    .limit(1)
+    .get();
+  if (existing) return { error: "A domain with this hostname already exists" };
+
+  let vapid;
+  try {
+    vapid = createVapidConfig(process.env.APP_ENC_KEY, `mailto:owner@${parsed.data.name}`);
+  } catch {
+    return { error: "Server encryption key missing or invalid — set APP_ENC_KEY (64 hex chars) and redeploy" };
+  }
+
+  // Carry over prompt config only (validated shape unknown — parse defensively,
+  // keep the prompt subtree when it parses to an object, else fresh default).
+  let appConfig: Record<string, unknown> = { url: `https://${parsed.data.name}`, prompt: { kind: "auto" } };
+  try {
+    const srcCfg = source.app_config_json ? (JSON.parse(source.app_config_json) as Record<string, unknown>) : null;
+    if (srcCfg && typeof srcCfg === "object" && srcCfg.prompt && typeof srcCfg.prompt === "object") {
+      appConfig = { url: `https://${parsed.data.name}`, prompt: srcCfg.prompt };
+    }
+  } catch {
+    // keep default
+  }
+
+  const inserted = db
+    .insert(domains)
+    .values({
+      workspace_id: workspaceId,
+      name: parsed.data.name,
+      provider: "vapid",
+      provider_config_json: JSON.stringify(vapid),
+      app_config_json: JSON.stringify(appConfig),
+      status: "active",
+    })
+    .run();
+  if (!inserted.lastInsertRowid) return { error: "Failed to clone domain" };
+  const newId = Number(inserted.lastInsertRowid);
+  logAudit(db, { workspaceId, action: "domain.clone", entityType: "domain", entityId: newId, meta: { from: sourceId, name: parsed.data.name } });
+  return { ok: true, id: newId };
+}

@@ -6,6 +6,7 @@ export type AuditAction =
   | "domain.create"
   | "domain.update"
   | "domain.delete"
+  | "domain.clone"
   | "campaign.create"
   | "campaign.cancel"
   | "campaign.retry"

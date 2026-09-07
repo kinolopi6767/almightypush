@@ -8,11 +8,12 @@ import { PageHeader } from "@/components/page-header";
 
 export const metadata = { title: "New campaign" };
 
-export default async function NewCampaignPage() {
- const session = await auth();
- if (!session?.user) redirect("/login");
- const workspaceId = Number(session?.user?.workspaceId ?? 0);
- if (!workspaceId) redirect("/setup");
+/** B8 Quick Push: /dashboard/campaigns/new?url=…&autofetch=1 prefills the composer. */
+export default async function NewCampaignPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  const workspaceId = Number(session?.user?.workspaceId ?? 0);
+  if (!workspaceId) redirect("/setup");
  const domainRows = db.select({ id: domains.id, name: domains.name }).from(domains).where(eq(domains.workspace_id, workspaceId)).all();
  const segmentRows = db
   .select({ id: segments.id, name: segments.name, estimate_count: segments.estimate_count })
@@ -25,15 +26,24 @@ export default async function NewCampaignPage() {
   .where(eq(templates.workspace_id, workspaceId))
   .all();
 
- return (
-  <>
-   <PageHeader eyebrow="Operate · Campaigns"
-    title="New campaign"
-    description="Send a push to every active subscriber of a domain — or to a saved segment — immediately or on a schedule."
-   />
-   <div className="mt-8 max-w-xl">
-    <CampaignForm domains={domainRows} segments={segmentRows} templates={templateRows} />
-   </div>
-  </>
- );
+  const sp = (await searchParams) ?? {};
+  const quickUrl = typeof sp.url === "string" ? sp.url.trim().slice(0, 2048) : "";
+  const autofetch = sp.autofetch === "1" && quickUrl.startsWith("http");
+
+  return (
+   <>
+    <PageHeader eyebrow="Operate · Campaigns"
+     title="New campaign"
+     description="Send a push to every active subscriber of a domain — or to a saved segment — immediately or on a schedule."
+    />
+    <div className="mt-8 max-w-xl">
+     <CampaignForm
+      domains={domainRows}
+      segments={segmentRows}
+      templates={templateRows}
+      initial={quickUrl ? { launchUrl: quickUrl, autofetch } : undefined}
+     />
+    </div>
+   </>
+  );
 }

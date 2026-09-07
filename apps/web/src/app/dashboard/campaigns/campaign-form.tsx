@@ -4,30 +4,33 @@
 let __rowSeq = 0;
 const nextRid = () => `row-${Date.now().toString(36)}-${++__rowSeq}`;
 
-import { Fragment, useActionState, useEffect, useState } from "react";
+import { Fragment, useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createCampaignAction, type CampaignFormState } from "./actions";
 import { UseDirtyGuard } from "@/components/use-dirty-guard";
 
 export function CampaignForm({
- domains,
- segments,
- templates,
+  domains,
+  segments,
+  templates,
+  initial,
 }: {
- domains: { id: number; name: string }[];
- segments: { id: number; name: string; estimate_count: number | null }[];
- templates: { id: number; name: string; title: string | null; message: string | null; launch_url: string | null }[];
+  domains: { id: number; name: string }[];
+  segments: { id: number; name: string; estimate_count: number | null }[];
+  templates: { id: number; name: string; title: string | null; message: string | null; launch_url: string | null }[];
+  /** B8 Quick Push prefill (URL carried over from the campaigns list). */
+  initial?: { launchUrl?: string; autofetch?: boolean };
 }) {
- const router = useRouter();
- const [state, formAction, pending] = useActionState<CampaignFormState, FormData>(createCampaignAction, undefined);
- const [audienceKind, setAudienceKind] = useState<"all" | "segment">("all");
- const [segmentId, setSegmentId] = useState("");
- const [templateId, setTemplateId] = useState("");
- const [title, setTitle] = useState("");
- const [message, setMessage] = useState("");
- const [launchUrl, setLaunchUrl] = useState("");
- const [iconUrl, setIconUrl] = useState("");
- const [imageUrl, setImageUrl] = useState("");
+  const router = useRouter();
+  const [state, formAction, pending] = useActionState<CampaignFormState, FormData>(createCampaignAction, undefined);
+  const [audienceKind, setAudienceKind] = useState<"all" | "segment">("all");
+  const [segmentId, setSegmentId] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [launchUrl, setLaunchUrl] = useState(initial?.launchUrl ?? "");
+  const [iconUrl, setIconUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
  // Rows carry a stable local id so React keeps input DOM/focus when a
  // middle row is deleted (index keys would remap controlled inputs).
  const [buttons, setButtons] = useState<{ rid: string; label: string; url: string }[]>([{ rid: nextRid(), label: "", url: "" }]);
@@ -68,9 +71,19 @@ export function CampaignForm({
   }
  }
 
- useEffect(() => {
-  if (state?.ok && state.id) router.push(`/dashboard/campaigns/${state.id}`);
- }, [state, router]);
+  useEffect(() => {
+    if (state?.ok && state.id) router.push(`/dashboard/campaigns/${state.id}`);
+  }, [state, router]);
+
+  // B8 Quick Push: auto-scrape the carried-over URL once on mount so the
+  // composer opens with title/message/icon already filled.
+  const autoFetched = useRef(initial?.autofetch !== true);
+  useEffect(() => {
+    if (!autoFetched.current && launchUrl.trim()) {
+      autoFetched.current = true;
+      void fetchContent();
+    }
+  }, []);
 
   const applyTemplate = (id: string) => {
    setTemplateId(id);

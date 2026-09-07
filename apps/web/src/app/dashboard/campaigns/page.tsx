@@ -7,6 +7,7 @@ import { campaigns, domains, events } from "@pushpanel/db/schema";
 import { statusLabel } from "./status";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { QuickPushForm } from "./quick-push-form";
 
 export const metadata = { title: "Campaigns" };
 
@@ -81,7 +82,8 @@ export default async function CampaignsPage() {
     }
    />
 
-   <div className="mt-5">
+   <div className="mt-5 space-y-4">
+    <QuickPushForm />
     {rows.length === 0 && (
      <EmptyState
       icon={<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />}

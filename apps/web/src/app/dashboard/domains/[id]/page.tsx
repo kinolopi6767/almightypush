@@ -4,7 +4,7 @@ import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deliveries, domains, events, subscribers } from "@pushpanel/db/schema";
 import { TestPushForm } from "../test-push-form";
-import { DeleteDomainForm, DomainStatusForm } from "../domain-manage-forms";
+import { DeleteDomainForm, CloneDomainForm, DomainStatusForm } from "../domain-manage-forms";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { PageHeader } from "@/components/page-header";
@@ -240,10 +240,11 @@ export default async function DomainDetailPage({ params }: Props) {
     </div>
 
     <TestPushForm domainId={domain.id} />
-    <div className="mt-6 space-y-6">
-     <DomainStatusForm domainId={domain.id} status={domain.status} />
-     <DeleteDomainForm domainId={domain.id} name={domain.name} />
-    </div>
+     <div className="mt-6 space-y-6">
+      <DomainStatusForm domainId={domain.id} status={domain.status} />
+      <CloneDomainForm domainId={domain.id} name={domain.name} />
+      <DeleteDomainForm domainId={domain.id} name={domain.name} />
+     </div>
    </div>
   </>
  );
