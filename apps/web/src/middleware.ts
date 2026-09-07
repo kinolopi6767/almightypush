@@ -22,6 +22,12 @@ const PUBLIC_V1_PREFIXES = [
   "/api/v1/automations/",
 ];
 
+// Server-to-server routes authed via X-Api-Key (no panel session). The edge
+// cannot validate the key (needs DB), so it only checks *presence* here and
+// lets the route handler enforce validity. Without this, key-only callers
+// get a 307 redirect to /login HTML instead of JSON.
+const KEY_V1_PREFIXES = ["/api/v1/send", "/api/v1/stats", "/api/v1/track"];
+
 /** Segment-aware public match: "/api/v1" must not match "/api/v1xyz". */
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((p) => (p.endsWith("/") ? pathname.startsWith(p) : pathname === p || pathname.startsWith(`${p}/`)))) {
@@ -40,6 +46,11 @@ export default auth((req) => {
   const isStatic = pathname.startsWith("/_next") || pathname === "/favicon.ico";
 
   if (isStatic || isPublicPath(pathname)) return;
+  // Key-authed server-to-server routes: presence of X-Api-Key lets the
+  // request through to the route handler, which validates it against the DB.
+  if (KEY_V1_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    if (req.headers.get("x-api-key")) return;
+  }
   if (!req.auth) {
     // Premium security: preserve intended destination for post-login redirect
     // but avoid open-redirect via external hosts.
@@ -51,8 +62,8 @@ export default auth((req) => {
     }
     return Response.redirect(url);
   }
-  // Premium: add security headers at edge for authenticated routes
-  // (CSP is in next.config, but we add per-request nonce hints here if needed)
+  // Security headers (CSP, HSTS, X-Frame-Options, ...) are set in
+  // next.config.ts headers() for all routes including public ones.
 });
 
 export const config = {

@@ -219,6 +219,9 @@ export function setDbForTests(db?: BetterSQLite3Database<typeof allTables>): voi
 export function closeDb(): void {
   const existing = globalForDb.__pushpanelDb;
   globalForDb.__pushpanelDb = undefined;
+  // Clear the remembered path too — otherwise a later getDb(otherPath) falsely
+  // throws "path mismatch" against a closed, forgotten connection.
+  (globalForDb as unknown as { __pushpanelDbPath?: string }).__pushpanelDbPath = undefined;
   if (existing) {
     try {
       (existing as unknown as { $client: Database.Database }).$client.close();

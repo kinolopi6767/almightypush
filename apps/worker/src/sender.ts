@@ -397,9 +397,14 @@ async function deliverOne(
     try {
       domainStatus = db.select({ status: domains.status }).from(domains).where(eq(domains.id, row.domain_id)).limit(1).all()[0]?.status;
     } catch {
-      // A locked-DB hiccup here must not strand the row in `sending` — treat
-      // as unknown (proceed; the top-of-cycle pause sweep catches it next tick).
-      domainStatus = "active";
+      // Fail CLOSED on a locked-DB hiccup: park the row as queued so it is
+      // retried next tick. Proceeding ("active") would push into a possibly
+      // paused domain and violate the operator's pause intent.
+      db.update(deliveries)
+        .set({ status: "queued", claimed_at: null, next_attempt_at: Date.now() + 30_000, error: "domain status unreadable — retry" })
+        .where(and(eq(deliveries.id, row.id), owned))
+        .run();
+      return "requeued";
     }
   }
   if (domainStatus !== undefined && domainStatus !== "active") {
@@ -477,7 +482,7 @@ async function deliverOne(
   let variantTitle = campaign.title;
   let variantMessage = campaign.message;
   let variantImage = campaign.image_url;
-  const variantButtonsJson = campaign.buttons_json;
+  let variantButtonsJson: string | null = campaign.buttons_json;
   if (campaign.variants_json && row.variant) {
     try {
       const list = JSON.parse(campaign.variants_json) as { key?: string; title?: string; message?: string; image_url?: string; buttons?: unknown }[];
@@ -538,6 +543,10 @@ async function deliverOne(
             if (typeof b.label === "string") b.label = renderTokens(b.label, tokens);
             if (typeof b.url === "string") b.url = renderTokens(b.url, tokens);
           }
+          // Persist the rendered copy: the message builder below re-parses
+          // variantButtonsJson, so without this the button personalization
+          // computed here would be silently discarded.
+          variantButtonsJson = JSON.stringify(btnList);
         }
       } catch {
         // Corrupt buttons JSON degrades below (no buttons), never throws here.

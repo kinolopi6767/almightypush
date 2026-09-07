@@ -13,7 +13,7 @@ const bodySchema = z.object({
   domain: z.union([z.coerce.number().int().positive(), z.string().trim().min(1).max(253)]),
   event: z.string().trim().min(1).max(64).regex(/^[a-z0-9_.-]+$/i, "event must be [a-z0-9_.-]"),
   endpoint: z.string().url().max(2048).optional(),
-  tags: z.record(z.string().max(200)).optional(),
+  tags: z.record(z.string().trim().min(1).max(64), z.string().max(200)).optional(),
 });
 
 /**
@@ -27,6 +27,16 @@ const bodySchema = z.object({
  * Rate-limited 120/min/key.
  */
 export async function POST(req: Request) {
+  // requireApiKey does sync DB reads that throw on locked DB / disk-full —
+  // surface those as the JSON error envelope, never a Next.js 500 HTML page.
+  try {
+    return await trackEvent(req);
+  } catch {
+    return apiJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+  }
+}
+
+async function trackEvent(req: Request) {
   const key = requireApiKey(req.headers);
   if (!key.ok) return apiJson({ ok: false, error: key.error }, { status: key.status });
   const ctx = key.context;
@@ -52,19 +62,22 @@ export async function POST(req: Request) {
   const { domain: domainRef, event, endpoint, tags } = parsed.data;
 
   // Scoped lookup — never SELECT * all domains (full-table scan + timing leak).
+  // Numeric strings ("123") resolve as ids, matching the send/stats routes.
   let domain: { id: number; name: string; workspace_id: number } | undefined;
-  if (typeof domainRef === "number") {
+  const domainRefStr = typeof domainRef === "string" ? domainRef.trim() : null;
+  const domainRefId = typeof domainRef === "number" ? domainRef : domainRefStr && /^\d+$/.test(domainRefStr) ? Number(domainRefStr) : null;
+  if (domainRefId !== null) {
     [domain] = db
       .select({ id: domains.id, name: domains.name, workspace_id: domains.workspace_id })
       .from(domains)
-      .where(eq(domains.id, domainRef))
+      .where(eq(domains.id, domainRefId))
       .limit(1)
       .all();
   } else {
     [domain] = db
       .select({ id: domains.id, name: domains.name, workspace_id: domains.workspace_id })
       .from(domains)
-      .where(eq(domains.name, domainRef.toLowerCase()))
+      .where(eq(domains.name, (domainRefStr ?? String(domainRef)).toLowerCase()))
       .limit(1)
       .all();
   }

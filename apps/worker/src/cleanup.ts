@@ -1,5 +1,5 @@
 import { and, count, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
-import { deliveries, domains, events, settings, subscribers, subscriberTags } from "@pushpanel/db/schema";
+import { campaigns, deliveries, domains, events, settings, subscribers, subscriberTags } from "@pushpanel/db/schema";
 import { automationRuns, journeyRuns, teamInvites } from "@pushpanel/db/schema";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
@@ -124,6 +124,49 @@ export function runRetentionPruning(db: BetterSQLite3Database<typeof allTables>,
 
   if (delDays > 0) {
     const cutoff = now.getTime() - delDays * 86_400_000;
+    try {
+      // Stranded queued/sending rows: campaigns stuck paused-forever,
+      // poison-pilled, or deleted leave deliveries that the sender will never
+      // pick up (it only sends for scheduled/sending campaigns) and that the
+      // sent_at-based prune below never matches (requested_at-only rows).
+      // Delete them once older than the delivery retention window AND their
+      // campaign is terminal (done/failed/cancelled) or gone entirely.
+      const strandedCutoff = now.getTime() - Math.max(delDays, 30) * 86_400_000;
+      for (;;) {
+        const batch = db
+          .select({ id: deliveries.id })
+          .from(deliveries)
+          .where(
+            and(
+              inArray(deliveries.status, ["queued", "sending"]),
+              // NULL requested_at = pre-retention-era rows (all writers set it
+              // today) — treat as infinitely old.
+              or(isNull(deliveries.requested_at), lt(deliveries.requested_at, strandedCutoff)),
+              sql`NOT EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${deliveries.campaign_id} AND c.status IN ('scheduled','sending'))`,
+            ),
+          )
+          .orderBy(deliveries.id)
+          .limit(PRUNE_BATCH)
+          .all();
+        if (batch.length === 0) break;
+        const maxId = batch[batch.length - 1]!.id;
+        const res = db
+          .delete(deliveries)
+          .where(
+            and(
+              inArray(deliveries.status, ["queued", "sending"]),
+              or(isNull(deliveries.requested_at), lt(deliveries.requested_at, strandedCutoff)),
+              sql`${deliveries.id} <= ${maxId} AND NOT EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${deliveries.campaign_id} AND c.status IN ('scheduled','sending'))`,
+            ),
+          )
+          .run();
+        prunedDel += res.changes;
+        if (batch.length < PRUNE_BATCH) break;
+      }
+    } catch (err) {
+      failed = true;
+      logger?.warn({ err }, "retention pruning failed for stranded deliveries");
+    }
     try {
       // Batched by rowid range: one DELETE over tens of millions of rows
       // would hold SQLite's write lock for the whole statement and starve

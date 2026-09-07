@@ -15,8 +15,10 @@ export async function GET() {
   }
   // DB path, queue depth and automation errors are operator internals —
   // owner/admin only (viewers/editors use the Server Status page summary).
+  // canManage normalizes case/whitespace and fails closed on unknown roles.
+  const { canManage } = await import("@/lib/roles");
   const role = (session.user as { role?: string }).role;
-  if (role !== "owner" && role !== "admin") {
+  if (!canManage(role)) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
   let metrics;

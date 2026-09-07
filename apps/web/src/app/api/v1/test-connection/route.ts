@@ -20,8 +20,9 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   // Connection tests reveal whether third-party secrets are configured and
   // trigger outbound traffic — owner/admin only, rate-limited.
+  const { canManage } = await import("@/lib/roles");
   const role = (session.user as { role?: string }).role;
-  if (role !== "owner" && role !== "admin") {
+  if (!canManage(role)) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
   const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");

@@ -69,7 +69,10 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
     const claimed = db
       .update(automations)
       .set({ last_run_at: nowIso, next_run_at: claimSentinel })
-      .where(and(eq(automations.id, row.id), eq(automations.next_run_at, row.next_run_at ?? "")))
+      // status guard: an operator pause/delete landing between the due-select
+      // and this claim must win — without it the claim would resurrect a
+      // paused row into the run path.
+      .where(and(eq(automations.id, row.id), eq(automations.status, "active"), eq(automations.next_run_at, row.next_run_at ?? "")))
       .run();
     if (claimed.changes === 0) continue;
 
@@ -90,7 +93,7 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
             consecutive_failures: fails,
             error: autoPaused ? `Auto-paused after ${fails} consecutive failures: Invalid automation config` : "Invalid automation config",
           })
-          .where(eq(automations.id, row.id))
+          .where(and(eq(automations.id, row.id), eq(automations.status, "active")))
           .run();
         recordAutomationRun(db, row.id, "error", "Invalid automation config");
       } catch {
@@ -113,7 +116,8 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
     const error = outcome.ok ? null : autoPaused ? `Auto-paused after ${fails} consecutive failures: ${outcome.error}` : outcome.error;
     // Bookkeeping is inside per-row isolation: if the automation row was
     // deleted concurrently (or the run insert hits a lock), one bad row must
-    // not abort the rest of the tick.
+    // not abort the rest of the tick. The status guard preserves operator
+    // intent: a pause landing mid-run must not be flipped back to active.
     try {
       db.update(automations)
         .set({
@@ -123,7 +127,7 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
           consecutive_failures: fails,
           error,
         })
-        .where(eq(automations.id, row.id))
+        .where(and(eq(automations.id, row.id), eq(automations.status, "active")))
         .run();
       recordAutomationRun(db, row.id, outcome.ok ? "ok" : "error", outcome.ok ? `queued ${outcome.queued} deliveries` : outcome.error);
     } catch {

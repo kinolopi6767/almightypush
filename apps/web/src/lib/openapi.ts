@@ -198,7 +198,8 @@ export const OPENAPI_SPEC = {
                   image_url: { type: "string", format: "uri" },
                   buttons: {
                     type: "array",
-                    maxItems: 3,
+                    maxItems: 2,
+                    description: "Browser notification actions render at most 2 (Chrome/Firefox limit, enforced by the API).",
                     items: {
                       type: "object",
                       required: ["label", "url"],
@@ -273,7 +274,7 @@ export const OPENAPI_SPEC = {
     "/api/v1/optin": {
       post: {
         summary: "Prompt-funnel telemetry",
-        description: "Records prompt_shown / allowed / denied / dismissed stages for funnel analytics.",
+        description: "Records prompt_shown / prompt_allowed / prompt_denied / prompt_dismissed stages for funnel analytics.",
         requestBody: {
           required: true,
           content: {
@@ -283,7 +284,7 @@ export const OPENAPI_SPEC = {
                 required: ["domainId", "stage"],
                 properties: {
                   domainId: { type: "integer" },
-                  stage: { enum: ["prompt_shown", "allowed", "denied", "dismissed"] },
+                  stage: { enum: ["prompt_shown", "prompt_allowed", "prompt_denied", "prompt_dismissed"] },
                 },
               },
             },

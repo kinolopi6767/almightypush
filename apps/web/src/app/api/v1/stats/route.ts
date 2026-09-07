@@ -3,6 +3,7 @@ import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, domains, events, subscribers } from "@pushpanel/db/schema";
 import { requireApiKey, domainAllowed } from "@/lib/api-auth";
+import { envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,13 @@ async function getStats(req: Request) {
   const auth = requireApiKey(req.headers);
   if (!auth.ok) return apiJson({ ok: false, error: auth.error }, { status: auth.status });
   const { workspaceId } = auth.context;
+
+  // Per-workspace throttle (6 COUNTs + 2 series + 100-row rollup per call):
+  // a valid key alone must not allow DB-DoS at 300 req/min.
+  const rlStats = rateLimitWithHeaders(`stats:${workspaceId}`, envRateLimit("STATS_RPM", 120), 60_000);
+  if (!rlStats.allowed) {
+    return apiJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlStats, 120) });
+  }
 
   const url = new URL(req.url);
   const fromParam = url.searchParams.get("from");

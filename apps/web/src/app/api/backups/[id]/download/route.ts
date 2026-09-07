@@ -26,12 +26,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // Fail closed: unknown/missing roles are viewers, never owners.
   if (!isOwner(session.user.role)) return new Response("Forbidden", { status: 403 });
 
-  // Rate-limit backup downloads: 10/min per user, 30/min globally (prevent exfiltration loops)
+  // Rate-limit backup downloads: 10/min per user + 30/min globally (prevent exfiltration loops)
   const { rateLimitWithHeaders, rateLimitHeaders } = await import("@/lib/rate-limit");
   const { clientIp } = await import("@/lib/rate-limit");
   const ip = clientIp(req.headers);
   const rl = rateLimitWithHeaders(`backup:dl:${session.user.id ?? ip}`, 10, 60_000);
   if (!rl.allowed) return new Response("Too many requests", { status: 429, headers: rateLimitHeaders(rl, 10) });
+  const rlGlobal = rateLimitWithHeaders("backup:dl:all", 30, 60_000);
+  if (!rlGlobal.allowed) return new Response("Too many requests", { status: 429, headers: rateLimitHeaders(rlGlobal, 30) });
 
   const { id } = await params;
   const backupId = Number(id);
@@ -56,7 +58,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   logAudit(db, {
     workspaceId: session.user.workspaceId ? Number(session.user.workspaceId) : 0,
-    userId: Number(session.user.id),
+    userId: Number.isFinite(Number(session.user.id)) ? Number(session.user.id) : 0,
     action: "backup.download",
     entityType: "backup",
     entityId: backupId,
@@ -82,27 +84,53 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let status = 200;
 
   if (range) {
-    const match = range.match(/bytes=(\d*)-(\d*)/);
-    if (match) {
-      const [, startStr, endStr] = match;
-      if (startStr) start = parseInt(startStr, 10);
-      if (endStr) end = parseInt(endStr, 10);
-      if (Number.isNaN(start) || Number.isNaN(end) || start > end || end >= stats.size) {
+    // Single-range only: multipart (",") is rejected rather than silently
+    // serving the wrong bytes (previous code served the first byte of
+    // "bytes=0-0,-1" and the FIRST 500 bytes of a "bytes=-500" suffix ask).
+    const match = range.match(/^bytes=(\d*)-(\d*)$/);
+    if (!match || range.includes(",")) {
+      return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${stats.size}` } });
+    }
+    const [, startStrRaw, endStrRaw] = match;
+    const startStr = startStrRaw ?? "";
+    const endStr = endStrRaw ?? "";
+    if (!startStr && !endStr) {
+      return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${stats.size}` } });
+    }
+    if (!startStr) {
+      // Suffix range: last N bytes.
+      const suffix = parseInt(endStr, 10);
+      if (Number.isNaN(suffix) || suffix <= 0) {
         return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${stats.size}` } });
       }
-      status = 206;
+      start = Math.max(0, stats.size - suffix);
+    } else {
+      start = parseInt(startStr, 10);
+      end = endStr ? parseInt(endStr, 10) : stats.size - 1;
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stats.size || end >= stats.size) {
+        return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${stats.size}` } });
+      }
     }
+    status = 206;
   }
 
   const contentLength = end - start + 1;
   const stream = createReadStream(row.location, { start, end });
+  // Backpressure-aware bridge: pause the file stream while the client drains
+  // slowly, otherwise a slow reader buffers the whole backup in memory.
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      stream.on("data", (chunk: string | Buffer) =>
-        controller.enqueue(new Uint8Array(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))),
-      );
+      stream.on("data", (chunk: string | Buffer) => {
+        const buf = new Uint8Array(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        controller.enqueue(buf);
+        if ((controller.desiredSize ?? 1) <= 0) stream.pause();
+      });
       stream.on("end", () => controller.close());
       stream.on("error", (err) => controller.error(err));
+    },
+    pull() {
+      // Client drained — resume the file stream.
+      stream.resume();
     },
     cancel() {
       stream.destroy();
