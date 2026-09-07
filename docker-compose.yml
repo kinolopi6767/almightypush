@@ -23,6 +23,11 @@ services:
       SQLITE_CACHE_MB: ${SQLITE_CACHE_MB:-64}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-500}
       SCHEDULER_CHUNK: ${SCHEDULER_CHUNK:-500}
+      # Worker cadence overrides (defaults: 5000ms active / 60000ms idle).
+      # These MUST be listed here — compose does not forward host env
+      # automatically, and without them tuning .env has no effect.
+      WORKER_TICK_MS: ${WORKER_TICK_MS:-}
+      WORKER_IDLE_TICK_MS: ${WORKER_IDLE_TICK_MS:-}
       TRUST_PROXY: ${TRUST_PROXY:-1}
       MAX_SUBSCRIBERS_PER_DOMAIN: ${MAX_SUBSCRIBERS_PER_DOMAIN:-}
     volumes:
@@ -58,11 +63,16 @@ services:
       DATABASE_PATH: /app/data/pushpanel.db
       APP_ENC_KEY: ${APP_ENC_KEY:?set APP_ENC_KEY}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      OWNER_NAME: ${OWNER_NAME:-}
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
       SQLITE_CACHE_MB: ${SQLITE_CACHE_MB:-64}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-500}
       SCHEDULER_CHUNK: ${SCHEDULER_CHUNK:-500}
+      WORKER_TICK_MS: ${WORKER_TICK_MS:-}
+      WORKER_IDLE_TICK_MS: ${WORKER_IDLE_TICK_MS:-}
       TRUST_PROXY: ${TRUST_PROXY:-1}
+      MAX_SUBSCRIBERS_PER_DOMAIN: ${MAX_SUBSCRIBERS_PER_DOMAIN:-}
     volumes:
       - pushdata:/app/data
     healthcheck:
