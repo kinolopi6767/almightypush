@@ -111,10 +111,16 @@ export async function GET(req: Request) {
   const html = Buffer.concat(chunks).toString("utf8");
   const out = extractOpenGraph(html);
 
-  const absolute = (href: string | undefined): string | undefined => {
+  const absolute = (href: string | undefined, opts?: { imagesOnly?: boolean }): string | undefined => {
     if (!href) return undefined;
     try {
-      return new URL(href, finalUrl).href;
+      const resolved = new URL(href, finalUrl);
+      // Scheme allowlist: page markup can carry javascript:/data:text/html
+      // payloads — only http(s) links (plus data:image thumbnails for icons)
+      // ever leave this endpoint.
+      if (resolved.protocol === "http:" || resolved.protocol === "https:") return resolved.href;
+      if (opts?.imagesOnly && resolved.protocol === "data:" && href.startsWith("data:image/")) return href;
+      return undefined;
     } catch {
       return undefined;
     }
@@ -123,7 +129,7 @@ export async function GET(req: Request) {
   const result: FetchContentResult = {
     title: out.title,
     description: out.description,
-    image: absolute(out.image),
+    image: absolute(out.image, { imagesOnly: true }),
   };
   return NextResponse.json({ ok: true, ...result }, { headers: { "Cache-Control": "no-store" } });
 }

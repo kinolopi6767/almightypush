@@ -65,7 +65,7 @@ export default async function EmailPage() {
    </div>
    <div className="panel p-4">
     <h2 className="text-[15px] font-semibold tracking-tight">Visual Builder</h2>
-    <p className="mt-1 text-sm text-muted-foreground">Blocks: hero, text, button, divider, social, product. Saved in <code className="rounded bg-muted px-1 font-mono text-xs">blocks_json</code> → rendered via <code className="rounded bg-muted px-1 font-mono text-xs">renderBlocksToHtml()</code>. Import CSV at <code className="rounded bg-muted px-1 font-mono text-xs">/dashboard/email</code> → contacts. All unlimited for personal use.</p>
+    <p className="mt-1 text-sm text-muted-foreground">Blocks: hero, text, button, divider, social, product. Saved in <code className="rounded bg-muted px-1 font-mono text-xs">blocks_json</code> → rendered via <code className="rounded bg-muted px-1 font-mono text-xs">renderBlocksToHtml()</code>. Push-subscriber CSV import lives on each domain&apos;s Subscribers page; email contacts import via API. All unlimited for personal use.</p>
     {recent.length === 0 ? (
      <p className="mt-4 rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">No email campaigns yet — create one from the panel or via API.</p>
     ) : (

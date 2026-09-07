@@ -1,3 +1,5 @@
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 import { ChannelForm } from "./channel-form";
 import { deleteChannelAction, listChannels, toggleChannelAction, type Channel } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
@@ -7,6 +9,9 @@ import { PageHeader } from "@/components/page-header";
 export const metadata = { title: "YouTube channels" };
 
 export default async function ChannelsPage() {
+ const session = await auth();
+ if (!session?.user) redirect("/login");
+ if (!session.user.workspaceId) redirect("/setup");
  const rows: Channel[] = await listChannels();
 
  return (

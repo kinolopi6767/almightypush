@@ -116,7 +116,7 @@ add_action('publish_post', function ($post_id, $post) {
 <script>
   const api = PushPanel.init({ domain: 7, publicKey: "VAPID_KEY", baseUrl: "https://your-panel.example.com", prompt: { type: "auto", position: "bottom-right" }});
   // Shopify cart recovery: tag the subscriber, then POST /api/v1/send or
-  // trigger a Journey from the panel (no /api/v1/track endpoint — use tags).
+  // trigger a Journey from the panel (custom funnel steps via /api/v1/track).
   if (window.location.pathname.startsWith('/cart') && api.setTags) api.setTags({ cart: 'active' });
 </script>`}
      />

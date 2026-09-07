@@ -25,7 +25,7 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
    </span>
    <h1 className="text-lg font-semibold tracking-tight">Something went wrong</h1>
    <p className="mt-2 break-words text-sm leading-relaxed text-muted-foreground text-pretty">
-    {error.message || "An unexpected error occurred. Your data is safe — this is a display issue."}
+    An unexpected error occurred. Your data is safe — this is a display issue.
    </p>
    {error.digest && <p className="mt-3 font-mono text-xs text-muted-foreground/70 break-all">Digest: {error.digest}</p>}
     <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">

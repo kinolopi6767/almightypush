@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { domains, segments } from "@pushpanel/db/schema";
 import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { SegmentForm } from "./segment-form";
 import { deleteSegmentAction } from "./actions";
@@ -12,7 +13,9 @@ export const metadata = { title: "Segments" };
 
 export default async function SegmentsPage() {
  const session = await auth();
- const workspaceId = Number(session?.user?.workspaceId ?? 0);
+ if (!session?.user) redirect("/login");
+ const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+ if (!workspaceId) redirect("/setup");
 
  const rows = await db
   .select({

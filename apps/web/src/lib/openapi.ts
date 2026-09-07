@@ -172,6 +172,7 @@ export const OPENAPI_SPEC = {
           "401": { description: "Missing/invalid/expired API key" },
           "403": { description: "Domain not covered by this key" },
           "404": { description: "Unknown domain" },
+          "429": { description: "Rate limited" },
         },
       },
     },
@@ -216,6 +217,26 @@ export const OPENAPI_SPEC = {
                     },
                   },
                   schedule: { type: "string", format: "date-time", description: "ISO timestamp; absent/past = send now" },
+                  topic: { type: "string", maxLength: 64, description: "collapse key — replaces queued notifications with the same topic" },
+                  ttl: { type: "integer", minimum: 0, maximum: 2419200, description: "time-to-live seconds (default 86400)" },
+                  urgency: { type: "string", enum: ["very-low", "low", "normal", "high"], description: "push urgency (default normal)" },
+                  channel: { type: "string", enum: ["push", "email"], description: "delivery channel (default push)" },
+                  variants: {
+                    type: "array",
+                    minItems: 2,
+                    maxItems: 10,
+                    description: "A/B/C… variants with weights; deterministic per-subscriber pick",
+                    items: {
+                      type: "object",
+                      required: ["title"],
+                      properties: {
+                        title: { type: "string", maxLength: 120 },
+                        message: { type: "string", maxLength: 500 },
+                        image_url: { type: "string", format: "uri" },
+                        weight: { type: "integer", minimum: 1, maximum: 100 },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -228,6 +249,7 @@ export const OPENAPI_SPEC = {
           "403": { description: "Domain not covered by this key" },
           "404": { description: "Unknown domain or segment" },
           "409": { description: "Domain is not active" },
+          "429": { description: "Rate limited" },
         },
       },
     },
@@ -346,8 +368,11 @@ export const OPENAPI_SPEC = {
         },
         responses: {
           "200": { description: "{ ok, matched }" },
+          "400": { description: "Invalid payload" },
           "401": { description: "Missing/invalid/expired API key" },
+          "403": { description: "Domain not covered by this key" },
           "404": { description: "Unknown domain" },
+          "429": { description: "Rate limited" },
         },
       },
     },
@@ -377,18 +402,61 @@ export const OPENAPI_SPEC = {
           "400": { description: "Invalid payload" },
           "401": { description: "Unauthorized" },
           "403": { description: "Viewers cannot create journeys" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
+    "/api/v1/plugin/wordpress": {
+      get: {
+        summary: "WordPress plugin zip",
+        description: "Downloads the panel-generated WordPress plugin (push-on-publish webhook client). Rate-limited per IP + globally; ETag-cached.",
+        responses: {
+          "200": { description: "application/zip plugin bundle" },
+          "304": { description: "Not modified (ETag match)" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
+    "/api/v1/test-connection": {
+      post: {
+        summary: "Test external provider connection",
+        description: "Session-authenticated (owner/admin). Probes AI / you.com / mail / Drive configs with a lightweight call. Upstream details are never echoed.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["provider"],
+                properties: { provider: { enum: ["ai", "you", "mail", "drive"] } },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Connection result" },
+          "400": { description: "Invalid provider or SSRF-rejected URL" },
+          "401": { description: "Unauthorized" },
+          "403": { description: "Forbidden" },
+          "429": { description: "Rate limited" },
+          "502": { description: "Provider unreachable" },
         },
       },
     },
     "/api/v1/ai/hook": {
       post: {
         summary: "Hook angles",
-        description: "Session-authenticated. Heuristic offline + LLM when AI_API_KEY is set.",
+        description: "Session-authenticated (editor+). Heuristic offline + LLM when AI_API_KEY is set.",
         requestBody: {
           required: true,
           content: { "application/json": { schema: { type: "object", required: ["topic"], properties: { topic: { type: "string" }, count: { type: "integer" } } } } },
         },
-        responses: { "200": { description: "Angles + model" } },
+        responses: {
+          "200": { description: "Angles + model" },
+          "401": { description: "Unauthorized" },
+          "403": { description: "Editors only" },
+          "429": { description: "Rate limited" },
+        },
       },
     },
     "/api/v1/ai/spam-score": {

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { domains, lpLinks } from "@pushpanel/db/schema";
 import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { LinkForm } from "./link-form";
 import { deleteLinkAction, type Link } from "./actions";
@@ -15,7 +16,9 @@ function shortUrl(slug: string): string {
 
 export default async function LinksPage() {
  const session = await auth();
- const workspaceId = Number(session?.user?.workspaceId ?? 0);
+ if (!session?.user) redirect("/login");
+ const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+ if (!workspaceId) redirect("/setup");
 
  const wsDomains = db
   .select({ id: domains.id, name: domains.name })

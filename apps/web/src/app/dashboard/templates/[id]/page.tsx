@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@/auth";
@@ -12,7 +12,9 @@ export const metadata = { title: "Edit template" };
 
 export default async function TemplateEditPage({ params }: { params: Promise<{ id: string }> }) {
  const session = await auth();
- const workspaceId = Number(session?.user?.workspaceId ?? 0);
+ if (!session?.user) redirect("/login");
+ const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+ if (!workspaceId) redirect("/setup");
  const id = Number((await params).id);
  if (!Number.isInteger(id)) notFound();
 

@@ -140,7 +140,7 @@ export default async function CampaignsPage() {
      </div>
     )}
     {rows.length === 50 && (
-     <p className="mt-3 text-center text-xs text-[var(--ink-3)]">Showing latest 50 · use search on detail or export CSV for all.</p>
+     <p className="mt-3 text-center text-xs text-[var(--ink-3)]">Showing latest 50 · open a campaign for per-delivery stats or export CSV for all.</p>
     )}
    </div>
   </>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { templates } from "@pushpanel/db/schema";
 import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 import { eq, desc } from "drizzle-orm";
 import { TemplateForm } from "./template-form";
 import { deleteTemplateAction } from "./actions";
@@ -12,7 +13,9 @@ export const metadata = { title: "Templates" };
 
 export default async function TemplatesPage() {
  const session = await auth();
- const workspaceId = Number(session?.user?.workspaceId ?? 0);
+ if (!session?.user) redirect("/login");
+ const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+ if (!workspaceId) redirect("/setup");
 
  const rows = await db
   .select({

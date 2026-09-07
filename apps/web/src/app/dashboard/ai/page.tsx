@@ -89,7 +89,7 @@ export default async function AIStudioPage() {
      <pre className="mt-3 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed break-words whitespace-pre-wrap">{JSON.stringify(gens, null, 2)}</pre>
     )}
    </div>
-   <p className="text-xs text-muted-foreground">Configure keys at <code className="rounded bg-muted px-1 font-mono text-xs">Dashboard → Settings → API Keys</code> — no .env edit needed.</p>
+   <p className="text-xs text-muted-foreground">Configure keys at <code className="rounded bg-muted px-1 font-mono text-xs">Dashboard → Settings → Secrets</code> (API keys for REST access live at <code className="rounded bg-muted px-1 font-mono text-xs">Dashboard → API</code>) — no .env edit needed.</p>
   </div>
  );
 }

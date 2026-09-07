@@ -70,11 +70,12 @@ VOLUME ["/app/data"]
 ENV DATABASE_PATH=/app/data/pushpanel.db
 
 EXPOSE 3000
-# BusyBox/GNU wget compatible (no --spider flag): fetch /api/health, exit 1 on failure.
-# Also covers the embedded worker: its heartbeat must be fresh when present.
+# BusyBox/GNU wget compatible (no --spider flag): readiness covers the DB
+# (a panel with a dead/missing database is not healthy), liveness covers the
+# process. Also covers the embedded worker: its heartbeat must be fresh when present.
 # (start-period gives the first tick time to write it.)
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
-  CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1; \
+  CMD wget -qO- http://127.0.0.1:3000/api/health/ready >/dev/null 2>&1 || exit 1; \
       test ! -f /app/data/worker-heartbeat || test $(($(date +%s) - $(stat -c %Y /app/data/worker-heartbeat))) -lt 300 || exit 1
 
 CMD ["./start.sh"]
