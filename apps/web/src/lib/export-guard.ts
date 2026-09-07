@@ -12,6 +12,9 @@ export interface ExportContext {
  * guard and audit AFTER the rate-limit passes, so a throttled attacker cannot
  * flood the audit log with export attempts.
  *
+ * Credential/PII exports (decrypted push tokens) require owner/admin via
+ * `requireCredentialExportAccess` — editors must never receive live keys.
+ *
  * Returns the context on success, or a `Response` to return directly.
  */
 export async function requireExportAccess(): Promise<{ ok: true; ctx: ExportContext } | { ok: false; response: Response }> {
@@ -20,6 +23,19 @@ export async function requireExportAccess(): Promise<{ ok: true; ctx: ExportCont
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return { ok: false, response: new Response("No workspace", { status: 400 }) };
   if (session.user.role === "viewer") {
+    return { ok: false, response: new Response("Forbidden", { status: 403 }) };
+  }
+  const userId = Number(session.user.id);
+  return { ok: true, ctx: { wsId, userId } };
+}
+
+/** Owner/admin only — for endpoints that decrypt push credentials. */
+export async function requireCredentialExportAccess(): Promise<{ ok: true; ctx: ExportContext } | { ok: false; response: Response }> {
+  const session = await auth();
+  if (!session?.user) return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
+  const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!wsId) return { ok: false, response: new Response("No workspace", { status: 400 }) };
+  if (session.user.role !== "owner" && session.user.role !== "admin") {
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
   }
   const userId = Number(session.user.id);

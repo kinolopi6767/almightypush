@@ -178,3 +178,25 @@ describe("runScheduler", () => {
     expect(campaignStatus(db, good)).toBe("sending");
   });
 });
+
+describe("scheduler hardening", () => {
+  it("corrupt audience_json fails closed to empty (never broadcasts)", async () => {
+    const { createMemoryDb } = await import("@pushpanel/db");
+    const { campaigns, domains, subscribers, workspaces } = await import("@pushpanel/db/schema");
+    const { runScheduler } = await import("../src/scheduler.js");
+    const { db } = createMemoryDb();
+    const [ws] = db.insert(workspaces).values({ name: "w", slug: "w-harden" }).returning().all();
+    const [dom] = db.insert(domains).values({ workspace_id: ws!.id, name: "h.example.test", status: "active" }).returning().all();
+    db.insert(subscribers).values({ domain_id: dom!.id, token: "e", token_hash: "h1", provider: "vapid" }).run();
+    // corrupt JSON string directly (bypasses JSON.stringify)
+    const [c] = db.insert(campaigns).values({ workspace_id: ws!.id, domain_id: dom!.id, title: "bad", audience_json: "{corrupt", status: "scheduled", scheduled: 1, source: "panel" }).returning({ id: campaigns.id }).all();
+    runScheduler(db);
+    const st = db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, c!.id)).all()[0]!.status;
+    // fail-closed: no broadcast, campaign finishes without deliveries
+    const { eq: eq2 } = await import("drizzle-orm");
+    const { deliveries } = await import("@pushpanel/db/schema");
+    const rows = db.select().from(deliveries).where(eq2(deliveries.campaign_id, c!.id)).all();
+    expect(rows.length).toBe(0);
+    expect(st).toBe("done");
+  });
+});

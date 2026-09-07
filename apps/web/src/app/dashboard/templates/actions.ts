@@ -68,7 +68,7 @@ export async function updateTemplateAction(id: number, formData: FormData): Prom
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid template" };
 
-  db.update(templates)
+  const result = db.update(templates)
     .set({
       name: parsed.data.name,
       title: parsed.data.title,
@@ -79,6 +79,7 @@ export async function updateTemplateAction(id: number, formData: FormData): Prom
     })
     .where(and(eq(templates.id, id), eq(templates.workspace_id, workspaceId)))
     .run();
+  if (result.changes === 0) return { error: "Template not found" };
   logAudit(db, { workspaceId, action: "template.update", entityType: "template", entityId: id, meta: { name: parsed.data.name } });
   revalidatePath("/dashboard/templates");
   return { ok: true };

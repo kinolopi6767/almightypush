@@ -1,7 +1,7 @@
 import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
-import { requireExportAccess } from "@/lib/export-guard";
+import { requireCredentialExportAccess } from "@/lib/export-guard";
 import { domains, subscribers } from "@pushpanel/db/schema";
 import { createCipher, csvCell } from "@pushpanel/core";
 
@@ -14,9 +14,9 @@ export const dynamic = "force-dynamic";
  * memory, and the megabyte payload never passes through a server action.
  */
 export async function GET(req: Request) {
-  // Round-trip exports contain live push credentials — owner/admin/editor
-  // only (viewers blocked), audited after the rate-limit passes.
-  const gate = await requireExportAccess();
+  // Round-trip exports contain live push credentials — owner/admin only
+  // (editors and viewers blocked), audited after the rate-limit passes.
+  const gate = await requireCredentialExportAccess();
   if (!gate.ok) return gate.response;
   const wsId = gate.ctx.wsId;
 

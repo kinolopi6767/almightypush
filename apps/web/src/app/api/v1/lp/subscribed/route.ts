@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     return corsJson({ ok: false, error: "bad json" }, { status: 400 });
   }
   const code = typeof body.code === "string" && body.code.length > 0 ? body.code : "";
-  if (!code) return corsJson({ ok: false, error: "code required" }, { status: 400 });
+  if (!code || !/^[A-Za-z0-9_-]{1,64}$/.test(code)) return corsJson({ ok: false, error: "code required" }, { status: 400 });
 
   const ip = clientIp(req.headers);
   const rlIp = rateLimitWithHeaders(`lp-subscribed:${ip}`, 60, 60_000);

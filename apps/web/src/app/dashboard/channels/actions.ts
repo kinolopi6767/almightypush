@@ -13,7 +13,7 @@ import { logAudit } from "@/lib/audit";
 export type ChannelFormState = { ok?: boolean; error?: string };
 
 const channelSchema = z.object({
-  channel_url: z.string().trim().url("Enter a valid YouTube URL"),
+  channel_url: z.string().trim().refine((u) => /^https:\/\//i.test(u), "YouTube URL must use https://"),
   prompt_text: z.string().trim().max(120).optional().or(z.literal("")),
   force_subscribe: z.coerce.number().int().min(0).max(1).default(0),
 });

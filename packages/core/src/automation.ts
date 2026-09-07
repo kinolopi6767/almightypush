@@ -17,12 +17,14 @@ export const AUTOMATION_TYPES = [
 ] as const;
 export type AutomationType = (typeof AUTOMATION_TYPES)[number];
 
+const httpUrl = z.string().trim().refine((u) => u === "" || /^https?:\/\//i.test(u), "Must be an http(s) URL").pipe(z.string().max(500));
+
 export const automationPayloadSchema = z.object({
   title: z.string().trim().min(1).max(200),
   message: z.string().trim().max(1000).optional().or(z.literal("")),
-  icon_url: z.string().trim().url().max(500).optional().or(z.literal("")),
-  image_url: z.string().trim().url().max(500).optional().or(z.literal("")),
-  launch_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+  icon_url: httpUrl.optional().or(z.literal("")),
+  image_url: httpUrl.optional().or(z.literal("")),
+  launch_url: httpUrl.optional().or(z.literal("")),
 });
 export type AutomationPayload = z.infer<typeof automationPayloadSchema>;
 
@@ -31,7 +33,7 @@ export const dripStepSchema = z.object({
   delay_days: z.coerce.number().int().min(0).max(365).default(0),
   title: z.string().trim().min(1).max(200),
   message: z.string().trim().max(1000).optional().or(z.literal("")),
-  launch_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+  launch_url: httpUrl.optional().or(z.literal("")),
 });
 export const MAX_DRIP_STEPS = 10;
 
@@ -44,13 +46,13 @@ export const automationConfigSchema = z.object({
   /** poll types: optional 5-field crontab schedule (overrides interval_minutes when set). */
   schedule_cron: z.string().trim().min(1).max(100).optional().or(z.literal("")),
   /** automagic_dynamic: WordPress REST API base URL. */
-  source_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+  source_url: httpUrl.optional().or(z.literal("")),
   /** automagic_dynamic: how many recent posts to pick from. */
   range: z.coerce.number().int().min(1).max(100).default(10),
   /** automagic_static: JSON array of {title, message?, launch_url?}. */
   rotation_json: z.string().trim().optional().or(z.literal("")),
   /** youtube_push: RSS feed URL (autodiscovered at creation). */
-  feed_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+  feed_url: httpUrl.optional().or(z.literal("")),
   /** push_on_publish: webhook auth secret (generated at creation). */
   secret: z.string().min(16).max(256).optional(),
   /** internal: round-robin cursor for automagic_static. */

@@ -33,8 +33,13 @@ const SETTING_KEYS = [
 ] as const;
 
 export default async function SettingsPage() {
- const session = await auth();
- if (!session?.user) return <p className="text-sm text-muted-foreground">Not signed in.</p>;
+  const session = await auth();
+  if (!session?.user) return <p className="text-sm text-muted-foreground">Not signed in.</p>;
+  // Settings expose secrets presence, backups and audit trail — owner only.
+  // Mutations already enforce requireOwner(); the page must not leak metadata to viewers.
+  if (session.user.role !== "owner") {
+    return <p className="text-sm text-muted-foreground">Settings are available to the workspace owner only.</p>;
+  }
 
  const [settingsRows, backupList, auditRows] = await Promise.all([
   db.select({ key: settings.key, value: settings.value }).from(settings).where(inArray(settings.key, [...SETTING_KEYS])).all(),

@@ -10,8 +10,11 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Team" };
 
 export default async function TeamPage() {
- const session = await auth();
- if (!session?.user) redirect("/login");
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  // Member/invite enumeration is owner/admin only (actions already gate
+  // mutations; the page must not leak the roster to viewers/editors).
+  if (session.user.role !== "owner" && session.user.role !== "admin") redirect("/dashboard");
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : 0;
   const invites = wsId
     ? db

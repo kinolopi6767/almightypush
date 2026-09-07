@@ -198,8 +198,15 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
       case "drip": {
         // Normally fired by the subscribe hook per subscriber; this path
         // covers manual "run now" triggers — enqueue to every active sub.
+        // Guard: one click must not queue up to 10M deliveries (10 steps ×
+        // 1M subs) in a single tick and stall the worker for minutes.
         const steps = config.steps ?? [];
         if (steps.length === 0) return { ok: false, campaigns: 0, queued: 0, error: "Drip sequence has no steps" };
+        const { activeSubscriberIds } = await import("@pushpanel/db");
+        const audienceSize = activeSubscriberIds(db, row.domain_id).length;
+        if (audienceSize * steps.length > 100_000) {
+          return { ok: false, campaigns: 0, queued: 0, error: `Drip fan-out too large (${audienceSize} subs × ${steps.length} steps) — trigger per-subscriber instead` };
+        }
         let queued = 0;
         let cumulativeSeconds = 0;
         for (const step of steps) {

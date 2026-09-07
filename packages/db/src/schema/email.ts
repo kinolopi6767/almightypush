@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { id, timestamps, workspaceRef } from "./common";
 import { workspaces } from "./core";
 
@@ -23,6 +23,9 @@ export const emailContacts = sqliteTable(
     index("idx_email_contacts_ws").on(t.workspace_id),
     index("idx_email_contacts_ws_email").on(t.workspace_id, t.email),
     index("idx_email_contacts_status").on(t.status),
+    // 0014: exact-duplicate guard (migration adds the UNIQUE separately so
+    // existing DBs with dupes don't fail migration — app upserts first).
+    uniqueIndex("idx_email_contacts_ws_email_uniq").on(t.workspace_id, t.email),
   ],
 );
 

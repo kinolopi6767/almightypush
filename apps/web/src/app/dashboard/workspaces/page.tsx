@@ -14,12 +14,17 @@ export default async function WorkspacesPage() {
  const session = await auth();
  if (!session?.user) redirect("/login");
 
- const currentUserId = Number(session.user.id);
- const currentWorkspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  const currentUserId = Number(session.user.id);
+  const currentWorkspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  const isOwner = (session.user.role ?? "viewer").toLowerCase() === "owner";
 
- // For now, show all workspaces (single-tenant personal use: you own them all)
- // Future: filter via workspace_members
- const allWorkspaces = db.select().from(workspaces).orderBy(workspaces.created_at).all();
+  // Non-owners see only their assigned workspace (IDOR: invited viewers must
+  // not enumerate every client workspace).
+  const allWorkspaces = isOwner
+    ? db.select().from(workspaces).orderBy(workspaces.created_at).all()
+    : currentWorkspaceId
+      ? db.select().from(workspaces).where(eq(workspaces.id, currentWorkspaceId)).all()
+      : [];
  const currentUser = db.select({ workspace_id: users.workspace_id }).from(users).where(eq(users.id, currentUserId)).get();
 
  return (

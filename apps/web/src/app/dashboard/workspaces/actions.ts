@@ -31,6 +31,15 @@ function slugify(name: string): string {
 export async function createWorkspaceAction(_prev: unknown, formData: FormData) {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
+  // Workspace creation is owner-only + throttled: an invited viewer must not
+  // spam workspaces or move themselves out of their assigned workspace.
+  if ((session.user.role ?? "viewer").toLowerCase() !== "owner") {
+    return { error: "Only the workspace owner can create workspaces" };
+  }
+  const { rateLimit } = await import("@/lib/rate-limit");
+  if (!rateLimit(`ws-create:${session.user.id}`, 5, 3_600_000)) {
+    return { error: "Too many workspaces — slow down" };
+  }
   const parsed = createSchema.safeParse({ name: formData.get("name"), slug: formData.get("slug") ?? "" });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 

@@ -25,6 +25,10 @@ export interface FetchContentResult {
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  // Content-mutation boundary: viewers must not proxy-fetch arbitrary public
+  // URLs through the panel (SSRF-safe, but still a network oracle).
+  const role = (session.user as { role?: string }).role ?? "viewer";
+  if (role === "viewer") return NextResponse.json({ ok: false, error: "Editors only" }, { status: 403 });
 
   // Rate-limit OG scraping: 30/min per user + global 120/min (prevent SSRF abuse at scale)
   const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");

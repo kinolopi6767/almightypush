@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { verifyPasswordOrDummy, verifyTotp } from "@pushpanel/core";
-import { decryptTotpSecret } from "@/lib/totp-crypto";
+import { decryptTotpSecret, encryptTotpSecret, isEncryptedTotpSecret } from "@/lib/totp-crypto";
 import { db } from "@/lib/db";
 import { users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
@@ -51,8 +51,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user) return null;
 
         // Two-factor: the code must be present and valid when enabled.
-        // decryptTotpSecret falls back to the raw stored value for legacy
-        // rows; verifyTotp fails closed on corrupt secrets (no throw).
+        // Legacy plaintext secrets are migrated to encrypted form on first
+        // successful use so the plaintext fallback has a finite lifetime.
         if (user.totp_enabled) {
           let secret: string | null = null;
           try {
@@ -61,6 +61,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             secret = null;
           }
           if (!verifyTotp(secret, parsed.data.totp ?? "")) return null;
+          try {
+            if (user.totp_secret && !isEncryptedTotpSecret(user.totp_secret)) {
+              db.update(users).set({ totp_secret: encryptTotpSecret(secret ?? "") }).where(eq(users.id, user.id)).run();
+            }
+          } catch {
+            void 0;
+          }
         }
 
         return {

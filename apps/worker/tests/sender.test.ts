@@ -152,8 +152,10 @@ describe("runSendCycle", () => {
     expect(sent).toHaveLength(1);
     expect(deliveryRow(db, d2).status).toBe("sending");
 
-    // Well past the stale threshold → the crash is detected and it delivers.
-    const stale = new Date(claimedAt + 11 * 60_000).getTime();
+    // Well past the stale threshold (30min — must exceed worst-case cycle
+    // 500/25*30s=600s so a slow-but-alive worker is never double-sent) →
+    // the crash is detected and it delivers.
+    const stale = new Date(claimedAt + 31 * 60_000).getTime();
     const stats2 = await runSendCycle(db, ENC_KEY, provider, stale);
     expect(stats2.claimed).toBe(1);
     expect(sent).toHaveLength(2);

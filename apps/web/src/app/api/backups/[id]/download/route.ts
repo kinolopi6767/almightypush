@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { backups } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const [row] = db.select({ location: backups.location }).from(backups).where(eq(backups.id, backupId)).limit(1).all();
   if (!row?.location) return new Response("Not found", { status: 404 });
+
+  logAudit(db, {
+    workspaceId: session.user.workspaceId ? Number(session.user.workspaceId) : 0,
+    userId: Number(session.user.id),
+    action: "backup.download",
+    entityType: "backup",
+    entityId: backupId,
+  });
 
   // Path traversal hardening: ensure backup path is inside backups dir
   try {

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "@/lib/rate-limit";
 import { domains, subscribers, subscriberTags } from "@pushpanel/db/schema";
 import { sha256Hex } from "@pushpanel/core";
+import { requestOriginAllowed } from "@/lib/subscribe-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -53,8 +54,13 @@ export async function POST(req: Request) {
   }
 
   // Resolve this browser's active subscriber row for the domain.
-  const [domain] = db.select({ id: domains.id }).from(domains).where(and(eq(domains.id, domainId), eq(domains.status, "active"))).limit(1).all();
+  const [domain] = db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.id, domainId), eq(domains.status, "active"))).limit(1).all();
   if (!domain) return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
+
+  // Cross-origin guard: only the domain itself (or panel host) may set tags.
+  if (req.headers.get("origin") && !requestOriginAllowed(req, `https://${domain.name}/`, domain.name)) {
+    return corsJson({ ok: false, error: "Origin not allowed for this domain" }, { status: 403 });
+  }
 
   const tokenHash = sha256Hex(endpoint);
   const [sub] = db

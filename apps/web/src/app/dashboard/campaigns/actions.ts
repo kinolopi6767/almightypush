@@ -19,7 +19,7 @@ const createCampaignSchema = z.object({
   iconUrl: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
   imageUrl: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
   buttons: z
-    .array(z.object({ label: z.string().trim().min(1, "Button label is required").max(24), url: z.string().trim().url("Button URL must be valid") }))
+    .array(z.object({ label: z.string().trim().min(1, "Button label is required").max(24), url: z.string().trim().refine((u) => /^https?:\/\//i.test(u), "Button URL must be http(s)") }))
     .max(3, "At most 3 action buttons")
     .default([]),
   schedule: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, "Invalid schedule time").optional().or(z.literal("")),
@@ -111,11 +111,13 @@ export async function createCampaignAction(
         const o = v as Record<string, unknown>;
         const title = typeof o.title === "string" ? o.title.trim() : "";
         if (!title || title.length > 120) throw new Error(`Variant ${i} title required max 120`);
+        const img = typeof o.image_url === "string" ? o.image_url.trim() : undefined;
+        if (img && !/^https?:\/\//i.test(img)) throw new Error(`Variant ${i} image_url must be http(s)`);
         return {
           key: typeof o.key === "string" && o.key ? o.key.trim().slice(0, 12) : String.fromCharCode(65 + i),
           title,
           message: typeof o.message === "string" ? o.message.trim().slice(0, 500) : undefined,
-          image_url: typeof o.image_url === "string" ? o.image_url.trim() : undefined,
+          image_url: img,
           weight: Math.max(1, Math.min(100, Number(o.weight) || 10)),
         };
       });
@@ -192,6 +194,7 @@ export async function createCampaignAction(
 }
 
 export async function cancelCampaignAction(campaignId: number): Promise<CampaignFormState> {
+  if (!Number.isInteger(campaignId) || campaignId <= 0) return { error: "Invalid campaign" };
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
@@ -240,6 +243,7 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
  * only from a terminal state (TOCTOU-guarded, like cancel).
  */
 export async function retryFailedDeliveriesAction(campaignId: number): Promise<CampaignFormState> {
+  if (!Number.isInteger(campaignId) || campaignId <= 0) return { error: "Invalid campaign" };
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
@@ -289,6 +293,7 @@ export async function retryFailedDeliveriesAction(campaignId: number): Promise<C
  * immediately, reusing the same domain, icon, image and action buttons.
  */
 export async function duplicateCampaignAction(campaignId: number): Promise<CampaignFormState> {
+  if (!Number.isInteger(campaignId) || campaignId <= 0) return { error: "Invalid campaign" };
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
@@ -354,6 +359,7 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
  * (audience kind `non_clickers`, resolved by the worker at send time).
  */
 export async function resendToNonClickersAction(campaignId: number): Promise<CampaignFormState> {
+  if (!Number.isInteger(campaignId) || campaignId <= 0) return { error: "Invalid campaign" };
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;

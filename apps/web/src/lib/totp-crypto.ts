@@ -19,3 +19,8 @@ export function decryptTotpSecret(stored: string | null | undefined): string {
     return stored;
   }
 }
+
+/** Encrypted secrets are `v1:...` envelopes; legacy rows are raw base32. */
+export function isEncryptedTotpSecret(stored: string): boolean {
+  return stored.startsWith("v1:");
+}

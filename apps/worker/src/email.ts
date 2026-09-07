@@ -28,29 +28,42 @@ export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStat
     .all();
 
   for (const row of rows) {
-    // Claim scheduled→sending before resolving the audience: without this,
-    // two workers sharing the SQLite file both resolve and both mark done —
-    // a double-send once real SMTP delivery is plugged in.
-    const claimed = db
-      .update(emailCampaigns)
-      .set({ status: "sending" })
-      .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "scheduled")))
-      .run();
-    if (claimed.changes === 0) continue;
-    const audience = resolveEmailAudience(db, row.workspace_id, row.audience_json);
-    if (audience.length === 0) {
-      db.update(emailCampaigns).set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: 0 }) }).where(eq(emailCampaigns.id, row.id)).run();
+    // Per-campaign isolation: one poison-pill campaign must not stall the
+    // whole email loop every tick.
+    try {
+      // Claim scheduled→sending before resolving the audience: without this,
+      // two workers sharing the SQLite file both resolve and both mark done —
+      // a double-send once real SMTP delivery is plugged in.
+      const claimed = db
+        .update(emailCampaigns)
+        .set({ status: "sending" })
+        .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "scheduled")))
+        .run();
+      if (claimed.changes === 0) continue;
+      const audience = resolveEmailAudience(db, row.workspace_id, row.audience_json);
+      if (audience.length === 0) {
+        db.update(emailCampaigns).set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: 0 }) }).where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "sending"))).run();
+        stats.started++;
+        continue;
+      }
+      // Mock send: in production, loop contacts and call nodemailer/SES with blocks/html.
+      // Here we just count and mark done; each contact would generate an event in real.
+      db.update(emailCampaigns)
+        .set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: audience.length, delivered: audience.length, opened: 0, clicked: 0 }) })
+        .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "sending")))
+        .run();
       stats.started++;
-      continue;
+      stats.sent += audience.length;
+    } catch {
+      try {
+        db.update(emailCampaigns)
+          .set({ status: "failed" })
+          .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "sending")))
+          .run();
+      } catch {
+        void 0;
+      }
     }
-    // Mock send: in production, loop contacts and call nodemailer/SES with blocks/html.
-    // Here we just count and mark done; each contact would generate an event in real.
-    db.update(emailCampaigns)
-      .set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: audience.length, delivered: audience.length, opened: 0, clicked: 0 }) })
-      .where(eq(emailCampaigns.id, row.id))
-      .run();
-    stats.started++;
-    stats.sent += audience.length;
   }
   return stats;
 }
@@ -62,21 +75,36 @@ function resolveEmailAudience(db: PushDb, workspaceId: number, audienceJson: str
     const parsed = JSON.parse(audienceJson) as { kind?: string; ids?: number[] };
     if (parsed.kind === "manual" && Array.isArray(parsed.ids)) {
       const ids = parsed.ids.filter((n) => Number.isInteger(n) && n > 0);
+      // Empty IN () is a syntax error — fail closed to empty audience.
+      if (ids.length === 0) return [];
       // Always scope to the workspace, even with suppression off — raw
       // operator-authored ids must not resolve contacts in other workspaces.
-      const scoped = db
-        .select({ id: emailContacts.id })
-        .from(emailContacts)
-        .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`))
-        .all()
-        .map((r) => r.id);
+      // Chunk to stay under SQLite's host-parameter limit (~32k).
+      const scoped: number[] = [];
+      for (let i = 0; i < ids.length; i += 500) {
+        const slice = ids.slice(i, i + 500);
+        scoped.push(
+          ...db
+            .select({ id: emailContacts.id })
+            .from(emailContacts)
+            .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.id} IN (${sql.join(slice.map((id) => sql`${id}`), sql`, `)})`))
+            .all()
+            .map((r) => r.id),
+        );
+      }
       if (!suppressionOn || scoped.length === 0) return scoped;
       // Filter the workspace-scoped list against suppressed contacts.
-      const rows = db
-        .select({ id: emailContacts.id })
-        .from(emailContacts)
-        .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.id} IN (${sql.join(scoped.map((id) => sql`${id}`), sql`, `)})`, sql`${emailContacts.status} NOT IN ('bounced','unsubscribed')`))
-        .all();
+      const rows: { id: number }[] = [];
+      for (let i = 0; i < scoped.length; i += 500) {
+        const slice = scoped.slice(i, i + 500);
+        rows.push(
+          ...db
+            .select({ id: emailContacts.id })
+            .from(emailContacts)
+            .where(and(eq(emailContacts.workspace_id, workspaceId), sql`${emailContacts.id} IN (${sql.join(slice.map((id) => sql`${id}`), sql`, `)})`, sql`${emailContacts.status} NOT IN ('bounced','unsubscribed')`))
+            .all(),
+        );
+      }
       return rows.map((r) => r.id);
     }
     // "all" → all contacts minus suppressed when on (single query)

@@ -53,9 +53,12 @@ export default async function LandingPage({ params, searchParams }: { params: Pr
   redirect(link.target_url);
  }
 
- const host = (await headers()).get("host") ?? "localhost:3100";
- const proto = process.env.NODE_ENV === "production" && !host.startsWith("127.0.0.1") ? "https" : "http";
- const baseUrl = `${proto}://${host}`;
+  // Prefer the configured panel URL over the Host header (cache-poisoning
+  // class): Host is attacker-controlled on misconfigured proxies.
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+  const host = (await headers()).get("host") ?? "localhost:3100";
+  const proto = process.env.NODE_ENV === "production" && !host.startsWith("127.0.0.1") ? "https" : "http";
+  const baseUrl = appUrl || `${proto}://${host}`;
 
  let publicKey = "";
  if (link.domain_id) {

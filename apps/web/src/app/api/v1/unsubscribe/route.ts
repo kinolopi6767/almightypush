@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { clientIp, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
 import { sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
+import { requestOriginAllowed } from "@/lib/subscribe-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,12 @@ export async function POST(req: Request) {
   const rlDom = rateLimitWithHeaders(`unsub:dom:${domainId}`, 60, 60_000);
   if (!rlDom.allowed) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 60) });
+  }
+  // Cross-origin guard: a third-party site must not unsubscribe a victim's
+  // subscription on another domain. Browsers always send Origin on POST.
+  const [dom] = db.select({ name: domains.name }).from(domains).where(eq(domains.id, domainId)).limit(1).all();
+  if (dom && req.headers.get("origin") && !requestOriginAllowed(req, `https://${dom.name}/`, dom.name)) {
+    return corsJson({ ok: false, error: "Origin not allowed for this domain" }, { status: 403 });
   }
   const tokenHash = sha256Hex(endpoint);
 

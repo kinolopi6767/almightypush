@@ -155,10 +155,12 @@ export function normalizeRules(input: unknown): SegmentRules | null {
  * appended in order to `params`.
  */
 export function compileSegmentWhere(rules: SegmentRules, alias = "s"): { sql: string; params: unknown[] } {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error(`Invalid alias: ${alias}`);
   const pieces: string[] = [];
   const params: unknown[] = [];
 
   for (const group of rules.groups) {
+    if (group.logic !== "AND" && group.logic !== "OR") throw new Error(`Invalid group logic: ${String((group as { logic?: unknown }).logic)}`);
     const clauses: string[] = [];
     for (const cond of group.conditions) {
       clauses.push(compileCondition(cond, alias, params));

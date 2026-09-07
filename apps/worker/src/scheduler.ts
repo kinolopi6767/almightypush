@@ -140,7 +140,7 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
   if (audience.length === 0) {
     db.update(campaigns)
       .set({ status: "done", sent_at: nowIso })
-      .where(eq(campaigns.id, campaign.id))
+      .where(and(eq(campaigns.id, campaign.id), eq(campaigns.status, "sending")))
       .run();
     return { queued: 0, skipped: 1 };
   }
@@ -195,7 +195,9 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
       ids = parsed.ids.filter((id: unknown): id is number => Number.isFinite(id as number) && (id as number) > 0);
     }
   } catch {
-    kind = "all";
+    // Fail closed: corrupt audience JSON must match nothing, never broadcast
+    // to the whole domain (previous code fell back to kind="all").
+    return [];
   }
 
   if (kind === "segment" && segmentId) {

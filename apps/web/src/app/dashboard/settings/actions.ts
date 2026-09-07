@@ -385,14 +385,34 @@ export async function updateOutboundAction(_prev: SettingsFormState, formData: F
   const d = parsed.data;
   if (d.outbound_webhook_url) {
     try {
-      // Premium SSRF hardening: webhooks must be https and public (no private IP, no loopback)
+      // Premium SSRF hardening: webhooks must be https and public.
+      // Static hostname block (fail fast at save) + dispatcher re-validation
+      // at send time (covers DNS rebinding). Static check covers literals +
+      // well-known private ranges; the dispatcher covers resolved IPs.
       const u = new URL(d.outbound_webhook_url);
       if (u.protocol !== "https:") {
         return { error: "Webhook URL must use https://" };
       }
-      // Block private Loopback/link-local via static check; deep IP check happens at send-time via ssrfDispatcher
       const host = u.hostname.toLowerCase();
-      if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local") || host === "0.0.0.0") {
+      const blocked =
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "::1" ||
+        host === "0.0.0.0" ||
+        host.endsWith(".local") ||
+        host.endsWith(".internal") ||
+        host.endsWith(".localhost") ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^169\.254\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        /^0x7f\./i.test(host) ||
+        host === "2130706433" ||
+        host.startsWith("::ffff:") ||
+        host.startsWith("fc") ||
+        host.startsWith("fd") ||
+        host.startsWith("fe80:");
+      if (blocked) {
         return { error: "Webhook URL must be a public host (no localhost/private)" };
       }
     } catch {

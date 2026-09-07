@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { requireEditorRole } from "@/lib/roles";
 import { domains } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
-import { AUTOMATION_TYPES, MAX_DRIP_STEPS, automationPayloadSchema, dripStepSchema, newWebhookSecret } from "@pushpanel/core";
+import { AUTOMATION_TYPES, MAX_DRIP_STEPS, automationPayloadSchema, dripStepSchema, newWebhookSecret, nextCronRun } from "@pushpanel/core";
 
 export type AutomationFormState = { ok?: boolean; error?: string };
 
@@ -63,6 +63,27 @@ export async function createAutomationAction(_prev: AutomationFormState | undefi
     .limit(1)
     .all();
   if (!domain) return { error: "Domain not found" };
+
+  // Fail fast at creation time (worker also validates on run): a typo'd cron
+  // must error here, not silently change send frequency via interval fallback.
+  if (data.schedule_cron) {
+    try {
+      if (!nextCronRun(data.schedule_cron, new Date())) return { error: "Invalid cron expression" };
+    } catch {
+      return { error: "Invalid cron expression" };
+    }
+  }
+  // Rotation list: validate shape + http(s) launch URLs + cap length so one
+  // oversized item can't blow the config_json row or become a javascript: sink.
+  if (data.type === "automagic_static" && data.rotation_json) {
+    const list = safeParseRotation(data.rotation_json);
+    if (list.length === 0) return { error: "Rotation list must be a JSON array of { title, ... } items" };
+    for (const item of list) {
+      if (!item.title.trim() || item.title.length > 200) return { error: "Rotation title max 200 chars" };
+      if (item.message && item.message.length > 1000) return { error: "Rotation message max 1000 chars" };
+      if (item.launch_url && !/^https?:\/\//i.test(item.launch_url)) return { error: "Rotation launch_url must be http(s)" };
+    }
+  }
 
   const config: Record<string, unknown> = {
     payload: data.payload,
@@ -127,9 +148,16 @@ function safeParseRotation(json: string): RotationItem[] {
   try {
     const parsed = JSON.parse(json) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (i): i is RotationItem => !!i && typeof i === "object" && typeof (i as RotationItem).title === "string",
-    );
+    return parsed
+      .filter(
+        (i): i is RotationItem => !!i && typeof i === "object" && typeof (i as RotationItem).title === "string",
+      )
+      .slice(0, 50)
+      .map((i) => ({
+        title: String(i.title).slice(0, 200),
+        message: typeof i.message === "string" ? i.message.slice(0, 1000) : undefined,
+        launch_url: typeof i.launch_url === "string" ? i.launch_url.slice(0, 500) : undefined,
+      }));
   } catch {
     return [];
   }
@@ -151,7 +179,7 @@ export async function toggleAutomationAction(id: number): Promise<{ ok: boolean;
 
   db.update(automations)
     .set({ status: row.status === "active" ? "paused" : "active", next_run_at: row.status === "active" ? null : new Date().toISOString() })
-    .where(eq(automations.id, row.id))
+    .where(and(eq(automations.id, row.id), eq(automations.workspace_id, workspaceId)))
     .run();
   logAudit(db, { workspaceId, action: "automation.toggle", entityType: "automation", entityId: id, meta: { status: row.status === "active" ? "paused" : "active" } });
   revalidatePath("/dashboard/automations");
@@ -173,7 +201,7 @@ export async function runAutomationNowAction(id: number): Promise<{ ok: boolean;
   if (!row) return { ok: false, error: "Not found" };
   if (row.status !== "active") return { ok: false, error: "Automation is paused" };
 
-  db.update(automations).set({ next_run_at: new Date().toISOString() }).where(eq(automations.id, row.id)).run();
+  db.update(automations).set({ next_run_at: new Date().toISOString() }).where(and(eq(automations.id, row.id), eq(automations.workspace_id, workspaceId))).run();
   logAudit(db, { workspaceId, action: "automation.run", entityType: "automation", entityId: id });
   revalidatePath("/dashboard/automations");
   return { ok: true };

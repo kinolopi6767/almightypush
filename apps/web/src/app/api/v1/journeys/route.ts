@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { journeys } from "@pushpanel/db/schema";
+import { domains, journeys } from "@pushpanel/db/schema";
 import { requireEditorRole } from "@/lib/roles";
 import { logAudit } from "@/lib/audit";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
+
+  // Per-account throttle: journey creation writes + worker fan-out.
+  const { rateLimitWithHeaders } = await import("@/lib/rate-limit");
+  const rl = rateLimitWithHeaders(`journeys:${wsId}:${session.user.id ?? "anon"}`, 30, 60_000);
+  if (!rl.allowed) return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
+
+  // IDOR guard: domain_id must belong to this workspace.
+  if (parsed.data.domain_id !== undefined) {
+    const [dom] = db
+      .select({ id: domains.id })
+      .from(domains)
+      .where(and(eq(domains.id, parsed.data.domain_id), eq(domains.workspace_id, wsId)))
+      .limit(1)
+      .all();
+    if (!dom) return NextResponse.json({ ok: false, error: "domain not found in this workspace" }, { status: 404 });
+  }
 
   let canvas = parsed.data.canvas_json || "{}";
   try {

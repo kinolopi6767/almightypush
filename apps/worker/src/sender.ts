@@ -30,9 +30,12 @@ const DEFAULT_CONCURRENCY = 25;
 /**
  * A delivery left `sending` longer than this is assumed to belong to a dead
  * worker (crash) and is requeued so it still delivers and the campaign can
- * finalize. Must be far above any realistic single-send time.
+ * finalize. Must be far above any realistic single-cycle time: worst case is
+ * BATCH_SIZE/concurrency * provider timeout (500/25*30s = 600s), so 30min
+ * guarantees a slow-but-alive cycle is never revived mid-send (double-send
+ * is worse than delayed recovery).
  */
-const STALE_CLAIM_MS = 10 * 60_000;
+const STALE_CLAIM_MS = 30 * 60_000;
 
 export interface SendCycleStats {
   claimed: number;
@@ -72,6 +75,11 @@ export async function runSendCycle(
   const stats: SendCycleStats = { claimed: 0, sent: 0, failed: 0, gone: 0, requeued: 0 };
 
   requeueStaleClaims(db, now);
+
+  // Cancel enforcement: an operator pausing/cancelling a campaign must stop
+  // sends. The claim below intentionally only picks `queued` rows, so without
+  // this step a campaign cancelled after enqueue would still fully deliver.
+  cancelTerminatedCampaignDeliveries(db);
 
   const candidateIds = db
     .select({ id: deliveries.id })
@@ -124,6 +132,7 @@ export async function runSendCycle(
     const cRows = db
       .select({
         id: campaigns.id,
+        status: campaigns.status,
         title: campaigns.title,
         title_b: campaigns.title_b,
         variants_json: campaigns.variants_json,
@@ -164,6 +173,28 @@ export async function runSendCycle(
   return stats;
 }
 
+/** Mark queued/sending deliveries of cancelled/paused campaigns as cancelled. */
+function cancelTerminatedCampaignDeliveries(db: PushDb): void {
+  const terminated = db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(inArray(campaigns.status, ["cancelled", "paused"]))
+    .all();
+  if (terminated.length === 0) return;
+  db.update(deliveries)
+    .set({ status: "cancelled", error: "campaign cancelled/paused" })
+    .where(
+      and(
+        inArray(
+          deliveries.campaign_id,
+          terminated.map((t) => t.id),
+        ),
+        inArray(deliveries.status, ["queued", "sending"]),
+      ),
+    )
+    .run();
+}
+
 /** Revive deliveries stuck in `sending` past the stale threshold (crashed worker). */
 function requeueStaleClaims(db: PushDb, now: number): void {
   // Preserve next_attempt_at: a delivery that was on 30s/60s backoff must not
@@ -201,6 +232,7 @@ type Outcome = "sent" | "gone" | "requeued" | "failed";
 
 interface CampaignCache {
   id: number;
+  status?: string | null;
   title: string;
   title_b: string | null;
   variants_json: string | null;
@@ -268,10 +300,12 @@ async function deliverOne(
     .limit(1)
     .all();
   if (!sub?.token || sub.unsubscribed_at) {
-    db.update(deliveries)
+    const missWrite = db
+      .update(deliveries)
       .set({ status: "failed", error: "subscriber missing or unsubscribed", sent_at: now })
       .where(and(eq(deliveries.id, row.id), owned))
       .run();
+    if (missWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
 
@@ -296,7 +330,7 @@ async function deliverOne(
 
   const campaign = campaignCache?.get(row.campaign_id) ?? (() => {
     const [c] = db
-      .select({ title: campaigns.title, title_b: campaigns.title_b, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
+      .select({ status: campaigns.status, title: campaigns.title, title_b: campaigns.title_b, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
       .from(campaigns)
       .where(eq(campaigns.id, row.campaign_id))
       .limit(1)
@@ -304,7 +338,16 @@ async function deliverOne(
     return c as CampaignCache | undefined;
   })();
   if (!campaign) {
-    db.update(deliveries).set({ status: "failed", error: "campaign missing", sent_at: now }).where(and(eq(deliveries.id, row.id), owned)).run();
+    const missWrite = db.update(deliveries).set({ status: "failed", error: "campaign missing", sent_at: now }).where(and(eq(deliveries.id, row.id), owned)).run();
+    if (missWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
+    return "failed";
+  }
+  // Operator cancelled/paused while this batch was claimed: do not push.
+  if (campaign.status === "cancelled" || campaign.status === "paused") {
+    db.update(deliveries)
+      .set({ status: "cancelled", error: `campaign ${campaign.status}`, sent_at: now })
+      .where(and(eq(deliveries.id, row.id), owned))
+      .run();
     return "failed";
   }
 
@@ -556,6 +599,19 @@ async function deliverOne(
   }
 
   // `attempts` was incremented at claim time, so it includes this attempt.
+  // Fail fast on permanent provider config errors (bad VAPID keys, rejected
+  // payload): retrying a misconfigured domain 3x per delivery turns one bad
+  // campaign into millions of failing push requests.
+  if (result.statusCode === 400 || result.statusCode === 401 || result.statusCode === 403) {
+    const permWrite = db
+      .update(deliveries)
+      .set({ status: "failed", error: result.error ?? `provider rejected: ${result.statusCode}`, sent_at: now })
+      .where(and(eq(deliveries.id, row.id), owned))
+      .run();
+    if (permWrite.changes === 0) return "requeued";
+    bumpCampaignStat(db, row.campaign_id, "failed");
+    return "failed";
+  }
   if (row.attempts >= MAX_ATTEMPTS) {
     const failWrite = db
       .update(deliveries)
@@ -613,7 +669,14 @@ function finalizeCampaigns(db: PushDb, campaignIds: number[]) {
       .from(deliveries)
       .where(and(eq(deliveries.campaign_id, id), eq(deliveries.status, "sent")))
       .all();
-    const anySent = (sentRow?.value ?? 0) > 0;
+    const [goneRow] = db
+      .select({ value: count() })
+      .from(deliveries)
+      .where(and(eq(deliveries.campaign_id, id), eq(deliveries.status, "unsubscribed")))
+      .all();
+    // A 410/404-cleaned delivery is a successful push-service handshake, not
+    // a failure — an all-dead-token campaign must finish `done`, not `failed`.
+    const anySent = (sentRow?.value ?? 0) + (goneRow?.value ?? 0) > 0;
     const status = anySent ? "done" : "failed";
     const finWrite = db
       .update(campaigns)

@@ -77,7 +77,7 @@ export function refreshSegmentEstimate(db: PushDb, segmentId: number, workspaceI
  * no domain ids are stored (NULL domain_ids_json means "all domains of the
  * workspace", not "all domains everywhere").
  */
-function buildSegmentWhere(workspaceId: number, rules: SegmentRules, domainIds: number[] | null): { where: string; params: unknown[] } {
+function buildSegmentWhere(workspaceId: number, rules: SegmentRules | null, domainIds: number[] | null): { where: string; params: unknown[] } {
   const conds: string[] = [
     "s.unsubscribed_at IS NULL",
     "s.domain_id IN (SELECT id FROM domains WHERE workspace_id = ?)",
@@ -87,19 +87,25 @@ function buildSegmentWhere(workspaceId: number, rules: SegmentRules, domainIds: 
     conds.push(`s.domain_id IN (${domainIds.map(() => "?").join(", ")})`);
     params.push(...domainIds);
   }
+  // Fail closed: corrupt/off-whitelist rules must match NOTHING, never the
+  // whole workspace (previous code returned {groups:[]} = match-everything).
+  if (rules === null) {
+    conds.push("1 = 0");
+    return { where: conds.join(" AND "), params };
+  }
   const compiled = compileSegmentWhere(rules, "s");
   if (compiled.sql) conds.push(`(${compiled.sql})`);
   params.push(...compiled.params);
   return { where: conds.join(" AND "), params };
 }
 
-function resolveSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds: number[] | null): SegmentMatch {
+function resolveSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules | null, domainIds: number[] | null): SegmentMatch {
   const { where, params } = buildSegmentWhere(workspaceId, rules, domainIds);
   const rows = ((db as WithClient).$client.prepare(`SELECT s.id FROM subscribers s WHERE ${where}`).all(...params) as { id: number }[]);
   return { subscriberIds: rows.map((r) => r.id), count: rows.length };
 }
 
-function countSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules, domainIds: number[] | null): number {
+function countSubscribers(db: PushDb, workspaceId: number, rules: SegmentRules | null, domainIds: number[] | null): number {
   const { where, params } = buildSegmentWhere(workspaceId, rules, domainIds);
   const row = ((db as WithClient).$client.prepare(`SELECT COUNT(*) as cnt FROM subscribers s WHERE ${where}`).get(...params) as { cnt: number } | undefined);
   return row?.cnt ?? 0;
@@ -127,12 +133,38 @@ function parseDomainFilter(json: string | null, override?: number): number[] | n
   return fromStore;
 }
 
-function parseRules(json: string): SegmentRules {
+function parseRules(json: string): SegmentRules | null {
+  let parsed: unknown;
   try {
-    const rules = normalizeRules(JSON.parse(json));
-    if (rules) return rules;
+    parsed = JSON.parse(json);
   } catch {
-    // fall through to empty
+    // Corrupt JSON: fail closed to match-nothing.
+    return null;
   }
-  return { groups: [] };
+  const rules = normalizeRules(parsed);
+  if (rules) return rules;
+  // Legacy compat: a saved segment with empty condition lists historically
+  // resolved to "everything" (old parseRules fell back to {groups:[]}).
+  // Preserve that contract; all other off-whitelist inputs fail closed.
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    Array.isArray((parsed as { groups?: unknown }).groups)
+  ) {
+    const groups = (parsed as { groups: unknown[] }).groups;
+    if (groups.length === 0) return { groups: [] };
+    if (
+      groups.every(
+        (g) =>
+          !!g &&
+          typeof g === "object" &&
+          Array.isArray((g as { conditions?: unknown }).conditions) &&
+          ((g as { conditions: unknown[] }).conditions.length === 0),
+      )
+    ) {
+      return { groups: [] };
+    }
+  }
+  // Fail closed: invalid/off-whitelist segment JSON matches nothing.
+  return null;
 }

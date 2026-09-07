@@ -22,6 +22,13 @@ export async function GET(req: Request) {
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return new Response("Forbidden", { status: 403 });
 
+  // Connection throttle: each stream polls the DB every 1.5s for 10min.
+  const { rateLimit } = await import("@/lib/rate-limit");
+  const who = session.user.id ?? req.headers.get("x-forwarded-for") ?? "anon";
+  if (!rateLimit(`live:${wsId}:${who}`, 5, 60_000)) {
+    return new Response("Too many live connections", { status: 429 });
+  }
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {

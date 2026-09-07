@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { requireEditorRole } from "@/lib/roles";
 import { emailCampaigns } from "@pushpanel/db/schema";
-import { renderBlocksToHtml, emailCampaignSchema } from "@pushpanel/core";
+import { renderBlocksToHtml, emailBlockSchema, emailCampaignSchema } from "@pushpanel/core";
 import { and, eq } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 
@@ -22,7 +22,12 @@ export async function createEmailCampaignAction(_prev: EmailFormState, formData:
   if (blocksRaw) {
     try {
       const blocks = JSON.parse(blocksRaw);
-      if (Array.isArray(blocks)) html = renderBlocksToHtml(blocks);
+      if (Array.isArray(blocks)) {
+        // Validate blocks against the schema — unvalidated blocks bypass the
+        // render allowlist via the raw `html` parallel path.
+        const clean = blocks.map((b) => emailBlockSchema.safeParse(b)).filter((r) => r.success).map((r) => (r as { data: Parameters<typeof renderBlocksToHtml>[0][number] }).data);
+        html = renderBlocksToHtml(clean);
+      }
     } catch {
       void 0; // ignore malformed blocks_json — fallback to raw html
     }
@@ -64,8 +69,10 @@ export async function deleteEmailCampaignAction(id: number): Promise<void> {
   const session = await auth();
   if (!session?.user?.workspaceId) return;
   if (requireEditorRole(session.user.role)) return;
+  const wsId = Number(session.user.workspaceId);
   db.delete(emailCampaigns)
-    .where(and(eq(emailCampaigns.id, id), eq(emailCampaigns.workspace_id, Number(session.user.workspaceId))))
+    .where(and(eq(emailCampaigns.id, id), eq(emailCampaigns.workspace_id, wsId)))
     .run();
+  logAudit(db, { workspaceId: wsId, action: "campaign.delete", entityType: "email_campaign", entityId: id });
   revalidatePath("/dashboard/email");
 }

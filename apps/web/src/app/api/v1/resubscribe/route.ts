@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 const bodySchema = z.object({
   domainId: z.coerce.number().int().positive(),
   /** Previous endpoint when migrating a rotated subscription (SW pushsubscriptionchange). */
-  oldEndpoint: z.string().url().max(2048).optional(),
+  oldEndpoint: z.string().url().max(2048).refine((u) => u.startsWith("https://"), "oldEndpoint must be https").optional(),
   /** Page URL for the no-Origin fallback check (same contract as subscribe). */
   subscribeUrl: z
     .string()

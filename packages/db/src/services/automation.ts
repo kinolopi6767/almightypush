@@ -44,7 +44,7 @@ export interface EnqueueResult {
 export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): EnqueueResult {
   const db = opts.db;
   const now = opts.now ?? new Date();
-  const config = readAutomationConfig(db, opts.automationId);
+  const config = readAutomationConfig(db, opts.automationId, opts.workspaceId);
   const base = config?.payload ?? {};
   const payload: AutomationPayload = {
     title: opts.payload?.title ?? base.title ?? "",
@@ -90,7 +90,7 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
     // would sit "sending" forever.
     db.update(campaigns)
       .set({ status: "done", sent_at: now.toISOString() })
-      .where(eq(campaigns.id, campaignId))
+      .where(and(eq(campaigns.id, campaignId), eq(campaigns.status, "sending")))
       .run();
     return { campaignId, queued: 0, delayed: 0 };
   }
@@ -133,8 +133,9 @@ interface AutomationConfigRow {
   secret?: string;
 }
 
-function readAutomationConfig(db: PushDb, automationId: number): AutomationConfigRow | null {
-  const [row] = db.select({ config_json: automations.config_json }).from(automations).where(eq(automations.id, automationId)).limit(1).all();
+function readAutomationConfig(db: PushDb, automationId: number, workspaceId?: number): AutomationConfigRow | null {
+  const where = workspaceId === undefined ? eq(automations.id, automationId) : and(eq(automations.id, automationId), eq(automations.workspace_id, workspaceId));
+  const [row] = db.select({ config_json: automations.config_json }).from(automations).where(where).limit(1).all();
   if (!row) return null;
   try {
     return JSON.parse(row.config_json ?? "{}") as AutomationConfigRow;

@@ -17,8 +17,8 @@ add_action('admin_init', 'pushpanel_register_settings');
 add_action('publish_post', 'pushpanel_on_publish', 10, 2);
 
 function pushpanel_register_settings() {
-  register_setting('pushpanel_settings', 'pushpanel_webhook_url');
-  register_setting('pushpanel_settings', 'pushpanel_webhook_secret');
+  register_setting('pushpanel_settings', 'pushpanel_webhook_url', array('type' => 'string', 'sanitize_callback' => 'esc_url_raw'));
+  register_setting('pushpanel_settings', 'pushpanel_webhook_secret', array('type' => 'string', 'sanitize_callback' => 'sanitize_text_field'));
 }
 
 function pushpanel_admin_menu() {
@@ -53,6 +53,11 @@ function pushpanel_on_publish($post_id, $post) {
   $url = get_option('pushpanel_webhook_url');
   $secret = get_option('pushpanel_webhook_secret');
   if (!$url || !$secret) return;
+  // Webhook secret must never travel over plaintext http.
+  if (strpos($url, 'https://') !== 0) {
+    error_log('PushPanel webhook skipped: URL must be https://');
+    return;
+  }
 
   $body = wp_json_encode(array('post_id' => (int) $post_id, 'title' => get_the_title($post_id)));
   $ts = (string) (microtime(true) * 1000);
@@ -72,6 +77,7 @@ function pushpanel_on_publish($post_id, $post) {
   if (is_wp_error($response)) {
     error_log('PushPanel webhook failed: ' . $response->get_error_message());
   } elseif ((int) wp_remote_retrieve_response_code($response) !== 200) {
-    error_log('PushPanel webhook rejected: ' . wp_remote_retrieve_body($response));
+    // Never log the response body — it may echo panel internals.
+    error_log('PushPanel webhook rejected: HTTP ' . (int) wp_remote_retrieve_response_code($response));
   }
 }

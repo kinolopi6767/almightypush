@@ -187,3 +187,21 @@ describe("refreshSegmentEstimate", () => {
     expect(row?.at).toBeTruthy();
   });
 });
+
+describe("segment fail-closed hardening", () => {
+  it("corrupt conditions_json matches nothing (never the whole workspace)", async () => {
+    const { createMemoryDb } = await import("../src/index");
+    const { domains: doms, segments: segs, subscribers: subs } = await import("../src/schema");
+    const { workspaces: wss } = await import("../src/schema/core");
+    const { resolveSegment } = await import("../src/services/segments");
+    const { db } = createMemoryDb();
+    const wsId = Number(db.insert(wss).values({ name: "w2" }).run().lastInsertRowid);
+    const d = Number(db.insert(doms).values({ workspace_id: wsId, name: "x.test" }).run().lastInsertRowid);
+    db.insert(subs).values({ domain_id: d, token_hash: "h1" }).run();
+    db.insert(subs).values({ domain_id: d, token_hash: "h2" }).run();
+    const segId = Number(db.insert(segs).values({ workspace_id: wsId, name: "bad", conditions_json: "{corrupt!!!" }).run().lastInsertRowid);
+    const m = resolveSegment(db as never, { workspaceId: wsId, segmentId: segId });
+    expect(m.count).toBe(0);
+    expect(m.subscriberIds).toEqual([]);
+  });
+});

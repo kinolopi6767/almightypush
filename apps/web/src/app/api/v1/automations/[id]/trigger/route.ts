@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { parseAutomationConfig, verifyWebhook } from "@pushpanel/core";
 import { automations } from "@pushpanel/db/schema";
@@ -77,15 +77,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Replay dedupe: a captured request is valid for 5 minutes (timestamp
   // window), so an identical retry would otherwise fire a second push.
-  // Reject any timestamp we have already seen.
-  if ((config.last_seen_ts ?? 0) >= timestamp) {
+  // Atomic: the conditional UPDATE claims this timestamp — concurrent replays
+  // race on the same row and exactly one wins (check-then-set would double-fire).
+  const claimed = db
+    .update(automations)
+    .set({ next_run_at: new Date().toISOString(), config_json: JSON.stringify({ ...config, last_seen_ts: timestamp }) })
+    .where(and(eq(automations.id, id), sql`COALESCE(json_extract(${automations.config_json}, '$.last_seen_ts'), 0) < ${timestamp}`))
+    .run();
+  if (claimed.changes === 0) {
     return NextResponse.json({ ok: false, error: "Replayed webhook request" }, { status: 409 });
   }
-
-  db.update(automations)
-    .set({ next_run_at: new Date().toISOString(), config_json: JSON.stringify({ ...config, last_seen_ts: timestamp }) })
-    .where(eq(automations.id, id))
-    .run();
 
   return NextResponse.json({ ok: true });
 }

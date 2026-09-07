@@ -26,6 +26,8 @@ export async function GET(req: Request) {
     .limit(1)
     .all();
   if (!domain || domain.status !== "active") {
+    // Uniform response: do not distinguish unknown domain vs missing keys —
+    // per-domain VAPID status must not be enumerable.
     return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
   }
   let publicKey = "";
@@ -34,7 +36,7 @@ export async function GET(req: Request) {
   } catch {
     publicKey = "";
   }
-  if (!publicKey) return corsJson({ ok: false, error: "Domain has no VAPID keys" }, { status: 500 });
+  if (!publicKey) return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
   return corsJson({ ok: true, publicKey });
 }
 

@@ -15,6 +15,11 @@ export async function requireAiAccess(
   if (!session?.user) {
     return { ok: false, response: NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 }) };
   }
+  // AI calls cost money per request — viewers must not burn credits.
+  const role = (session.user as { role?: string }).role;
+  if (role === "viewer") {
+    return { ok: false, response: NextResponse.json({ ok: false, error: "Editors only" }, { status: 403 }) };
+  }
   const limit = opts?.limit ?? 60;
   const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
   const key = `ai:${session.user.id ?? clientIp(req.headers)}`;

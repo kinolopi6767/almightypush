@@ -174,6 +174,18 @@ function injectStyles(customCss?: string): void {
     style.id = id;
     document.head.appendChild(style);
   }
+  // Defense-in-depth: editor-controlled customCss runs on the customer
+  // origin. Drop it when it contains exfiltration-capable constructs
+  // (server also sanitizes, but the SDK must not trust the wire).
+  let safeCss = customCss ?? "";
+  if (safeCss && /(@import|url\s*\(|expression|javascript\s*:|behavior\s*:|-moz-binding|vbscript\s*:|<\/style)/i.test(safeCss)) {
+    try {
+      console.warn("[PushPanel] customCss blocked: unsafe construct detected");
+    } catch {
+      void 0;
+    }
+    safeCss = "";
+  }
   style.textContent = `
 .pp-sdk{all:initial;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:inherit;z-index:2147483647}
 .pp-sdk *{all:unset;box-sizing:border-box}
@@ -192,7 +204,7 @@ function injectStyles(customCss?: string): void {
 .pp-sdk-backdrop{position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
 .pp-sdk-fullscreen{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 600px at 50% -10%, #1d4ed8, #0f172a);color:#fff;padding:24px}
 .pp-sdk-fullscreen-inner{max-width:460px;text-align:center}
-${customCss ?? ""}
+${safeCss}
 `;
 }
 
@@ -263,8 +275,9 @@ function schedulePeriodicSync(
     try {
       const reg = (await navigator.serviceWorker.getRegistration(opts.serviceWorkerPath ?? "/sw.js")) ?? undefined;
       const sub = await reg?.pushManager.getSubscription();
-      if (!reg || !sub || !opts.baseUrl) return;
-      await fetch(`${opts.baseUrl.replace(/\/+$/, "")}/api/v1/resubscribe`, {
+      const syncBase = (opts.baseUrl ?? (typeof location !== "undefined" ? location.origin : "")).replace(/\/+$/, "");
+      if (!reg || !sub || !syncBase) return;
+      await fetch(`${syncBase}/api/v1/resubscribe`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -286,7 +299,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
   const existing = w.__pushpanel_instances__.get(options.domain);
   if (existing) return existing;
 
-  const baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
+  const baseUrl = (options.baseUrl ?? (typeof location !== "undefined" ? location.origin : "")).replace(/\/$/, "");
   const swPath = options.serviceWorkerPath ?? "/sw.js";
   const prompt: PushPromptConfig = options.prompt ?? {};
   const pos = prompt.position ?? "bottom-right";
@@ -658,10 +671,23 @@ export function init(options: PushPanelOptions): PushPanelApi {
         });
       }
       if (options.endpointOverride) {
-        // Spread of a PushSubscription copies nothing (IDL attributes live on
-        // the prototype) — rebuild from its JSON representation instead.
-        const json = subscription.toJSON() as { endpoint?: string; keys?: { p256dh: string; auth: string } };
-        subscription = { endpoint: options.endpointOverride, keys: json.keys } as unknown as PushSubscription;
+        // Dev-only flag: silently accepting it in prod would store an
+        // attacker endpoint and leak pushes to a third party. Only honor on
+        // loopback hosts; anywhere else warn and ignore.
+        const host = typeof location !== "undefined" ? location.hostname : "";
+        const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "::1";
+        if (!isLoopback) {
+          try {
+            console.warn("[PushPanel] endpointOverride ignored: dev-only flag");
+          } catch {
+            void 0;
+          }
+        } else {
+          // Spread of a PushSubscription copies nothing (IDL attributes live on
+          // the prototype) — rebuild from its JSON representation instead.
+          const json = subscription.toJSON() as { endpoint?: string; keys?: { p256dh: string; auth: string } };
+          subscription = { endpoint: options.endpointOverride, keys: json.keys } as unknown as PushSubscription;
+        }
       }
       const payload = {
         domainId: options.domain,
@@ -711,6 +737,14 @@ export function init(options: PushPanelOptions): PushPanelApi {
   async function unsubscribe(): Promise<PushPanelState> {
     if (current === "unsupported") return "unsupported";
     try {
+      // Tombstone the offline queue first: without this a queued subscribe
+      // flushed on another tab/next visit would resurrect the subscription
+      // right after an explicit opt-out.
+      try {
+        localStorage.removeItem(pendingSubKey(options.domain));
+      } catch {
+        void 0;
+      }
       const registration = await getOwnRegistration();
       const sub = await registration?.pushManager.getSubscription();
       if (!sub) {

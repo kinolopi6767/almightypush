@@ -16,7 +16,11 @@ export type SegmentFormState = { ok?: boolean; error?: string };
 const conditionSchema = z.object({
   field: z.enum(["url", "country", "state", "city", "device", "os", "browser", "subscribed_after", "subscribed_before", "last_active_after", "opened_campaign", "campaign_total_opens", "tag"]),
   op: z.enum(["equals", "contains", "starts_with", "ends_with", "in", "gt", "gte", "lt", "lte"]),
-  value: z.union([z.string(), z.number(), z.array(z.union([z.string(), z.number()]))]),
+  value: z.union([
+    z.string().max(500),
+    z.number(),
+    z.array(z.union([z.string().max(500), z.number()])).max(200),
+  ]),
 });
 
 const groupSchema = z.object({

@@ -34,6 +34,11 @@ export async function POST(req: Request) {
   if (!rl.allowed) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 120) });
   }
+  // Per-IP global: a compromised key must not allow unbounded event-table growth.
+  const rlIp = rateLimitWithHeaders(`track:ip:${clientIp(req.headers)}`, envRateLimit("TRACK_IP_RPM", 600), 60_000);
+  if (!rlIp.allowed) {
+    return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 600) });
+  }
 
   let parsed;
   try {
@@ -46,11 +51,23 @@ export async function POST(req: Request) {
   }
   const { domain: domainRef, event, endpoint, tags } = parsed.data;
 
-  const wanted = typeof domainRef === "number" ? String(domainRef) : domainRef.toLowerCase();
-  const candidates = db.select({ id: domains.id, name: domains.name, workspace_id: domains.workspace_id }).from(domains).all();
-  const domain = candidates.find((d) =>
-    String(d.id) === wanted || d.name.toLowerCase() === wanted,
-  );
+  // Scoped lookup — never SELECT * all domains (full-table scan + timing leak).
+  let domain: { id: number; name: string; workspace_id: number } | undefined;
+  if (typeof domainRef === "number") {
+    [domain] = db
+      .select({ id: domains.id, name: domains.name, workspace_id: domains.workspace_id })
+      .from(domains)
+      .where(eq(domains.id, domainRef))
+      .limit(1)
+      .all();
+  } else {
+    [domain] = db
+      .select({ id: domains.id, name: domains.name, workspace_id: domains.workspace_id })
+      .from(domains)
+      .where(eq(domains.name, domainRef.toLowerCase()))
+      .limit(1)
+      .all();
+  }
   if (!domain || domain.workspace_id !== ctx.workspaceId) {
     return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
   }
@@ -105,7 +122,6 @@ export async function POST(req: Request) {
     })
     .run();
 
-  void clientIp;
   return corsJson({ ok: true, matched: subscriberId != null });
 }
 

@@ -12,10 +12,35 @@ export const emailCampaignSchema = z.object({
   subject: z.string().trim().min(1).max(200),
   preheader: z.string().trim().max(200).optional().or(z.literal("")),
   html: z.string().max(500_000).optional().or(z.literal("")),
-  blocks_json: z.string().optional().or(z.literal("")),
+  blocks_json: z.string().max(500_000).optional().or(z.literal("")),
   from_email: z.string().email().optional().or(z.literal("")),
-  audience_json: z.string().optional(),
-  schedule_at: z.string().optional().or(z.literal("")),
+  audience_json: z
+    .string()
+    .max(100_000)
+    .optional()
+    .refine(
+      (v) => {
+        if (v === undefined || v === "") return true;
+        try {
+          const p = JSON.parse(v) as { kind?: unknown };
+          return !!p && typeof p === "object" && (p.kind === "all" || p.kind === "manual" || p.kind === undefined);
+        } catch {
+          return false;
+        }
+      },
+      { message: "audience_json must be valid JSON with kind all|manual" },
+    ),
+  schedule_at: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine(
+      (v) => {
+        if (!v) return true;
+        return !Number.isNaN(Date.parse(v));
+      },
+      { message: "schedule_at must be an ISO timestamp" },
+    ),
 });
 /** Very small MJML-like render: blocks → HTML */
 export function renderBlocksToHtml(blocks: EmailBlock[]): string {

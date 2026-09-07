@@ -39,12 +39,35 @@ export function runCleanup(
   }
 
   const cutoff = new Date(now.getTime() - opts.retentionDays * 86_400_000).toISOString();
-  const result = db
-    .delete(subscribers)
-    .where(and(isNotNull(subscribers.unsubscribed_at), lt(subscribers.unsubscribed_at, cutoff)))
-    .run();
+  // Batched deletes: one DELETE over a huge dead-row backlog would hold the
+  // write lock and starve the web process (SQLITE_BUSY). 10k-row windows.
+  let deleted = 0;
+  for (;;) {
+    const batch = db
+      .select({ id: subscribers.id })
+      .from(subscribers)
+      .where(and(isNotNull(subscribers.unsubscribed_at), lt(subscribers.unsubscribed_at, cutoff)))
+      .limit(PRUNE_BATCH)
+      .all();
+    if (batch.length === 0) break;
+    const res = db
+      .delete(subscribers)
+      .where(
+        and(
+          isNotNull(subscribers.unsubscribed_at),
+          lt(subscribers.unsubscribed_at, cutoff),
+          inArray(
+            subscribers.id,
+            batch.map((b) => b.id),
+          ),
+        ),
+      )
+      .run();
+    deleted += res.changes;
+    if (batch.length < PRUNE_BATCH) break;
+  }
 
-  if (result.changes > 0) {
+  if (deleted > 0) {
     // The purge bypassed the per-subscriber paths that maintain
     // domains.subscribers_count — recompute it for every domain.
     recomputeSubscriberCounts(db);
@@ -60,7 +83,7 @@ export function runCleanup(
   }
 
   writeSetting(db, "last_cleanup_at", now.toISOString());
-  return { deleted: result.changes, ran: true };
+  return { deleted, ran: true };
 }
 
 /** Refresh domains.subscribers_count from the active-subscriber ground truth. */

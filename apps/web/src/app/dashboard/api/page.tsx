@@ -11,9 +11,11 @@ import { PageHeader } from "@/components/page-header";
 export const metadata = { title: "API" };
 
 export default async function ApiPage() {
- const session = await auth();
- if (!session?.user) redirect("/login");
- const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  // API key metadata (labels, scope, usage) is owner/admin only.
+  if (session.user.role !== "owner" && session.user.role !== "admin") redirect("/dashboard");
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
  if (!workspaceId) redirect("/setup");
 
  const accessEnabled = readApiAccessEnabled();
