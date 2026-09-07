@@ -59,4 +59,4 @@ export interface PushProvider {
   send(subscription: PushSubscriptionPayload, message: PushMessage, options: SendOptions): Promise<SendResult>;
 }
 
-export { VapidPushProvider, parseRetryAfterMs } from "./vapid";
+export { VapidPushProvider, parseRetryAfterMs, fitPushPayload, MAX_PUSH_PAYLOAD_BYTES } from "./vapid";

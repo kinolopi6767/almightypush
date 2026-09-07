@@ -21,6 +21,49 @@ export function parseRetryAfterMs(value: string | undefined, nowMs = Date.now())
 }
 
 /**
+ * Push services reject payloads over ~4096 bytes (413/400). A 500-char
+ * message + long URLs + 3 buttons + tracking ids can exceed that — and
+ * without a cap EVERY delivery of the campaign would fail-fast on 400.
+ * Shrink gracefully: body first, then title; URLs/buttons are never cut
+ * (a truncated URL is worse than a truncated sentence).
+ */
+export const MAX_PUSH_PAYLOAD_BYTES = 4096;
+
+export function fitPushPayload(message: PushMessage, budget: number = MAX_PUSH_PAYLOAD_BYTES): PushMessage {
+  const size = (m: PushMessage) => Buffer.byteLength(JSON.stringify(m), "utf8");
+  if (size(message) <= budget) return message;
+  const cut = (s: string | undefined, maxChars: number): string | undefined => {
+    if (!s) return s;
+    if (s.length <= maxChars) return s;
+    return `${s.slice(0, Math.max(0, maxChars - 1))}…`;
+  };
+  // Binary-search the body length: multibyte chars make byte math nonlinear.
+  let body = message.body;
+  if (body) {
+    let lo = 0;
+    let hi = body.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi + 1) / 2);
+      if (size({ ...message, body: cut(body, mid) }) <= budget) lo = mid;
+      else hi = mid - 1;
+    }
+    body = cut(body, lo);
+  }
+  const shrunk: PushMessage = { ...message, body };
+  if (size(shrunk) <= budget) return shrunk;
+  // Still over (giant URLs/buttons): trim the title as a last resort.
+  let title = message.title;
+  let lo = 0;
+  let hi = title.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi + 1) / 2);
+    if (size({ ...shrunk, title: cut(title, mid) ?? title }) <= budget) lo = mid;
+    else hi = mid - 1;
+  }
+  return { ...shrunk, title: cut(title, lo) ?? title };
+}
+
+/**
  * VAPID provider backed by the `web-push` lib (ES256 JWS + RFC 8291 ECE).
  * VAPID details are passed per-send, never set globally — one panel process
  * serves many domains with distinct keypairs.
@@ -31,7 +74,7 @@ export class VapidPushProvider implements PushProvider {
     message: PushMessage,
     options: SendOptions,
   ): Promise<SendResult> {
-    const payload = JSON.stringify(message);
+    const payload = JSON.stringify(fitPushPayload(message));
     const vapidDetails = {
       subject: options.vapid.subject,
       publicKey: options.vapid.publicKey,

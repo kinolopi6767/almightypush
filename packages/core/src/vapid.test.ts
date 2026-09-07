@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createECDH, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { VapidPushProvider, parseRetryAfterMs } from "./providers/vapid";
+import { VapidPushProvider, fitPushPayload, MAX_PUSH_PAYLOAD_BYTES, parseRetryAfterMs } from "./providers/vapid";
 import { generateVapidKeys, createVapidConfig, decryptVapidConfig } from "./vapid";
 import type { PushSubscriptionPayload } from "./providers/index";
 
@@ -140,6 +140,34 @@ describe("parseRetryAfterMs", () => {
     expect(ms).toBeLessThanOrEqual(60_000);
     const past = new Date(now - 60_000).toUTCString();
     expect(parseRetryAfterMs(past, now)).toBe(0);
+  });
+});
+
+describe("fitPushPayload", () => {
+  it("leaves small payloads untouched", () => {
+    const m = { title: "Hi", body: "Hello" };
+    expect(fitPushPayload(m)).toEqual(m);
+  });
+
+  it("truncates an oversized body to fit the 4KB budget, never URLs", () => {
+    const url = `https://example.com/${"p".repeat(2000)}`;
+    const m = { title: "Sale", body: "x".repeat(5000), url };
+    const out = fitPushPayload(m);
+    expect(Buffer.byteLength(JSON.stringify(out), "utf8")).toBeLessThanOrEqual(MAX_PUSH_PAYLOAD_BYTES);
+    expect(out.url).toBe(url);
+    expect(out.body!.endsWith("…")).toBe(true);
+  });
+
+  it("falls back to trimming the title when body alone cannot fit", () => {
+    const m = { title: "T".repeat(3000), body: "b".repeat(3000), url: `https://example.com/${"q".repeat(500)}` };
+    const out = fitPushPayload(m);
+    expect(Buffer.byteLength(JSON.stringify(out), "utf8")).toBeLessThanOrEqual(MAX_PUSH_PAYLOAD_BYTES);
+  });
+
+  it("handles multibyte bodies without splitting the budget", () => {
+    const m = { title: " Tae ", body: "🎉".repeat(2000) };
+    const out = fitPushPayload(m);
+    expect(Buffer.byteLength(JSON.stringify(out), "utf8")).toBeLessThanOrEqual(MAX_PUSH_PAYLOAD_BYTES);
   });
 });
 

@@ -27,7 +27,11 @@ export function createCipher(encKey?: string) {
       return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
     },
     decrypt(payload: string): string {
-      const [version, ivB64, tagB64, ctB64] = payload.split(":");
+      const parts = payload.split(":");
+      // Strict arity: trailing garbage (v1:a:b:c:evil) must not be silently
+      // ignored — base64 never contains ':', so exactly 4 parts are valid.
+      if (parts.length !== 4) throw new Error("Malformed encrypted payload");
+      const [version, ivB64, tagB64, ctB64] = parts as [string, string, string, string];
       if (version !== "v1" || !ivB64 || !tagB64 || !ctB64) {
         throw new Error("Malformed encrypted payload");
       }

@@ -77,6 +77,9 @@ export function verifyTotp(secretB32: string | null | undefined, code: string, a
   if (secret.length < 10) return false;
   const counter = Math.floor(atMs / 1000 / STEP_SECONDS);
   for (let i = -WINDOW; i <= WINDOW; i++) {
+    // Negative counters (atMs < 30s, i.e. clock skew/test epochs) would throw
+    // in writeBigUInt64BE — skip instead of 500ing the login.
+    if (counter + i < 0) continue;
     if (safeEqual(hotp(secret, counter + i), code)) return true;
   }
   return false;

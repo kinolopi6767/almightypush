@@ -3,7 +3,8 @@ import { z } from "zod";
 /**
  * Shared environment schema. Each app validates a subset:
  * - web (panel + SDK routes): everything except worker-only vars.
- * - worker: DB + runtime knobs (SEND_* etc. arrive in later milestones).
+ * - worker: DB path + APP_URL/keys; cadence knobs (WORKER_TICK_MS, batch
+ *   sizes) are read defensively at use-site with clamped fallbacks.
  */
 export const baseEnvSchema = z
   .object({
