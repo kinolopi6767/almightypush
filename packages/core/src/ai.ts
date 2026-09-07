@@ -29,10 +29,12 @@ const FALLBACK_HOOKS: Record<string, HookAngle[]> = {
 export function generateHookAngles(topic: string, count = 3): HookAngle[] {
   const key = topic.toLowerCase().includes("deal") || topic.toLowerCase().includes("sale") ? "deals" : "news";
   const base = FALLBACK_HOOKS[key] ?? FALLBACK_HOOKS.news!;
-  // deterministic rotation + topic injection
+  const topicBit = topic.slice(0, 24) || "this";
+  // Replacer FUNCTION: a topic containing `$&`/`$'`-style sequences would
+  // otherwise be interpreted as replacement patterns by String.replace.
   return base.slice(0, count).map((h) => ({
     angle: h.angle,
-    title: h.title.replace("this", topic.slice(0, 24) || "this"),
+    title: h.title.replace("this", () => topicBit),
     message: h.message,
   }));
 }
@@ -94,7 +96,14 @@ Return JSON array of {angle, title, message} where title 30-45 chars, message 50
     const content = data.choices?.[0]?.message?.content?.trim() ?? "";
     const jsonStr = content.match(/\[.*\]/s)?.[0] ?? content;
     const parsed = JSON.parse(jsonStr) as HookAngle[];
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, count);
+    // The LLM is untrusted input: filter to well-formed items so the panel
+    // never renders `undefined` titles or crashes on missing fields.
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const clean = parsed
+        .filter((h) => h && typeof h.title === "string" && h.title.trim() && typeof h.angle === "string")
+        .map((h) => ({ angle: h.angle, title: h.title.slice(0, 120), message: typeof h.message === "string" ? h.message.slice(0, 500) : undefined }));
+      if (clean.length > 0) return clean.slice(0, count);
+    }
   } catch {
     // fall through to heuristic
   }

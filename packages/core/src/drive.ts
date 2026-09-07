@@ -4,12 +4,12 @@
  * shares a Drive folder with SA email, pastes JSON in panel — no OAuth flow).
  */
 
+import { createSign } from "node:crypto";
+
 function base64url(input: string | Buffer): string {
   const b = typeof input === "string" ? Buffer.from(input) : input;
   return b.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
-
-import { createSign } from "node:crypto";
 
 function jwtSign(header: object, payload: object, privateKeyPem: string): string {
   const h = base64url(JSON.stringify(header));

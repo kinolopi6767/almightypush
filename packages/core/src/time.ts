@@ -51,9 +51,16 @@ export function naiveLocalToUtcMs(naive: string, timeZone?: string): number {
     const fallback = Date.parse(naive);
     return Number.isNaN(fallback) ? NaN : Math.round(fallback / 1000) * 1000;
   }
+  // Range-check the components: Date.UTC normalizes overflows ("2026-13-99"
+  // becomes a real 2027 date), which would silently schedule a nonsense time
+  // instead of failing validation upstream. Return NaN like Date.parse.
+  const [y, mo, d, h, mi, s] = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] ?? 0)];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return NaN;
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== mo - 1 || probe.getUTCDate() !== d) return NaN;
   // The wall-clock reading expressed as a UTC epoch — the reference point
   // every timezone offset is measured against.
-  const wallAsUtc = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] ?? 0));
+  const wallAsUtc = Date.UTC(y, mo - 1, d, h, mi, s);
   if (timeZone === undefined || timeZone === "") return Math.round(Date.parse(naive) / 1000) * 1000;
 
   const offsetAt = (instantMs: number): number => {

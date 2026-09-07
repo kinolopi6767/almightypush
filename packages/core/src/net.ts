@@ -106,7 +106,10 @@ export async function ssrfFetch(
     const check = await assertPublicHttpUrl(current);
     if (!check.ok || !check.url) throw new Error(check.error ?? "URL rejected by SSRF guard");
     const res = await fetch(check.url, { ...withTimeout, redirect: "manual", dispatcher: ssrfDispatcher() } as RequestInit);
-    if (res.status >= 300 && res.status < 400) {
+    // Explicit redirect codes only: a bare 3xx range would treat 304 Not
+    // Modified (no Location, never a redirect for our unconditional GETs) as
+    // a redirect and throw a confusing error.
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get("location");
       // Drain the body so the socket is released back to the pool.
       try {
@@ -131,6 +134,7 @@ export function isPrivateIp(ip: string): boolean {
     const parts = ip.split(".").map(Number);
     const a = parts[0] ?? 0;
     const b = parts[1] ?? 0;
+    const c = parts[2] ?? 0;
     if (a === 0 || a === 10 || a === 127) return true;
     if (a === 169 && b === 254) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
@@ -138,6 +142,8 @@ export function isPrivateIp(ip: string): boolean {
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (100.64.0.0/10)
     if (a === 192 && b === 0) return true; // IETF protocol assignments incl. 192.0.0.9/10
     if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+    if (a === 198 && b === 51 && c === 100) return true; // documentation TEST-NET-2 (198.51.100.0/24)
+    if (a === 203 && b === 0 && c === 113) return true; // documentation TEST-NET-3 (203.0.113.0/24)
     if (a >= 224) return true;
     return false;
   }
@@ -157,6 +163,7 @@ export function isPrivateIp(ip: string): boolean {
     if (lower.startsWith("2002:")) return true; // 6to4 2002::/16 (v4 tunnel reach)
     if (lower.startsWith("64:ff9b")) return true; // NAT64 well-known prefix
     if (lower.startsWith("100:")) return true; // discard-only 100::/64
+    if (lower.startsWith("ff")) return true; // multicast ff00::/8 (link-local devices answer here)
     // IPv4-mapped (::ffff:192.168.1.1), IPv4 hex-mapped (::ffff:7f00:1) and
     // IPv4-embedded (::127.0.0.1) forms classify as their IPv4 counterpart.
     const v4form = extractEmbeddedV4(lower);

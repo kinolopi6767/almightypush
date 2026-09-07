@@ -75,9 +75,10 @@ export function parseCsv(text: string): string[][] {
 export function csvCell(value: string | null | undefined): string {
   let str = value ?? "";
   // CSV formula injection defense: spreadsheet apps interpret cells starting
-  // with = + - @ TAB CR as formulas/DDE. Attacker-controlled fields (browser,
-  // os, city… via the public subscribe API) must never execute on export.
-  if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`;
+  // with = + - @ TAB CR LF as formulas/DDE. Attacker-controlled fields
+  // (browser, os, city… via the public subscribe API) must never execute on
+  // export. Newline included: a quoted cell can begin with one.
+  if (/^[=+\-@\t\r\n]/.test(str)) str = `'${str}`;
   return `"${str.replace(/"/g, '""')}"`;
 }
 
@@ -104,7 +105,9 @@ export function campaignAnalyticsCsv(rows: CampaignAnalyticsRow[]): string {
     const rate = r.delivered > 0 ? ((r.clicked / r.delivered) * 100).toFixed(2) : "";
     lines.push(
       [r.id, r.title, r.domain, r.status, r.sent_at, r.delivered, r.failed, r.clicked, rate, r.buttons.join(" | "), clicksPerButton]
-        .map((v) => csvCell(String(v)))
+        // Nulls (domain/sent_at on unsent campaigns) must export as empty —
+        // String(null) would write the literal text "null" into the file.
+        .map((v) => csvCell(v == null ? "" : String(v)))
         .join(","),
     );
   }

@@ -85,4 +85,14 @@ describe("campaignAnalyticsCsv", () => {
     const parsed = parseCsv(campaignAnalyticsCsv([{ ...row, delivered: 0, clicked: 0 }]));
     expect(parsed[1]?.[8]).toBe("");
   });
+
+  it("exports nulls as empty, never the literal 'null'", () => {
+    const parsed = parseCsv(campaignAnalyticsCsv([{ ...row, domain: null, sent_at: null }]));
+    expect(parsed[1]?.[2]).toBe("");
+    expect(parsed[1]?.[4]).toBe("");
+  });
+
+  it("prefixes leading-newline cells against formula injection", () => {
+    expect(parseCsv(`${csvCell("\n=1+1")}`)[0]?.[0]).toBe("'\n=1+1");
+  });
 });

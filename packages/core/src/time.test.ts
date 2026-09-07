@@ -74,3 +74,14 @@ describe("naiveLocalToUtcMs", () => {
     expect(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`).toBe(input);
   });
 });
+describe("naiveLocalToUtcMs overflow rejection", () => {
+  it("returns NaN for out-of-range components instead of normalizing", async () => {
+    const { naiveLocalToUtcMs } = await import("./time");
+    expect(naiveLocalToUtcMs("2026-13-01T00:00", "UTC")).toBeNaN();
+    expect(naiveLocalToUtcMs("2026-02-30T12:00", "UTC")).toBeNaN();
+    expect(naiveLocalToUtcMs("2026-01-01T25:00", "UTC")).toBeNaN();
+    expect(naiveLocalToUtcMs("2026-04-31T00:00", "Asia/Karachi")).toBeNaN();
+    // Leap day 2024 is real and still converts.
+    expect(naiveLocalToUtcMs("2024-02-29T12:00", "UTC")).toBe(Date.UTC(2024, 1, 29, 12, 0));
+  });
+});

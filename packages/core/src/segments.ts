@@ -87,6 +87,20 @@ export function isSegmentOp(value: unknown): value is SegmentOp {
   return typeof value === "string" && (SEGMENT_OPS as readonly string[]).includes(value);
 }
 
+/** Normalize an epoch-ms number or date string to canonical ISO, or null. */
+function toIsoDate(value: string | number | (string | number)[]): string | null {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return null;
+    const d = new Date(v);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+  }
+  if (typeof v !== "string" || v.trim() === "") return null;
+  const t = Date.parse(v);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t).toISOString();
+}
+
 /** Validate + normalize a single condition against the whitelist. */
 export function normalizeCondition(input: unknown): SegmentCondition | null {
   if (!input || typeof input !== "object") return null;
@@ -99,18 +113,22 @@ export function normalizeCondition(input: unknown): SegmentCondition | null {
     if (!Array.isArray(value) || value.length === 0) return null;
     if (!value.every((v) => typeof v === "string" || typeof v === "number")) return null;
     if (value.length > 200) return null; // cap list size (personal: unlocked from 50)
+    // Oversized needles can never match stored data (URLs ≤500 chars) — and
+    // a 200-item list of multi-KB strings bloats the statement. Reject.
+    if (value.some((v) => typeof v === "string" && v.length > 500)) return null;
   } else if (typeof value !== "string" && typeof value !== "number") {
     return null;
+  } else if (typeof value === "string" && value.length > 2000) {
+    return null;
   }
-  // Timestamps/types sanity: date fields need ISO or epoch ms strings/numbers.
-  if (
-    c.field === "subscribed_after" ||
-    c.field === "subscribed_before" ||
-    c.field === "last_active_after" ||
-    c.field === "opened_campaign" ||
-    c.field === "campaign_total_opens"
-  ) {
-    if (typeof value === "string" && value.trim() === "") return null;
+  // Date fields: garbage strings are dangerous, not just non-matching —
+  // "abc" compares GREATER than any ISO timestamp ('a' > '2'), so
+  // subscribed_after/gt/"abc" would match EVERYTHING. Normalize numbers
+  // (epoch ms) and ISO/date strings to canonical ISO; reject the rest.
+  if (c.field === "subscribed_after" || c.field === "subscribed_before" || c.field === "last_active_after") {
+    const iso = toIsoDate(value);
+    if (!iso) return null;
+    return { field: c.field, op: c.op, value: iso };
   }
   // Numeric-id/count fields must be finite numbers — "abc" -> NaN would
   // compile to `= NaN` and silently match nothing.
@@ -176,19 +194,30 @@ function push(params: unknown[], value: unknown) {
 }
 
 function compileCondition(cond: SegmentCondition, alias: string, params: unknown[]): string {
-  // Subquery-backed fields: opened_campaign / campaign_total_opens / tag (LumaPush city+tag)
+  // Subquery-backed fields: opened_campaign / campaign_total_opens / tag (LumaPush city+tag).
+  // Op is re-validated here (not just in normalizeCondition): these branches
+  // map ops through fallthrough ternaries, so a programmatically-built
+  // {field, op} pair that skips normalization would silently compile to the
+  // wrong comparison instead of failing loudly.
   if (cond.field === "opened_campaign") {
+    if (cond.op !== "equals") throw new Error(`Unsupported operator for opened_campaign: ${cond.op}`);
     const v = Array.isArray(cond.value) ? cond.value[0] : cond.value;
     const p = push(params, Number(v));
     return `EXISTS (SELECT 1 FROM events e WHERE e.subscriber_id = ${alias}.id AND e.campaign_id = ${p} AND e.type = 'clicked')`;
   }
   if (cond.field === "campaign_total_opens") {
+    if (cond.op !== "equals" && cond.op !== "gt" && cond.op !== "gte" && cond.op !== "lt" && cond.op !== "lte") {
+      throw new Error(`Unsupported operator for campaign_total_opens: ${cond.op}`);
+    }
     const v = Array.isArray(cond.value) ? cond.value[0] : cond.value;
     const p = push(params, Number(v));
     const sqlOp = cond.op === "equals" ? "=" : cond.op === "gt" ? ">" : cond.op === "gte" ? ">=" : cond.op === "lt" ? "<" : "<=";
     return `(SELECT COUNT(*) FROM events e WHERE e.subscriber_id = ${alias}.id AND e.campaign_id IS NOT NULL AND e.type = 'clicked') ${sqlOp} ${p}`;
   }
   if (cond.field === "tag") {
+    if (cond.op !== "equals" && cond.op !== "in" && cond.op !== "contains") {
+      throw new Error(`Unsupported operator for tag: ${cond.op}`);
+    }
     if (cond.op === "in") {
       const list = Array.isArray(cond.value) ? cond.value : [cond.value];
       const ph = list.map((v) => push(params, String(v))).join(", ");

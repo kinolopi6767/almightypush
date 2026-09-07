@@ -37,6 +37,32 @@ describe("normalizeCondition", () => {
       normalizeCondition({ field: "country", op: "in", value: Array.from({ length: 201 }, (_, i) => `C${i}`) }),
     ).toBeNull();
   });
+
+  it("rejects garbage date strings that would match everything", () => {
+    // 'a' > '2' lexicographically, so subscribed_after/gt/'abc' matches ALL
+    // rows — fail closed instead.
+    expect(normalizeCondition({ field: "subscribed_after", op: "gt", value: "abc" })).toBeNull();
+    expect(normalizeCondition({ field: "subscribed_before", op: "lt", value: "" })).toBeNull();
+    expect(normalizeCondition({ field: "last_active_after", op: "gte", value: "not-a-date" })).toBeNull();
+  });
+
+  it("normalizes dates to canonical ISO (strings and epoch ms)", () => {
+    expect(normalizeCondition({ field: "subscribed_after", op: "gte", value: "2026-01-01" })).toEqual({
+      field: "subscribed_after",
+      op: "gte",
+      value: "2026-01-01T00:00:00.000Z",
+    });
+    expect(normalizeCondition({ field: "subscribed_before", op: "lt", value: 1767225600000 })).toEqual({
+      field: "subscribed_before",
+      op: "lt",
+      value: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("rejects oversized needles that can never match stored data", () => {
+    expect(normalizeCondition({ field: "url", op: "contains", value: "x".repeat(2001) })).toBeNull();
+    expect(normalizeCondition({ field: "country", op: "in", value: ["US", "x".repeat(501)] })).toBeNull();
+  });
 });
 
 describe("normalizeRules", () => {
@@ -124,6 +150,21 @@ describe("compileSegmentWhere", () => {
         groups: [{ logic: "AND", conditions: [{ field: "url", op: "equals", value: "x" }] }],
       }),
     ).not.toThrow();
+  });
+
+  it("throws on op/field mismatches that skip normalization", () => {
+    // Programmatic callers bypassing normalizeCondition must fail loudly —
+    // the old fallthrough ternaries silently compiled these to '<='.
+    expect(() =>
+      compileSegmentWhere({
+        groups: [{ logic: "AND", conditions: [{ field: "campaign_total_opens", op: "contains", value: "3" }] }],
+      }),
+    ).toThrow(/campaign_total_opens/);
+    expect(() =>
+      compileSegmentWhere({
+        groups: [{ logic: "AND", conditions: [{ field: "opened_campaign", op: "gte", value: 3 }] }],
+      }),
+    ).toThrow(/opened_campaign/);
   });
 
   it("rejects non-numeric opened_campaign / campaign_total_opens values", () => {

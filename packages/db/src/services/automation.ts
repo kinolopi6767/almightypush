@@ -47,7 +47,9 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
   const config = readAutomationConfig(db, opts.automationId, opts.workspaceId);
   const base = config?.payload ?? {};
   const payload: AutomationPayload = {
-    title: opts.payload?.title ?? base.title ?? "",
+    // Corrupt automation configs parse to an empty title (fail-open shape in
+    // parseAutomationConfig) — never create an untitled campaign from one.
+    title: (opts.payload?.title ?? base.title ?? "") || "New update",
     message: opts.payload?.message ?? base.message,
     icon_url: opts.payload?.icon_url ?? base.icon_url,
     image_url: opts.payload?.image_url ?? base.image_url,
