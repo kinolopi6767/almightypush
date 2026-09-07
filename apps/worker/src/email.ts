@@ -6,6 +6,9 @@ import { readSetting } from "./cleanup";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
 
+/** Max due rows processed per tick — bounds tick time under GRACE_EXIT_MS. */
+const DUE_LIMIT = 200;
+
 export interface EmailStats {
   started: number;
   sent: number;
@@ -36,6 +39,10 @@ export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStat
     // NOTE: the raw OR must be parenthesized — drizzle's and() joins fragments
     // without wrapping each argument, so a bare OR binds over the whole AND.
     .where(and(eq(emailCampaigns.status, "scheduled"), sql`(${emailCampaigns.schedule_at} IS NULL OR ${emailCampaigns.schedule_at} <= ${nowIso})`))
+    // Bound the work per tick: a drip-style fan-out creating thousands of due
+    // rows must not stall a single tick past GRACE_EXIT_MS. Leftovers run next tick.
+    .orderBy(emailCampaigns.id)
+    .limit(DUE_LIMIT)
     .all();
 
   for (const row of rows) {
@@ -91,7 +98,10 @@ function resolveEmailAudience(db: PushDb, workspaceId: number, audienceJson: str
   try {
     const parsed = JSON.parse(audienceJson) as { kind?: string; ids?: number[] };
     if (parsed.kind === "manual" && Array.isArray(parsed.ids)) {
-      const ids = parsed.ids.filter((n) => Number.isInteger(n) && n > 0);
+      // Integer-only + deduped: duplicate ids would otherwise resolve twice
+      // across chunk slices (double-send once SMTP is plugged in). Mirrors
+      // the scheduler's enqueue-time dedupe.
+      const ids = [...new Set(parsed.ids.filter((n) => Number.isInteger(n) && (n as number) > 0))];
       // Empty IN () is a syntax error — fail closed to empty audience.
       if (ids.length === 0) return [];
       // Always scope to the workspace, even with suppression off — raw

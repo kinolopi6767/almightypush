@@ -5,6 +5,9 @@ import type { allTables } from "@pushpanel/db";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
 
+/** Max due journeys run per tick — bounds tick time under GRACE_EXIT_MS. */
+const DUE_LIMIT = 200;
+
 export interface JourneyStats {
   ran: number;
   ok: number;
@@ -24,6 +27,8 @@ export async function runJourneys(db: PushDb, now: Date = new Date()): Promise<J
     .select({ id: journeys.id, workspace_id: journeys.workspace_id, trigger_type: journeys.trigger_type, next_run_at: journeys.next_run_at, stats_json: journeys.stats_json })
     .from(journeys)
     .where(and(eq(journeys.status, "active"), sql`${journeys.next_run_at} IS NOT NULL AND ${journeys.next_run_at} <= ${nowIso}`))
+    .orderBy(journeys.id)
+    .limit(DUE_LIMIT)
     .all();
 
   for (const row of rows) {
@@ -66,7 +71,8 @@ export async function runJourneys(db: PushDb, now: Date = new Date()): Promise<J
       // retried every tick (as fast as the worker's tick interval).
       // The counter is per-journey, persisted in stats_json (journeys have no
       // consecutive_failures column): escalating backoff 3min * 2^n capped at
-      // 3h, auto-pause after 10 consecutive failures.
+      // 96min (3*2^5) with a 180min absolute ceiling, auto-pause after 10
+      // consecutive failures.
       try {
         let fails = 1;
         let statsJson: string | null = null;

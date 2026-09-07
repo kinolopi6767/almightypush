@@ -4,6 +4,9 @@ import { allTables } from "@pushpanel/db/schema";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
 
+/** Max due campaigns started per tick — bounds tick time under GRACE_EXIT_MS. */
+const DUE_LIMIT = 200;
+
 export interface SchedulerStats {
   campaignsStarted: number;
   deliveriesQueued: number;
@@ -57,6 +60,7 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
       ),
     )
     .orderBy(campaigns.id)
+    .limit(DUE_LIMIT)
     .all();
 
   for (const row of rows) {

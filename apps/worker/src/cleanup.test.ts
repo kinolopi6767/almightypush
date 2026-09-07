@@ -103,6 +103,13 @@ describe("settings", () => {
     expect(effectiveUnsubRetentionDays("45")).toBe(45);
     expect(effectiveUnsubRetentionDays("0")).toBe(0);
   });
+
+  it("effectiveUnsubRetentionDays clamps absurd values to 3650", () => {
+    expect(effectiveUnsubRetentionDays("999999999")).toBe(3650);
+    expect(effectiveUnsubRetentionDays("-5")).toBe(0);
+    expect(effectiveUnsubRetentionDays("3650")).toBe(3650);
+    expect(effectiveUnsubRetentionDays("3651")).toBe(3650);
+  });
 });
 
 describe("runRetentionPruning stale invites", () => {

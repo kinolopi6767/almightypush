@@ -65,4 +65,26 @@ describe("email campaign claim", () => {
     expect(campaign?.status).toBe("done");
     client.close();
   });
+
+  it("dedupes manual audience ids (no double count)", () => {
+    const { db, client } = createMemoryDb();
+    const workspaceId = seedWorkspace(db);
+    const c1 = db.insert(emailContacts).values({ workspace_id: workspaceId, email: "a@example.com", status: "subscribed" }).run();
+    const id1 = Number(c1.lastInsertRowid);
+    db.insert(emailCampaigns)
+      .values({
+        workspace_id: workspaceId,
+        subject: "Hello",
+        status: "scheduled",
+        schedule_at: new Date(Date.now() - 60_000).toISOString(),
+        audience_json: JSON.stringify({ kind: "manual", ids: [id1, id1, id1] }),
+      })
+      .run();
+
+    const first = runEmailCampaigns(db);
+    expect(first.started).toBe(1);
+    // Dedupe: 3 copies of the same id count once.
+    expect(first.sent).toBe(1);
+    client.close();
+  });
 });

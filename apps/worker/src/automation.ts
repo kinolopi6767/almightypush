@@ -25,6 +25,9 @@ export const MAX_CONSECUTIVE_FAILURES = 3;
 /** C4: how soon a failed poll is retried (a dead source is probed quickly, not after the full interval). */
 export const FAILURE_RETRY_MINUTES = 3;
 
+/** Max due automations run per tick — bounds tick time under GRACE_EXIT_MS. */
+const DUE_LIMIT = 200;
+
 /**
  * M4 automation runner — runs once per worker tick.
  * Picks active automations whose `next_run_at` is due, dispatches the type
@@ -54,6 +57,7 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
       ),
     )
     .orderBy(automations.id)
+    .limit(DUE_LIMIT)
     .all();
 
   for (const row of rows) {
@@ -314,12 +318,43 @@ function pickStaticPost(config: AutomationConfig): { post: FeedItem; updated: Au
   return { post, updated: { ...config, rotation_index: idx + 1 } };
 }
 
-/** Persist automation config (dedupe cursors). Call only after successful dispatch. */
+/** Persist automation dedupe/rotation cursors. Call only after successful dispatch. */
 function saveAutomationConfig(db: PushDb, id: number, config: AutomationConfig): void {
-  db.update(automations)
-    .set({ config_json: JSON.stringify(config) })
-    .where(eq(automations.id, id))
-    .run();
+  // Merge cursor fields onto the live row instead of overwriting whole JSON:
+  // an operator edit (rotation list, source URL) landing mid-run must not be
+  // clobbered by this worker's stale read-modify-write. Guard on
+  // active/paused so a row deleted mid-run is never resurrected.
+  try {
+    const [live] = db
+      .select({ config_json: automations.config_json, status: automations.status })
+      .from(automations)
+      .where(eq(automations.id, id))
+      .limit(1)
+      .all();
+    if (!live || (live.status !== "active" && live.status !== "paused")) return;
+    let merged: AutomationConfig = config;
+    try {
+      const current = parseAutomationConfig(live.config_json);
+      if (current) {
+        merged = {
+          ...current,
+          last_video_id: config.last_video_id ?? current.last_video_id,
+          last_item_guid: config.last_item_guid ?? current.last_item_guid,
+          rotation_index: config.rotation_index ?? current.rotation_index,
+          rotation_json: config.rotation_json ?? current.rotation_json,
+        };
+      }
+    } catch {
+      // fall through with the caller-provided config
+    }
+    db.update(automations)
+      .set({ config_json: JSON.stringify(merged) })
+      .where(eq(automations.id, id))
+      .run();
+  } catch {
+    // best-effort cursor persist — a failed write retries the same item next
+    // tick via the unchanged cursor rather than stalling the tick.
+  }
 }
 
 /** YouTube push: RSS feed poll; only fires when a newer video appears (pure — caller persists cursor). */

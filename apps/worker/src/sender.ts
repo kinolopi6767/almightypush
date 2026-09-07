@@ -194,10 +194,19 @@ export async function runSendCycle(
 
 /** Mark queued/sending deliveries of cancelled/paused/failed campaigns as cancelled. */
 function cancelTerminatedCampaignDeliveries(db: PushDb, now: number): void {
+  // Scope to terminated campaigns that still hold live deliveries: without the
+  // EXISTS guard this scans the entire ever-growing cancelled/paused history
+  // every 5s tick. Terminated campaigns with no queued/sending rows need no work.
   const terminated = db
     .select({ id: campaigns.id })
     .from(campaigns)
-    .where(inArray(campaigns.status, ["cancelled", "paused", "failed"]))
+    .where(
+      and(
+        inArray(campaigns.status, ["cancelled", "paused", "failed"]),
+        sql`EXISTS (SELECT 1 FROM deliveries d WHERE d.campaign_id = ${campaigns.id} AND d.status IN ('queued', 'sending'))`,
+      ),
+    )
+    .limit(2000)
     .all();
   if (terminated.length === 0) return;
   // Chunk the IN list: SQLite host-parameter limits (~32k, lower on some

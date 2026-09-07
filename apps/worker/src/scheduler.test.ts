@@ -244,5 +244,22 @@ describe("runScheduler", () => {
       expect(cancelled?.status).toBe("cancelled");
       client.close();
     });
+
+    it("bounds due campaigns per tick (no unbounded tick stall)", () => {
+      const { db, client } = createMemoryDb();
+      const { workspaceId, domainId } = seed(db);
+      const past = new Date(Date.now() - 60_000).toISOString();
+      for (let i = 0; i < 210; i++) {
+        insertCampaign(db, workspaceId, domainId, { schedule_at: past });
+      }
+
+      const stats = runScheduler(db);
+      // DUE_LIMIT=200: leftovers run next tick instead of stalling one tick.
+      expect(stats.campaignsStarted).toBe(200);
+      expect(stats.deliveriesQueued).toBe(200);
+      const second = runScheduler(db);
+      expect(second.campaignsStarted).toBe(10);
+      client.close();
+    });
   });
 });

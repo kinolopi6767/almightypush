@@ -90,19 +90,23 @@ export function runCleanup(
 
 /** Refresh domains.subscribers_count from the active-subscriber ground truth. */
 function recomputeSubscriberCounts(db: BetterSQLite3Database<typeof allTables>): void {
-  const counts = db
-    .select({ domain_id: subscribers.domain_id, value: count() })
-    .from(subscribers)
-    .where(isNull(subscribers.unsubscribed_at))
-    .groupBy(subscribers.domain_id)
-    .all();
-  const map = new Map(counts.map((c) => [c.domain_id, c.value]));
-  for (const domain of db.select({ id: domains.id }).from(domains).all()) {
-    db.update(domains)
-      .set({ subscribers_count: map.get(domain.id) ?? 0 })
-      .where(eq(domains.id, domain.id))
-      .run();
-  }
+  // Transactional: a crash mid-loop must not leave half the domains recomputed
+  // and half stale. Single txn is small (one row per domain).
+  db.transaction((tx) => {
+    const counts = tx
+      .select({ domain_id: subscribers.domain_id, value: count() })
+      .from(subscribers)
+      .where(isNull(subscribers.unsubscribed_at))
+      .groupBy(subscribers.domain_id)
+      .all();
+    const map = new Map(counts.map((c) => [c.domain_id, c.value]));
+    for (const domain of tx.select({ id: domains.id }).from(domains).all()) {
+      tx.update(domains)
+        .set({ subscribers_count: map.get(domain.id) ?? 0 })
+        .where(eq(domains.id, domain.id))
+        .run();
+    }
+  });
 }
 
 /**
@@ -255,7 +259,9 @@ export function effectiveUnsubRetentionDays(raw: string | null): number {
   // Number("") is 0 — an empty stored value means "unset", not "wipe daily".
   if (raw === null || raw.trim() === "") return 30;
   const n = Number(raw);
-  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 30;
+  // Clamp to [0, 3650]: an absurd value (e.g. 999999999) would otherwise
+  // silently never purge and grow dead rows unbounded.
+  return Number.isFinite(n) ? Math.min(Math.max(0, Math.floor(n)), 3650) : 30;
 }
 
 export function readSetting(db: BetterSQLite3Database<typeof allTables>, key: string): string | null {
