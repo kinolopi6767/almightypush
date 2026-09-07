@@ -33,6 +33,8 @@ test("enable 2FA, code-gated sign-in, and disable restores password login", asyn
   // not mint a TOTP secret) ---
   await page.goto("/dashboard/profile");
   await expect(page.getByText("Two-factor authentication")).toBeVisible();
+  // Wrong password must not mint a secret (session-only takeover blocked).
+  await page.locator("#tfa-setup-password").fill("wrong-password-123");
   await page.getByRole("button", { name: "Set up authenticator" }).click();
   await expect(page.getByText("Enter your current password to set up 2FA")).toBeVisible();
   await page.locator("#tfa-setup-password").fill(OWNER_PASSWORD);

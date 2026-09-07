@@ -164,14 +164,14 @@ test("profile: update name and password, re-login works", async ({ page }) => {
 
   // wrong current password is rejected
   await page.getByLabel("Name").fill("M3 Profile");
-  await page.getByLabel("Current password").fill("wrong-password");
+  await page.getByLabel("Current password", { exact: true }).fill("wrong-password");
   await page.getByLabel("New password").fill(NEW_PASSWORD);
   await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByText("Current password is incorrect")).toBeVisible();
 
   // correct flow (React resets uncontrolled inputs after the failed submit —
   // re-enter the new password)
-  await page.getByLabel("Current password").fill(ORIGINAL_PASSWORD);
+  await page.getByLabel("Current password", { exact: true }).fill(ORIGINAL_PASSWORD);
   await page.getByLabel("New password").fill(NEW_PASSWORD);
   await page.getByRole("button", { name: "Save profile" }).click();
 
@@ -187,7 +187,7 @@ test("profile: update name and password, re-login works", async ({ page }) => {
 
   // restore the original password so other specs still pass
   await page.goto("/dashboard/profile");
-  await page.getByLabel("Current password").fill(NEW_PASSWORD);
+  await page.getByLabel("Current password", { exact: true }).fill(NEW_PASSWORD);
   await page.getByLabel("New password").fill(ORIGINAL_PASSWORD);
   await page.getByRole("button", { name: "Save profile" }).click();
   await page.waitForURL("**/login");

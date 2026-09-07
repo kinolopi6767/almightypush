@@ -49,7 +49,7 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
     <form action={startAction} className="mt-4 space-y-3">
      <div>
       <label htmlFor="tfa-setup-password" className="text-sm font-medium">
-       Current password
+       Confirm current password
       </label>
       <input
        id="tfa-setup-password"
