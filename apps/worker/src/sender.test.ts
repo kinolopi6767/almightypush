@@ -231,4 +231,9 @@ describe("renderTokens", () => {
     });
     expect(out).toBe("Hi Ada from DE! #42");
   });
+  it("substitutes hyphenated tokens instead of leaking raw {{...}}", async () => {
+    const { renderTokens } = await import("../src/sender.js");
+    const out = renderTokens("Hi {{first-name}} ({{ locale }})!", { "first-name": "Ada", locale: "de-DE" });
+    expect(out).toBe("Hi Ada (de-DE)!");
+  });
 });

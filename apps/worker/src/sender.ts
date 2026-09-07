@@ -122,6 +122,8 @@ export async function runSendCycle(
 
   const concurrency = resolveConcurrency(db);
   const utmEnabled = readSetting(db, "utm_enabled") === "1";
+  // Click-beacon origin: one env read per cycle, not one per delivery.
+  const panelOrigin = (process.env.APP_URL ?? "").replace(/\/$/, "") || undefined;
   // Read once per cycle — was a settings SELECT per delivery.
   const fatigueCap = Math.max(0, Math.floor(Number(readSetting(db, "frequency_cap_daily") ?? 0) || 0));
   const campaignIds = new Set(rows.map((r) => r.campaign_id));
@@ -161,7 +163,7 @@ export async function runSendCycle(
     for (const d of dRows) domainCache.set(d.id, d.provider_config_json ?? null);
   }
 
-  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled, campaignCache, domainCache, fatigueCap));
+  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled, campaignCache, domainCache, fatigueCap, panelOrigin));
   for (const outcome of outcomes) {
     if (outcome.result === "sent") stats.sent++;
     else if (outcome.result === "gone") stats.gone++;
@@ -287,6 +289,7 @@ async function deliverOne(
   campaignCache?: Map<number, CampaignCache>,
   domainCache?: Map<number, string | null>,
   fatigueCapCycle = 0,
+  panelOrigin?: string,
 ): Promise<Outcome> {
   // Stale-claim guard: a crashed worker's rows are requeued after
   // STALE_CLAIM_MS; if a slow cycle finds its claim superseded, it must not
@@ -385,8 +388,10 @@ async function deliverOne(
       return "failed";
     }
     // Rolling window only bites when it's stricter than the calendar cap at
-    // this moment (i.e., yesterday's tail-end deliveries still count).
-    if (rollingStart < dayStart) {
+    // this moment (i.e., yesterday's tail-end deliveries still count). It is
+    // evaluated unconditionally: now-24h is always before today's midnight,
+    // so there is no cheaper pre-check — the indexed COUNT is the check.
+    {
       const [rollCount] = db
         .select({ value: count() })
         .from(events)
@@ -448,17 +453,17 @@ async function deliverOne(
   // {{subscriber_id}}) resolved from the subscriber's tags. Unknown or empty
   // tokens render as empty strings — never leak raw {{...}} to users.
   let tokens: Record<string, string> | null = null;
-  if (/\{\{\s*\w+\s*\}\}/.test(`${variantTitle}|${variantMessage ?? ""}|${campaign.launch_url ?? ""}`)) {
+  if (/\{\{\s*[\w-]+\s*\}\}/.test(`${variantTitle}|${variantMessage ?? ""}|${campaign.launch_url ?? ""}`)) {
     tokens = {};
     if (row.subscriber_id) {
       const [subMeta] = db
-        .select({ country: subscribers.country, city: subscribers.city, browser: subscribers.browser, os: subscribers.os, device: subscribers.device })
+        .select({ country: subscribers.country, city: subscribers.city, browser: subscribers.browser, os: subscribers.os, device: subscribers.device, locale: subscribers.locale })
         .from(subscribers)
         .where(eq(subscribers.id, row.subscriber_id))
         .limit(1)
         .all();
       if (subMeta) {
-        for (const k of ["country", "city", "browser", "os", "device"] as const) {
+        for (const k of ["country", "city", "browser", "os", "device", "locale"] as const) {
           const v = subMeta[k];
           if (v) tokens[k] = v;
         }
@@ -483,7 +488,6 @@ async function deliverOne(
   // sending can all throw. Without the catch, the delivery stays `sending`
   // forever and the stale-claim revive loop retries it at MAX_ATTEMPTS-less
   // infinite churn.
-  const panelOrigin = (process.env.APP_URL ?? "").replace(/\/$/, "") || undefined;
 
   let result: SendResult;
   try {
@@ -654,7 +658,7 @@ async function deliverOne(
  * empty tokens render as "" — a raw {{...}} must never reach the user.
  */
 export function renderTokens(input: string, tokens: Record<string, string>): string {
-  return input.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => tokens[key] ?? "");
+  return input.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, key: string) => tokens[key] ?? "");
 }
 
 function bumpCampaignStat(db: PushDb, campaignId: number, key: "delivered" | "failed") {
