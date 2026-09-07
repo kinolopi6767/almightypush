@@ -46,6 +46,8 @@ export const campaigns = sqliteTable(
     index("idx_campaigns_channel").on(t.channel),
     // Worker scheduler polls due campaigns every tick — needs (status, schedule_at).
     index("idx_campaigns_status_sched").on(t.status, t.schedule_at),
+    // Migration-only (0016) — terminated-campaign scan filters by status.
+    index("idx_campaigns_status").on(t.status),
   ],
 );
 

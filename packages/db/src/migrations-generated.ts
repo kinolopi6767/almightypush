@@ -87,5 +87,10 @@ export const migrations: MigrationEntry[] = [
     "tag": "0015_drop_sessions",
     "idx": 15,
     "sql": "-- 0015: drop dead `sessions` table (idempotent).\n-- Auth.js runs JWT strategy (stateless sessions in signed cookies) — no code\n-- path has ever read or written this table (verified by repo-wide grep).\n-- Precedent: 0011 dropped other never-used LumaPush-import tables the same way.\n-- Keeping it would mislead future contributors into building a DB-session\n-- flow against a table that migrations-created but nothing maintains.\n\nDROP TABLE IF EXISTS `sessions`;\n"
+  },
+  {
+    "tag": "0016_prune_covering_indexes",
+    "idx": 16,
+    "sql": "-- 0016: covering indexes for retention pruning + terminated-campaign scan.\n-- runRetentionPruning filters deliveries by (status, requested_at) for\n-- stranded queued/sending rows and (status, sent_at) for terminal rows —\n-- neither predicate had a covering index, so the daily prune scanned.\n-- cancelTerminatedCampaignDeliveries filters campaigns by status every tick.\n\nCREATE INDEX IF NOT EXISTS idx_deliveries_status_requested ON deliveries (status, requested_at);\nCREATE INDEX IF NOT EXISTS idx_deliveries_status_sent ON deliveries (status, sent_at);\nCREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns (status);\n"
   }
 ];

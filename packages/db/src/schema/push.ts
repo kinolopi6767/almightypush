@@ -118,6 +118,9 @@ export const deliveries = sqliteTable(
     // auto-indexed).
     index("idx_deliveries_status_claimed").on(t.status, t.claimed_at),
     index("idx_deliveries_subscriber").on(t.subscriber_id),
+    // Migration-only indexes (0016) — retention pruning predicates.
+    index("idx_deliveries_status_requested").on(t.status, t.requested_at),
+    index("idx_deliveries_status_sent").on(t.status, t.sent_at),
   ],
 );
 

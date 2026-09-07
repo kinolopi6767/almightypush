@@ -373,7 +373,7 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
     if (data.length < 100 || data.subarray(0, 16).toString("binary") !== "SQLite format 3\0") {
       return { error: "Restore failed: backup file is not a valid SQLite database" };
     }
-    const { writeFile } = await import("node:fs/promises");
+    const { rename, unlink: unlinkSync } = await import("node:fs/promises");
     // Checkpoint the live DB so no WAL frames survive the swap, then
     // overwrite the current DB file (WAL will be checkpointed on next open).
     try {
@@ -381,13 +381,51 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
     } catch {
       // best effort — the -wal/-shm removal below is the real guard
     }
-    await writeFile(dbFile, data);
+    // Atomic swap: write to a temp sibling + fsync + integrity_check the COPY,
+    // then rename over the live file. A crash mid-write leaves the old DB
+    // intact instead of a truncated live file (previous code wrote in place).
+    const tmpFile = `${dbFile}.restore-${randomBytes(4).toString("hex")}.tmp`;
+    try {
+      const { open } = await import("node:fs/promises");
+      const fh = await open(tmpFile, "w");
+      try {
+        await fh.writeFile(data);
+        await fh.sync();
+      } finally {
+        await fh.close();
+      }
+      const Database = (await import("better-sqlite3")).default;
+      let integrity = "";
+      try {
+        // read-only open: the check itself cannot mutate the candidate.
+        const probe = new Database(tmpFile, { readonly: true });
+        try {
+          const prow = probe.prepare("PRAGMA integrity_check").get() as { integrity_check?: string } | undefined;
+          integrity = String(prow?.integrity_check ?? "").toLowerCase();
+        } finally {
+          probe.close();
+        }
+      } catch {
+        integrity = "error";
+      }
+      if (integrity !== "ok") {
+        try { await unlinkSync(tmpFile); } catch { /* best-effort */ }
+        return { error: "Restore failed: backup file failed SQLite integrity check" };
+      }
+      await rename(tmpFile, dbFile);
+    } catch (e) {
+      try { await unlinkSync(tmpFile); } catch { /* best-effort */ }
+      throw e;
+    }
     // VACUUM INTO creates a single self-contained file. The live DB's stale
     // -wal/-shm files would corrupt the restored data on next open — remove them.
-    const { unlink: unlinkSync } = await import("node:fs/promises");
     for (const suffix of ["-wal", "-shm"]) {
       try { await unlinkSync(dbFile + suffix); } catch { /* may not exist */ }
     }
+    // Audit BEFORE healing the connection: closeDb() invalidates this
+    // process's handle, so logging after it would insert through a stale
+    // connection paging the pre-swap file.
+    if (wsId) logAudit(db, { workspaceId: wsId, action: "backup.restore", entityType: "backup", entityId: backupId, meta: { restored: 1 } });
     // Connection healing (no restart needed): this process's open connection
     // still pages the OLD file — close it so the next request reopens the
     // restored one. The worker heals itself the same way via the marker file
@@ -402,7 +440,6 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
     } catch {
       // worker restart covers a missed marker — never fail the restore over it
     }
-    if (wsId) logAudit(db, { workspaceId: wsId, action: "backup.restore", entityType: "backup", entityId: backupId, meta: { restored: 1 } });
   } catch (e) {
     return { error: `Restore failed: ${(e as Error).message}` };
   }
