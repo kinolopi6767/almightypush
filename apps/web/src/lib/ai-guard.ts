@@ -32,5 +32,22 @@ export async function requireAiAccess(
       response: NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, limit) }),
     };
   }
+  // Workspace-global cap: N sessions × per-account limit must not multiply
+  // AI_API_KEY spend. Single-tenant: one shared budget across the workspace.
+  const wsId = (session.user as { workspaceId?: string | null }).workspaceId;
+  if (wsId) {
+    const rlWs = rateLimitWithHeaders(`ai:ws:${wsId}`, Math.max(limit * 3, 60), 60_000);
+    if (!rlWs.allowed) {
+      return {
+        ok: false,
+        response: NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 }),
+      };
+    }
+  }
+  // Session-cookie routes: enforce same-origin when the browser attests one.
+  const { isSameOriginRequest } = await import("@/lib/csrf");
+  if (!isSameOriginRequest(req)) {
+    return { ok: false, response: NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 }) };
+  }
   return { ok: true, session };
 }

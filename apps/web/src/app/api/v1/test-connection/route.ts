@@ -18,6 +18,8 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const { isSameOriginRequest } = await import("@/lib/csrf");
+  if (!isSameOriginRequest(req)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   // Connection tests reveal whether third-party secrets are configured and
   // trigger outbound traffic — owner/admin only, rate-limited.
   const { canManage } = await import("@/lib/roles");
@@ -42,7 +44,12 @@ export async function POST(req: Request) {
     if (parsed.provider === "ai") {
       const { apiKey, model, baseUrl } = getAiConfig();
       if (!apiKey) return NextResponse.json({ ok: false, error: "AI API key not set in panel" }, { status: 400 });
-      const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      // SSRF discipline: baseUrl is owner-configured, but a compromised/stale
+      // value (e.g. http://169.254.169.254/) must not probe instance metadata.
+      const { assertPublicHttpUrl } = await import("@pushpanel/core");
+      const check = await assertPublicHttpUrl(`${baseUrl.replace(/\/$/, "")}/chat/completions`);
+      if (!check.ok || !check.url) return NextResponse.json({ ok: false, error: "AI base URL rejected by SSRF guard" }, { status: 400 });
+      const res = await fetch(check.url, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
@@ -52,9 +59,9 @@ export async function POST(req: Request) {
         }),
         signal: AbortSignal.timeout(8000),
       });
+      // Never echo upstream bodies (may carry key fragments/proxy internals).
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        return NextResponse.json({ ok: false, error: `AI API ${res.status}: ${text.slice(0, 200)}` }, { status: 502 });
+        return NextResponse.json({ ok: false, error: `AI API unreachable (status ${res.status})` }, { status: 502 });
       }
       return NextResponse.json({ ok: true, message: `Connected to ${model}` });
     }
@@ -102,7 +109,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: false, error: "Unknown provider" }, { status: 400 });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Connection failed";
-    return NextResponse.json({ ok: false, error: msg.slice(0, 300) }, { status: 502 });
+    // Never echo raw error text (may carry key material/host internals).
+    void (e as Error)?.message;
+    return NextResponse.json({ ok: false, error: "Connection failed" }, { status: 502 });
   }
 }

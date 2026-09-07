@@ -57,14 +57,17 @@ export async function POST(req: Request) {
   }
   const { domainId, oldEndpoint, subscription } = parsed.data;
 
-  // Same SSRF discipline as subscribe — endpoints are fetched server-side on send.
-  const endpointCheck = await assertPublicHttpUrl(subscription.endpoint);
-  if (!endpointCheck.ok) return corsJson({ ok: false, error: "Invalid push endpoint" }, { status: 400 });
-
+  // Per-domain throttle BEFORE the SSRF check: assertPublicHttpUrl performs
+  // DNS, and DNS-before-throttle lets attackers burn resolver quota at line
+  // rate. (Per-IP throttle above already ran before JSON parsing.)
   const rlDom = rateLimitWithHeaders(`resub:dom:${domainId}`, 120, 60_000);
   if (!rlDom.allowed) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 120) });
   }
+
+  // Same SSRF discipline as subscribe — endpoints are fetched server-side on send.
+  const endpointCheck = await assertPublicHttpUrl(subscription.endpoint);
+  if (!endpointCheck.ok) return corsJson({ ok: false, error: "Invalid push endpoint" }, { status: 400 });
 
   const [domain] = db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.id, domainId), eq(domains.status, "active"))).limit(1).all();
   if (!domain) return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });

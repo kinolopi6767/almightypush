@@ -27,6 +27,8 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const { isSameOriginRequest } = await import("@/lib/csrf");
+  if (!isSameOriginRequest(req)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return NextResponse.json({ ok: false, error: "No workspace" }, { status: 400 });
   const roleErr = requireEditorRole(session.user.role);

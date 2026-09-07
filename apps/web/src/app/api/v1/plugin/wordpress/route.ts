@@ -97,6 +97,9 @@ export async function GET(req: Request) {
   const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
   const rl = rateLimitWithHeaders(`wp-zip:${clientIp(req.headers)}`, 30, 60_000);
   if (!rl.allowed) return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
+  // Global cap: zip+deflate burns CPU per request — per-IP alone rotates away.
+  const rlAll = rateLimitWithHeaders("wp-zip:all", 300, 60_000);
+  if (!rlAll.allowed) return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
   try {
     const pluginDir = await resolvePluginDir();
     const entries = await Promise.all(

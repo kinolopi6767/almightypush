@@ -13,6 +13,10 @@ export async function GET(req: Request) {
   const ip = clientIp(req.headers);
   const rl = rateLimitWithHeaders(`info:${ip}`, 60, 60_000);
   if (!rl.allowed) return corsJson({ ok: false, error: "Too many requests" }, { status: 429 });
+  // Global cap: per-IP limits rotate away with header spoofing (TRUST_PROXY=1
+  // misconfig) or botnets — the shared bucket cannot be rotated away.
+  const rlAll = rateLimitWithHeaders("info:all", 2000, 60_000);
+  if (!rlAll.allowed) return corsJson({ ok: false, error: "Too many requests" }, { status: 429 });
 
   const url = new URL(req.url);
   const domainId = Number(url.searchParams.get("domain") ?? 0);
