@@ -127,7 +127,7 @@
 
 | # | Feature | Status |
 |---|---|---|
-| H1 | WordPress plugin (1-click send, publish, delay, purview) | panel-zip plugin + scoped keys | 🟢 plugin zip served; 1-click send/delay via webhook config |
+| H1 | WordPress plugin (1-click send, publish, delay, purview) | panel-zip plugin + scoped keys | 🟢 plugin zip served; posts/pages/CPTs via transition_post_status, native delay (WP-Cron), 5xx retry |
 | H2 | Automatic WP code embedding | auto embed | ⚪ |
 | H3 | Blogger snippet flow | Blogger | 🟡 guide shipped; guided flow pending |
 | H4 | Manual code integration (head + files + verify) | guides + demo page | 🟡 |
