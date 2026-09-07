@@ -199,7 +199,9 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
       // ids would otherwise enqueue duplicate deliveries (double push) for
       // the same subscriber. API/drip entry points dedupe upstream; this is
       // the last line of defense at enqueue time.
-      ids = [...new Set(parsed.ids.filter((id: unknown): id is number => Number.isInteger(id) && (id as number) > 0))];
+      const rawIds: unknown[] = parsed.ids;
+      const clean: number[] = rawIds.filter((id): id is number => Number.isInteger(id) && (id as number) > 0);
+      ids = [...new Set(clean)];
     }
   } catch {
     // Fail closed: corrupt audience JSON must match nothing, never broadcast

@@ -31,7 +31,9 @@ describe("journey worker claim", () => {
     // advance, a concurrent worker/tick would fire the journey twice.
     const second = await runJourneys(db);
     expect(second).toEqual({ ran: 0, ok: 0, failed: 0 });
-    expect(db.select({ id: journeyRuns.id }).from(journeyRuns).all()).toHaveLength(1);
+    // The stub runner re-arms but records no run rows: writing 'sent' rows
+    // for journeys that sent nothing would fabricate analytics history.
+    expect(db.select({ id: journeyRuns.id }).from(journeyRuns).all()).toHaveLength(0);
     client.close();
   });
 });

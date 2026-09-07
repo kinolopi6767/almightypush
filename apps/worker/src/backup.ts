@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { backups, type allTables, backupDatabase } from "@pushpanel/db";
 import { desc, eq } from "drizzle-orm";
@@ -57,7 +58,10 @@ export async function createSnapshot(db: PushDb, dbFile: string, kind: "manual" 
   }
 
   const stamp = new Date(nowMs).toISOString().replace(/[:.]/g, "-");
-  const target = path.join(backupDir, `backup-${kind}-${stamp}.db`);
+  // Random suffix: two snapshots in the same millisecond (manual click during
+  // an auto run) must not share a filename — the second would overwrite the
+  // first while both rows reference it, and pruning one would orphan the other.
+  const target = path.join(backupDir, `backup-${kind}-${stamp}-${randomBytes(4).toString("hex")}.db`);
 
   try {
     await backupDatabase(db, target);
@@ -108,10 +112,16 @@ export async function createSnapshot(db: PushDb, dbFile: string, kind: "manual" 
 async function tryUploadToDrive(db: PushDb, filePath: string): Promise<void> {
   const { enabled, folderId, serviceJson } = getGDriveConfig(db);
   if (!enabled || !serviceJson) return;
+  let size = 0;
+  try {
+    size = statSync(filePath).size;
+  } catch {
+    return; // pruned between snapshot and upload — nothing to send
+  }
   // Guard: uploadToGDrive buffers the file in RAM — a multi-GB backup would
   // OOM the worker. Skip oversized snapshots (local copy still exists).
   const limit = 350 * 1024 * 1024;
-  if (statSync(filePath).size > limit) {
+  if (size > limit) {
     console.error("[backup] Drive upload skipped — file exceeds 350MB in-memory limit");
     return;
   }

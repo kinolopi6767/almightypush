@@ -79,7 +79,7 @@ export async function runSendCycle(
   // Cancel enforcement: an operator pausing/cancelling a campaign must stop
   // sends. The claim below intentionally only picks `queued` rows, so without
   // this step a campaign cancelled after enqueue would still fully deliver.
-  cancelTerminatedCampaignDeliveries(db);
+  cancelTerminatedCampaignDeliveries(db, now);
 
   const candidateIds = db
     .select({ id: deliveries.id })
@@ -176,7 +176,7 @@ export async function runSendCycle(
 }
 
 /** Mark queued/sending deliveries of cancelled/paused/failed campaigns as cancelled. */
-function cancelTerminatedCampaignDeliveries(db: PushDb): void {
+function cancelTerminatedCampaignDeliveries(db: PushDb, now: number): void {
   const terminated = db
     .select({ id: campaigns.id })
     .from(campaigns)
@@ -191,7 +191,10 @@ function cancelTerminatedCampaignDeliveries(db: PushDb): void {
     const slice = ids.slice(i, i + CHUNK);
     if (slice.length === 0) continue;
     db.update(deliveries)
-      .set({ status: "cancelled", error: "campaign cancelled/paused/failed" })
+      // sent_at stamped so retention pruning (which requires it) can clean
+      // these rows up — the panel cancel path does the same; without this
+      // they would accumulate forever (pruning skips sent_at-NULL rows).
+      .set({ status: "cancelled", error: "campaign cancelled/paused/failed", sent_at: now })
       .where(
         and(
           inArray(deliveries.campaign_id, slice),

@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { automations } from "@pushpanel/db";
 import { assertPublicHttpUrl, hasCronSchedule, nextCronRun, parseAutomationConfig, sha256Hex, ssrfDispatcher, type AutomationConfig } from "@pushpanel/core";
-import { enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
+import { activeSubscriberIds, enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
 import Parser from "rss-parser";
 
 export interface AutomationRunStats {
@@ -202,10 +202,12 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
         // 1M subs) in a single tick and stall the worker for minutes.
         const steps = config.steps ?? [];
         if (steps.length === 0) return { ok: false, campaigns: 0, queued: 0, error: "Drip sequence has no steps" };
-        const { activeSubscriberIds } = await import("@pushpanel/db");
-        const audienceSize = activeSubscriberIds(db, row.domain_id).length;
-        if (audienceSize * steps.length > 100_000) {
-          return { ok: false, campaigns: 0, queued: 0, error: `Drip fan-out too large (${audienceSize} subs × ${steps.length} steps) — trigger per-subscriber instead` };
+        // Load the audience ONCE and hand the same ids to every step:
+        // enqueueAutomationCampaign would otherwise re-resolve (re-load) the
+        // full id list per step — steps × 1M row loads on a large domain.
+        const ids = activeSubscriberIds(db, row.domain_id);
+        if (ids.length * steps.length > 100_000) {
+          return { ok: false, campaigns: 0, queued: 0, error: `Drip fan-out too large (${ids.length} subs × ${steps.length} steps) — trigger per-subscriber instead` };
         }
         let queued = 0;
         let cumulativeSeconds = 0;
@@ -216,6 +218,7 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
             workspaceId: row.workspace_id,
             domainId: row.domain_id,
             automationId: row.id,
+            subscriberIds: ids,
             payload: { ...config.payload, title: step.title, message: step.message, launch_url: step.launch_url },
             delaySeconds: cumulativeSeconds,
             now,
@@ -283,7 +286,7 @@ async function latestVideo(config: AutomationConfig): Promise<{ item: FeedItem |
   const entry = feed.items[0];
   if (!entry) return { item: null };
 
-  const videoId = entry.guid?.replace("yt:video:", "") ?? entry.link ?? null;
+  const videoId = entry.guid?.replace(/^yt:video:/, "") ?? entry.link ?? null;
   const lastId = config.last_video_id ?? null;
   // No stable id (guid-less feed entry with no link): never fire. Without
   // this, `updated.last_video_id` is persisted as undefined and the same
@@ -409,9 +412,13 @@ async function safeFetch(sourceUrl: string, path: (base: URL) => URL): Promise<{
 }
 
 async function fetchPosts(sourceUrl: string, range: number): Promise<unknown[]> {
-  const { text } = await safeFetch(sourceUrl, (_base) => {
-    const url = new URL(`${sourceUrl.replace(/\/+$/, "")}/wp-json/wp/v2/posts`);
-    url.searchParams.set("per_page", String(Math.min(range, 100)));
+  // Build the API URL from the VALIDATED base (checked.url), not the raw
+  // sourceUrl: the raw string may carry userinfo/query fragments that the
+  // SSRF check normalized away. Preserve the base path (WP can live in a
+  // subdirectory) and clamp per_page (WP caps at 100 anyway).
+  const { text } = await safeFetch(sourceUrl, (base) => {
+    const url = new URL(`${base.toString().replace(/\/+$/, "")}/wp-json/wp/v2/posts`);
+    url.searchParams.set("per_page", String(Math.min(Math.max(Math.floor(range) || 10, 1), 100)));
     return url;
   });
   let data: unknown;
@@ -430,15 +437,19 @@ async function fetchText(sourceUrl: string): Promise<string> {
 }
 
 function normalizePost(item: Record<string, unknown>): AutomationPayload {
-  const title = typeof item.title === "object" && item.title !== null
+  // WP renders title/excerpt as { rendered: "<b>html</b>" } — but only trust
+  // string payloads. A non-string `rendered` (or a plain object title) would
+  // otherwise stringify to "[object Object]" in the push notification.
+  const rawTitle = typeof item.title === "object" && item.title !== null
     ? (item.title as Record<string, unknown>).rendered
     : item.title;
-  const excerpt = typeof item.excerpt === "object" && item.excerpt !== null
+  const title = typeof rawTitle === "string" ? rawTitle : null;
+  const rawExcerpt = typeof item.excerpt === "object" && item.excerpt !== null
     ? (item.excerpt as Record<string, unknown>).rendered
     : null;
-  const body = typeof excerpt === "string" ? stripHtml(excerpt) : "";
+  const body = typeof rawExcerpt === "string" ? stripHtml(rawExcerpt) : "";
   return {
-    title: stripHtml(String(title ?? "Update")).slice(0, 200),
+    title: stripHtml(title ?? "Update").slice(0, 200) || "Update",
     message: body.slice(0, 500) || null,
     launch_url: typeof item.link === "string" ? item.link : null,
   };
@@ -449,6 +460,10 @@ function stripHtml(input: string): string {
     .replace(/<[^>]*>/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&nbsp;/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&#x27;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ")
     .trim();
 }

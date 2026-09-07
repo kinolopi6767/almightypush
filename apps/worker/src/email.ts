@@ -46,10 +46,12 @@ export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStat
         stats.started++;
         continue;
       }
-      // Mock send: in production, loop contacts and call nodemailer/SES with blocks/html.
-      // Here we just count and mark done; each contact would generate an event in real.
+      // No transport plugged in yet (no SMTP/SES): report honestly. `sent`
+      // stays 0 — claiming deliveries that never left the box would
+      // fabricate analytics. `audience` preserves the resolved size so the
+      // future transport loop knows its scope.
       db.update(emailCampaigns)
-        .set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: audience.length, delivered: audience.length, opened: 0, clicked: 0 }) })
+        .set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: 0, audience: audience.length, transport: "none" }) })
         .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "sending")))
         .run();
       stats.started++;
