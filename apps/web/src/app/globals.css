@@ -18,8 +18,8 @@
   --ink: oklch(0.23 0.012 260);
   --ink-2: oklch(0.45 0.012 260);
   --ink-3: oklch(0.6 0.01 260);
-  --line: oklch(0.88 0.006 120);
-  --line-strong: oklch(0.8 0.009 120);
+  --line: oklch(0.855 0.008 120);
+  --line-strong: oklch(0.75 0.012 120);
 
   --brand: oklch(0.43 0.13 162);
   --brand-deep: oklch(0.36 0.12 162);
@@ -269,12 +269,34 @@
   /* ── Fields ────────────────────────────────────── */
   .label { font-size: 13px; font-weight: 550; color: var(--ink); display: block; }
   .hint { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .check-card {
+    display: flex; align-items: flex-start; gap: 10px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+    padding: 11px 12px; cursor: pointer;
+    transition: border-color 120ms ease-out, background 120ms ease-out;
+  }
+  .check-card:hover { border-color: var(--line-strong); background: var(--panel-2); }
+  .check-card:has(input:checked) { border-color: var(--brand); background: var(--brand-wash); }
+  .check-card input[type="checkbox"] { margin-top: 2px; }
+  .check-card .check-title { font-size: 13px; font-weight: 550; color: var(--ink); display: block; }
+  .check-card .check-desc { font-size: 12px; color: var(--ink-2); line-height: 1.5; margin-top: 2px; }
   .input, .select, .textarea {
     width: 100%; border: 1px solid var(--line-strong); background: var(--panel);
     border-radius: 6px; font-size: 13px; color: var(--ink);
     transition: border-color 120ms ease-out, box-shadow 120ms ease-out, background 120ms ease-out;
   }
   .input, .select { height: 36px; padding: 0 11px; }
+  .select {
+    appearance: none; -webkit-appearance: none;
+    padding-right: 32px; cursor: pointer;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
+  }
+  .dark .select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a1' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
   .textarea { padding: 9px 11px; line-height: 1.5; resize: vertical; }
   .input:hover, .select:hover, .textarea:hover { border-color: var(--ink-3); }
   .input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
@@ -290,10 +312,12 @@
   .form-note { border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 9px 12px; font-size: 12.5px; color: var(--ink-2); }
 
   /* ── Panels & tables (Stripe-first) ─────────────── */
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
-  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-  .panel-title { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
-  .panel-body { padding: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow-xs); }
+  .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .panel-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .panel-desc { font-size: 12.5px; color: var(--ink-2); margin-top: 3px; max-width: 46rem; }
+  .panel-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+  .panel-foot { display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-top: 1px solid var(--line); background: var(--panel-2); border-radius: 0 0 6px 6px; }
   .panel-pad-sm { padding: 12px; }
   .divider { height: 1px; background: var(--line); border: 0; }
   .table-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
