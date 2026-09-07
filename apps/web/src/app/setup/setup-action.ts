@@ -41,6 +41,14 @@ export async function setupAction(_prev: AuthFormState, formData: FormData): Pro
   if ((row?.value ?? 0) > 0) return { error: "Already set up — sign in instead" };
 
   const email = parsed.data.email.toLowerCase();
+  // Claim pinning: when the deployer fixed OWNER_EMAIL, only that address
+  // may claim first-run ownership — otherwise anyone reaching a freshly
+  // deployed (still public) panel first becomes its owner. The mismatch
+  // message deliberately doesn't reveal the pinned address.
+  const pinned = process.env.OWNER_EMAIL?.trim().toLowerCase();
+  if (pinned && email !== pinned) {
+    return { error: "Not authorized to claim this panel" };
+  }
   const passwordHash = await hashPassword(parsed.data.password);
 
   // better-sqlite3 driver: everything inside db.transaction is synchronous.
