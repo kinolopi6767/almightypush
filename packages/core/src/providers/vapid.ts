@@ -52,7 +52,7 @@ export function fitPushPayload(message: PushMessage, budget: number = MAX_PUSH_P
   const shrunk: PushMessage = { ...message, body };
   if (size(shrunk) <= budget) return shrunk;
   // Still over (giant URLs/buttons): trim the title as a last resort.
-  let title = message.title;
+  const title = message.title;
   let lo = 0;
   let hi = title.length;
   while (lo < hi) {

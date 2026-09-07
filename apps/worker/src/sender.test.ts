@@ -74,6 +74,26 @@ function enqueueCampaign(db: PushDb, workspaceId: number, domainId: number, subs
 }
 
 describe("sender send cycle", () => {
+  it("leaves paused-domain deliveries queued (they flow again on resume)", async () => {
+    const { db, client } = createMemoryDb();
+    const { workspaceId, domainId, subscriberId } = seed(db);
+    const provider = new CapturingProvider();
+    enqueueCampaign(db, workspaceId, domainId, subscriberId);
+    db.update(domains).set({ status: "paused" }).where(eq(domains.id, domainId)).run();
+
+    const stats = await runSendCycle(db, ENC_KEY, provider);
+    expect(stats).toMatchObject({ claimed: 0, sent: 0, failed: 0 });
+    expect(provider.calls).toHaveLength(0);
+    const [delivery] = db.select().from(deliveries).all();
+    expect(delivery?.status).toBe("queued");
+
+    // Resume → next cycle sends normally (nothing lost).
+    db.update(domains).set({ status: "active" }).where(eq(domains.id, domainId)).run();
+    const stats2 = await runSendCycle(db, ENC_KEY, provider);
+    expect(stats2).toMatchObject({ claimed: 1, sent: 1 });
+    client.close();
+  });
+
   it("sends queued deliveries, marks them sent and updates campaign stats", async () => {
     const { db, client } = createMemoryDb();
     const { workspaceId, domainId, subscriberId } = seed(db);
@@ -196,8 +216,9 @@ describe("sender send cycle", () => {
     expect(resolveConcurrency(db)).toBe(25);
     db.insert(settings).values({ key: "sending_speed", value: "4" }).run();
     expect(resolveConcurrency(db)).toBe(4);
+    // Upper bound matches the settings form max (1000).
     db.update(settings).set({ value: "99999" }).where(eq(settings.key, "sending_speed")).run();
-    expect(resolveConcurrency(db)).toBe(200);
+    expect(resolveConcurrency(db)).toBe(1000);
     db.update(settings).set({ value: "0" }).where(eq(settings.key, "sending_speed")).run();
     expect(resolveConcurrency(db)).toBe(25);
     client.close();
