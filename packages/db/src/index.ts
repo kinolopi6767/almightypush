@@ -178,4 +178,26 @@ export function setDbForTests(db?: BetterSQLite3Database<typeof allTables>): voi
   globalForDb.__pushpanelDb = db;
 }
 
+/**
+ * Close the singleton connection and drop it so the next getDb() reopens
+ * from disk. Used after a backup restore replaces the DB file: SQLite
+ * connections cache pages/schema of the OLD file — serving or writing
+ * through them after a swap risks corruption. Workers use reopenDbIfReplaced
+ * (marker file) to heal without a restart.
+ */
+export function closeDb(): void {
+  const existing = globalForDb.__pushpanelDb;
+  globalForDb.__pushpanelDb = undefined;
+  if (existing) {
+    try {
+      (existing as unknown as { $client: Database.Database }).$client.close();
+    } catch {
+      // already closed — the cache clear above is what matters
+    }
+  }
+}
+
+/** Marker filename the web restore path drops next to the DB file. */
+export const DB_REPLACED_MARKER = ".db-replaced";
+
 export { allTables };

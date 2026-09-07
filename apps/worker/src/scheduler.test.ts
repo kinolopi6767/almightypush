@@ -69,6 +69,43 @@ describe("runScheduler", () => {
     client.close();
   });
 
+  it("leaves paused-domain campaigns scheduled (they fire on resume)", () => {
+    const { db, client } = createMemoryDb();
+    const { workspaceId, domainId } = seed(db);
+    db.update(domains).set({ status: "paused" }).where(eq(domains.id, domainId)).run();
+    insertCampaign(db, workspaceId, domainId, { schedule_at: new Date(Date.now() - 60_000).toISOString() });
+
+    const stats = runScheduler(db);
+    // campaignsStarted counts visited rows (existing semantics — see the
+    // no-domain test); the pause shows up as skipped + zero deliveries.
+    expect(stats).toEqual({ campaignsStarted: 1, deliveriesQueued: 0, skipped: 1 });
+    expect(db.select().from(deliveries).all()).toHaveLength(0);
+
+    const [campaign] = db.select().from(campaigns).all();
+    expect(campaign?.status).toBe("scheduled");
+
+    // Resume → next tick enqueues normally.
+    db.update(domains).set({ status: "active" }).where(eq(domains.id, domainId)).run();
+    const stats2 = runScheduler(db);
+    expect(stats2).toEqual({ campaignsStarted: 1, deliveriesQueued: 1, skipped: 0 });
+    client.close();
+  });
+
+  it("fails campaigns whose domain row is gone instead of retrying forever", () => {
+    const { db, client } = createMemoryDb();
+    const { workspaceId, domainId } = seed(db);
+    insertCampaign(db, workspaceId, domainId, { schedule_at: new Date(Date.now() - 60_000).toISOString() });
+    db.delete(domains).where(eq(domains.id, domainId)).run();
+
+    runScheduler(db);
+    const [campaign] = db.select().from(campaigns).all();
+    expect(campaign?.status).toBe("failed");
+    // Second tick: no infinite retry loop.
+    const stats = runScheduler(db);
+    expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 0 });
+    client.close();
+  });
+
   it("leaves future campaigns alone", () => {
     const { db, client } = createMemoryDb();
     const { workspaceId, domainId } = seed(db);

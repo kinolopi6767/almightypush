@@ -1,10 +1,11 @@
 import "dotenv/config";
 
+import { existsSync, unlinkSync } from "node:fs";
 import { writeFileSync } from "node:fs";
 import nodePath from "node:path";
 import { sql } from "drizzle-orm";
 import { pino } from "pino";
-import { createDb, resolveDbPath } from "@pushpanel/db";
+import { createDb, resolveDbPath, DB_REPLACED_MARKER } from "@pushpanel/db";
 import { baseEnvSchema, parseEnv } from "@pushpanel/core";
 import { runSendCycle } from "./sender";
 import { runScheduler } from "./scheduler";
@@ -53,14 +54,42 @@ function main() {
   if (path === ":memory:") {
     throw new Error("Worker cannot run against :memory: database");
   }
-  const db = createDb(path, { migrate: true });
+  let db = createDb(path, { migrate: true });
   const probe = db.get<{ ok: number }>(sql`SELECT 1 AS ok`);
   logger.info({ path, dbOk: probe?.ok === 1 }, "database open");
+
+  // Restore-swap healing: the panel's restore action replaces the DB file
+  // from the web process and drops a marker — this worker's open connection
+  // still reads the OLD file (SQLite page cache). Reopen instead of serving
+  // stale data or writing through a swapped file (corruption risk).
+  const markerPath = nodePath.join(nodePath.dirname(path), DB_REPLACED_MARKER);
+  const reopenDbIfReplaced = (): void => {
+    let replaced = false;
+    try {
+      replaced = existsSync(markerPath);
+    } catch {
+      replaced = false;
+    }
+    if (!replaced) return;
+    try {
+      unlinkSync(markerPath);
+    } catch {
+      // another tick already consumed it — still reopen, cheap and safe
+    }
+    try {
+      (db as unknown as { $client?: { close?: () => void } }).$client?.close?.();
+    } catch {
+      // already closed — reopen regardless
+    }
+    db = createDb(path, { migrate: true });
+    logger.info("database reopened after panel restore");
+  };
 
   const tick = async () => {
     if (running) return;
     running = true;
     try {
+      reopenDbIfReplaced();
       const sched = runScheduler(db);
       if (sched.campaignsStarted > 0) {
         logger.info({ ...sched }, "scheduler started campaigns");

@@ -1,5 +1,5 @@
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
-import { campaigns, deliveries, events, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
+import { campaigns, deliveries, domains, events, resolveSegment, subscribers, type BetterSQLite3Database } from "@pushpanel/db";
 import { allTables } from "@pushpanel/db/schema";
 
 type PushDb = BetterSQLite3Database<typeof allTables>;
@@ -19,9 +19,7 @@ interface CampaignRow {
   title_b: string | null;
   variants_json: string | null;
   topic: string | null;
-}
-
-/**
+}/**
  * Enqueue deliveries for campaigns whose send time has arrived.
  * `scheduled` + (schedule_at is null or due) → audience resolved from
  * `audience_json` (kind: all = every active subscriber of the domain) →
@@ -120,6 +118,25 @@ function reapStuckCampaigns(db: PushDb, nowIso: string): void {
 }
 
 function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { queued: number; skipped: number } {
+  // Paused domains never start: check BEFORE the atomic claim so a paused
+  // campaign stays `scheduled` (fires on resume) instead of churning through
+  // claim → empty-enqueue → done every tick.
+  let domainMissing = false;
+  if (campaign.domain_id) {
+    const [dom] = db
+      .select({ status: domains.status })
+      .from(domains)
+      .where(eq(domains.id, campaign.domain_id))
+      .limit(1)
+      .all();
+    if (!dom) {
+      // Dangling domain (deleted out-of-band): must fail below, not skip —
+      // skipping would retry every tick for eternity.
+      domainMissing = true;
+    } else if (dom.status !== "active") {
+      return { queued: 0, skipped: 1 };
+    }
+  }
   // Atomic claim: only the worker that flips scheduled→sending may enqueue.
   // Two workers sharing the SQLite file would otherwise both resolve the
   // audience and insert duplicate deliveries for every subscriber.
@@ -130,7 +147,7 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
     .run();
   if (claimed.changes === 0) return { queued: 0, skipped: 1 };
 
-  if (!campaign.domain_id) {
+  if (!campaign.domain_id || domainMissing) {
     db.update(campaigns)
       .set({ status: "failed" })
       .where(and(eq(campaigns.id, campaign.id), eq(campaigns.status, "sending")))

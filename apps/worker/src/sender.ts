@@ -88,6 +88,11 @@ export async function runSendCycle(
       and(
         eq(deliveries.status, "queued"),
         sql`(${deliveries.next_attempt_at} IS NULL OR ${deliveries.next_attempt_at} <= ${now})`,
+        // Paused domains are invisible to the claim: their rows sit `queued`
+        // (campaign stays `sending`) and flow again on resume — no loss, no
+        // per-tick claim churn. Dangling domains (deleted out-of-band) are
+        // excluded the same way; deliverOne fails closed if one slips through.
+        sql`EXISTS (SELECT 1 FROM domains d WHERE d.id = ${deliveries.domain_id} AND d.status = 'active')`,
       ),
     )
     .orderBy(deliveries.id)
@@ -153,17 +158,21 @@ export async function runSendCycle(
     for (const c of cRows) campaignCache.set(c.id, c as CampaignCache);
   }
   const domainCache = new Map<number, string | null>();
+  const domainStatusCache = new Map<number, string>();
   const domainIds = new Set(rows.map((r) => r.domain_id));
   if (domainIds.size > 0) {
     const dRows = db
-      .select({ id: domains.id, provider_config_json: domains.provider_config_json })
+      .select({ id: domains.id, provider_config_json: domains.provider_config_json, status: domains.status })
       .from(domains)
       .where(inArray(domains.id, [...domainIds]))
       .all();
-    for (const d of dRows) domainCache.set(d.id, d.provider_config_json ?? null);
+    for (const d of dRows) {
+      domainCache.set(d.id, d.provider_config_json ?? null);
+      domainStatusCache.set(d.id, d.status);
+    }
   }
 
-  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled, campaignCache, domainCache, fatigueCap, panelOrigin));
+  const outcomes = await runPool(rows, concurrency, (row) => deliverOne(db, provider, encKey, row, now, utmEnabled, campaignCache, domainCache, fatigueCap, panelOrigin, domainStatusCache));
   for (const outcome of outcomes) {
     if (outcome.result === "sent") stats.sent++;
     else if (outcome.result === "gone") stats.gone++;
@@ -261,7 +270,9 @@ export function resolveConcurrency(db: PushDb): number {
   const raw = readSetting(db, "sending_speed");
   const value = Number(raw ?? DEFAULT_CONCURRENCY);
   if (!Number.isFinite(value) || value < 1) return DEFAULT_CONCURRENCY;
-  return Math.min(Math.floor(value), 200);
+  // Upper bound matches the settings form max (1000): single-tenant
+  // operators may spend their own VPS freely; garbage still falls back.
+  return Math.min(Math.floor(value), 1000);
 }
 
 /** UTM campaign tracking (m10): decorate a click target once, never twice. */
@@ -293,6 +304,7 @@ async function deliverOne(
   domainCache?: Map<number, string | null>,
   fatigueCapCycle = 0,
   panelOrigin?: string,
+  domainStatusCache?: Map<number, string>,
 ): Promise<Outcome> {
   // Stale-claim guard: a crashed worker's rows are requeued after
   // STALE_CLAIM_MS; if a slow cycle finds its claim superseded, it must not
@@ -364,6 +376,19 @@ async function deliverOne(
       .where(and(eq(deliveries.id, row.id), owned))
       .run();
     return "failed";
+  }
+  // Domain paused mid-flight (pause cancels queued rows at the top of the
+  // next cycle, but THIS row is already claimed): park it back as queued so
+  // the pause-cancellation picks it up — never push into a paused domain,
+  // and never fail it (resume must not lose the delivery).
+  const domainStatus = domainStatusCache?.get(row.domain_id) ??
+    db.select({ status: domains.status }).from(domains).where(eq(domains.id, row.domain_id)).limit(1).all()[0]?.status;
+  if (domainStatus !== undefined && domainStatus !== "active") {
+    db.update(deliveries)
+      .set({ status: "queued", claimed_at: null, error: "domain paused" })
+      .where(and(eq(deliveries.id, row.id), owned))
+      .run();
+    return "requeued";
   }
 
   // LumaPush Fatigue Shield (dual window): a CALENDAR-DAY cap and a ROLLING
