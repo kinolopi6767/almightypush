@@ -6,8 +6,8 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { requireEditorRole } from "@/lib/roles";
 import { assertPublicHttpUrl, createCipher, parseCsv, sha256Hex } from "@pushpanel/core";
-import { domains, events, subscribers } from "@pushpanel/db/schema";
-import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
+import { domains, events, subscriberTags, subscribers } from "@pushpanel/db/schema";
+import { and, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
 export type SubscriberActionState =
   | {
@@ -71,6 +71,19 @@ export async function unsubscribeSubscriberAction(domainId: number, subscriberId
 
 export async function cleanUnsubscribedAction(domainId: number): Promise<NonNullable<SubscriberActionState>> {
   await requireOwnedDomain(domainId);
+  // subscriber_tags has no FK cascade — collect ids first so their tags can
+  // be purged too (mirrors the worker retention purge), chunked for 1M rows.
+  const deadIds = db
+    .select({ id: subscribers.id })
+    .from(subscribers)
+    .where(and(eq(subscribers.domain_id, domainId), isNotNull(subscribers.unsubscribed_at)))
+    .all()
+    .map((r) => r.id);
+  for (let i = 0; i < deadIds.length; i += 1000) {
+    const slice = deadIds.slice(i, i + 1000);
+    if (slice.length === 0) continue;
+    db.delete(subscriberTags).where(inArray(subscriberTags.subscriber_id, slice)).run();
+  }
   const result = db
     .delete(subscribers)
     .where(and(eq(subscribers.domain_id, domainId), isNotNull(subscribers.unsubscribed_at)))
@@ -189,7 +202,18 @@ export async function importSubscribersAction(
   let invalid = 0;
   let optedOut = 0;
 
+  // SSRF verdicts cached per endpoint host: a 100k-row import from one push
+  // service would otherwise pay a DNS round-trip PER ROW (hours). Hosts are
+  // the meaningful unit — paths/keys never affect routability.
+  const ssrfCache = new Map<string, boolean>();
+
   const valid = (v: string | undefined): v is string => typeof v === "string" && v.trim().length > 0;
+  // Free-text metadata columns are UI display + CSV fodder, not protocol —
+  // cap them so a hostile row can't bloat the DB with multi-MB strings.
+  const meta = (v: string | undefined): string | null => {
+    if (!valid(v)) return null;
+    return v.trim().slice(0, 100);
+  };
 
   for (const row of parsed) {
     if (!valid(row.endpoint) || !valid(row.p256dh) || !valid(row.auth)) {
@@ -210,8 +234,13 @@ export async function importSubscribersAction(
     // SSRF guard — imports ingest third-party lists; the worker will POST to
     // these endpoints from the server, so apply the same discipline as the
     // live subscribe API (private/link-local/metadata addresses rejected).
-    const ssrf = await assertPublicHttpUrl(row.endpoint);
-    if (!ssrf.ok) {
+    let hostOk = ssrfCache.get(url.hostname);
+    if (hostOk === undefined) {
+      const ssrf = await assertPublicHttpUrl(row.endpoint);
+      hostOk = ssrf.ok;
+      ssrfCache.set(url.hostname, hostOk);
+    }
+    if (!hostOk) {
       invalid += 1;
       continue;
     }
@@ -234,11 +263,13 @@ export async function importSubscribersAction(
         domain_id: domainId,
         token: cipher.encrypt(JSON.stringify({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } })),
         token_hash: tokenHash,
-        provider: row.provider?.trim() || "vapid",
-        browser: row.browser?.trim() || null,
-        os: row.os?.trim() || null,
-        device: row.device?.trim() || null,
-        subscribe_url: row.subscribe_url?.trim() || null,
+        // Provider is informational (the sender always uses VAPID) — accept
+        // only known values so garbage can't accumulate in the column.
+        provider: row.provider?.trim() === "fcm" ? "fcm" : "vapid",
+        browser: meta(row.browser),
+        os: meta(row.os),
+        device: meta(row.device),
+        subscribe_url: row.subscribe_url?.trim().slice(0, 500) || null,
         subscribe_at: now,
         last_active_at: now,
       })

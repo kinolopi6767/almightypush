@@ -59,10 +59,15 @@ export async function createApiKeyAction(
 
   // The date input is a naive local-date; pin it to the end of that day in
   // UTC so the key never dies early and expiry comparisons are timezone-free.
+  // Round-trip check: Date normalizes overflows ("2026-13-99" becomes a real
+  // 2027 date), which would silently mint a wrongly-dated key.
   let expiresAt: string | null = null;
   if (parsed.data.expiresAt) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.data.expiresAt)) return { error: "Invalid expiry date" };
     const endOfDay = new Date(`${parsed.data.expiresAt}T23:59:59.999Z`);
-    if (Number.isNaN(endOfDay.getTime())) return { error: "Invalid expiry date" };
+    if (Number.isNaN(endOfDay.getTime()) || endOfDay.toISOString().slice(0, 10) !== parsed.data.expiresAt) {
+      return { error: "Invalid expiry date" };
+    }
     if (endOfDay.getTime() <= Date.now()) return { error: "Expiry must be in the future" };
     expiresAt = endOfDay.toISOString();
   }

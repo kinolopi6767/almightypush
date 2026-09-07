@@ -4,8 +4,18 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { requireEditorRole } from "@/lib/roles";
 import { createVapidConfig } from "@pushpanel/core";
-import { campaigns, deliveries, domains, subscribers } from "@pushpanel/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import {
+  apiKeys,
+  automations,
+  campaigns,
+  deliveries,
+  domains,
+  lpLinks,
+  subscriberTags,
+  subscribers,
+  youtubeChannels,
+} from "@pushpanel/db/schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 
@@ -240,5 +250,90 @@ export async function updateDomainPromptAction(
 
   db.update(domains).set({ app_config_json: JSON.stringify(cfg) }).where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId))).run();
   logAudit(db, { workspaceId, action: "domain.update", entityType: "domain", entityId: domainId, meta: { prompt: parsed.data.kind } });
+  return { ok: true, id: domainId };
+}
+
+/**
+ * Pause / resume a domain. Paused domains stop everything: the scheduler
+ * won't start their campaigns, the sender won't claim their deliveries
+ * (queued rows wait and flow again on resume — nothing is lost), and the
+ * public subscribe/resubscribe/tags/test-push paths already require
+ * status='active'. Unsubscribe keeps working (opt-out must never be gated).
+ */
+export async function setDomainStatusAction(domainId: number, status: "active" | "paused"): Promise<DomainFormState> {
+  if (!Number.isInteger(domainId) || domainId <= 0) return { error: "Invalid domain" };
+  if (status !== "active" && status !== "paused") return { error: "Invalid status" };
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!workspaceId) return { error: "No workspace" };
+
+  const changed = db
+    .update(domains)
+    .set({ status })
+    .where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId)))
+    .run();
+  if (changed.changes === 0) return { error: "Domain not found" };
+  logAudit(db, { workspaceId, action: "domain.update", entityType: "domain", entityId: domainId, meta: { status } });
+  return { ok: true, id: domainId };
+}
+
+/**
+ * Permanently delete a domain and everything scoped to it: campaigns (+
+ * deliveries, deleted explicitly in chunks), subscribers (+ tags, which have
+ * no FK), automations, domain-scoped API keys. LP links / YouTube channels
+ * keep working with domain_id nulled (shareable URLs, not domain data).
+ * Events/analytics history is kept (no FK, workspace analytics stay intact).
+ */
+export async function deleteDomainAction(domainId: number): Promise<DomainFormState> {
+  if (!Number.isInteger(domainId) || domainId <= 0) return { error: "Invalid domain" };
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in" };
+  if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!workspaceId) return { error: "No workspace" };
+
+  const [domain] = db
+    .select({ id: domains.id, name: domains.name })
+    .from(domains)
+    .where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId)))
+    .limit(1)
+    .all();
+  if (!domain) return { error: "Domain not found" };
+
+  db.transaction((tx) => {
+    // Campaigns first, chunked so a 1M-delivery domain doesn't hold one
+    // giant write lock (deliveries deleted explicitly per chunk).
+    const campIds = tx
+      .select({ id: campaigns.id })
+      .from(campaigns)
+      .where(and(eq(campaigns.domain_id, domainId), eq(campaigns.workspace_id, workspaceId)))
+      .all()
+      .map((r) => r.id);
+    for (let i = 0; i < campIds.length; i += 500) {
+      const slice = campIds.slice(i, i + 500);
+      if (slice.length === 0) continue;
+      tx.delete(deliveries).where(inArray(deliveries.campaign_id, slice)).run();
+      tx.delete(campaigns).where(inArray(campaigns.id, slice)).run();
+    }
+    // Tags reference subscribers without an FK — purge before subscribers go.
+    tx.delete(subscriberTags)
+      .where(
+        inArray(
+          subscriberTags.subscriber_id,
+          tx.select({ id: subscribers.id }).from(subscribers).where(eq(subscribers.domain_id, domainId)),
+        ),
+      )
+      .run();
+    tx.delete(subscribers).where(eq(subscribers.domain_id, domainId)).run();
+    tx.delete(automations).where(and(eq(automations.domain_id, domainId), eq(automations.workspace_id, workspaceId))).run();
+    tx.delete(apiKeys).where(and(eq(apiKeys.domain_id, domainId), eq(apiKeys.workspace_id, workspaceId))).run();
+    tx.update(lpLinks).set({ domain_id: null }).where(and(eq(lpLinks.domain_id, domainId), eq(lpLinks.workspace_id, workspaceId))).run();
+    tx.update(youtubeChannels).set({ domain_id: null }).where(and(eq(youtubeChannels.domain_id, domainId), eq(youtubeChannels.workspace_id, workspaceId))).run();
+    tx.delete(domains).where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId))).run();
+  });
+
+  logAudit(db, { workspaceId, action: "domain.delete", entityType: "domain", entityId: domainId, meta: { name: domain.name } });
   return { ok: true, id: domainId };
 }

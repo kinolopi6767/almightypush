@@ -29,9 +29,13 @@ test("enable 2FA, code-gated sign-in, and disable restores password login", asyn
   test.setTimeout(180_000);
   await signInViaUi(page);
 
-  // --- enable from the profile page ---
+  // --- enable from the profile page (password-gated: session alone must
+  // not mint a TOTP secret) ---
   await page.goto("/dashboard/profile");
   await expect(page.getByText("Two-factor authentication")).toBeVisible();
+  await page.getByRole("button", { name: "Set up authenticator" }).click();
+  await expect(page.getByText("Enter your current password to set up 2FA")).toBeVisible();
+  await page.locator("#tfa-setup-password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: "Set up authenticator" }).click();
   const uriText = await page.locator("code").filter({ hasText: "otpauth://" }).textContent();
   expect(uriText).toContain("secret=");

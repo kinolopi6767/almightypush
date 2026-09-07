@@ -22,8 +22,8 @@ async function currentUser() {
   return user ?? null;
 }
 
-/** Stage 1: generate + persist a secret (not yet enabled). */
-export async function enableTfaStartAction(): Promise<NonNullable<TfaState>> {
+/** Stage 1: verify the password, then generate + persist a secret (not yet enabled). */
+export async function enableTfaStartAction(_prev: TfaState, formData: FormData): Promise<NonNullable<TfaState>> {
   if (!rateLimit(`tfa:${clientIp(await headers())}`, 10, 60_000)) {
     return { error: "Too many attempts — try again later" };
   }
@@ -32,6 +32,14 @@ export async function enableTfaStartAction(): Promise<NonNullable<TfaState>> {
   // Never clobber an active enrollment silently — an attacker with a stolen
   // session must not be able to swap the TOTP secret unnoticed.
   if (user.totp_enabled) return { error: "2FA is already enabled — disable it first (password required)" };
+  // Password-gated enrollment: minting a secret is account-takeover-shaped
+  // (secret → attacker's authenticator → confirmed enrollment locks the real
+  // owner out), so a hijacked session alone must not reach it.
+  if (!user.password_hash) return { error: "Account has no password set" };
+  const password = String(formData.get("password") ?? "");
+  if (!(await verifyPassword(user.password_hash, password))) {
+    return { error: "Enter your current password to set up 2FA" };
+  }
 
   const secret = generateTotpSecret();
   db.update(users)

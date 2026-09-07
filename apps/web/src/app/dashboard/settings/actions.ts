@@ -1,13 +1,14 @@
 "use server";
 
-import { chmod, mkdir, stat, unlink } from "node:fs/promises";
+import { chmod, mkdir, stat, unlink, writeFile as writeFileProm } from "node:fs/promises";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { resolveDbPath, backupDatabase } from "@pushpanel/db";
+import { resolveDbPath, backupDatabase, closeDb, DB_REPLACED_MARKER } from "@pushpanel/db";
 import { backups, settings } from "@pushpanel/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createCipher, isValidTimezone } from "@pushpanel/core";
 import { logAudit } from "@/lib/audit";
@@ -253,7 +254,9 @@ export async function createBackupAction(): Promise<NonNullable<SettingsFormStat
   await mkdir(backupDir, { recursive: true });
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const target = path.join(backupDir, `backup-${stamp}.db`);
+  // Random suffix (mirrors the worker snapshot path): two backups in the same
+  // millisecond must not share a filename.
+  const target = path.join(backupDir, `backup-manual-${stamp}-${randomBytes(4).toString("hex")}.db`);
 
   try {
     // Non-blocking consistent snapshot (better-sqlite3 backup API) — a sync
@@ -285,6 +288,32 @@ export async function createBackupAction(): Promise<NonNullable<SettingsFormStat
   if (wsId) {
     logAudit(db, { workspaceId: wsId, action: "backup.create", entityType: "backup", entityId: Number(inserted.lastInsertRowid), meta: { kind: "manual" } });
   }
+  // Manual backups previously grew unbounded (the worker only prunes after
+  // auto snapshots) — enforce the same retention here so the backups dir
+  // can't fill the disk one click at a time.
+  try {
+    const retentionRaw = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "backup_retention")).get()?.value;
+    const retentionParsed = Number(retentionRaw ?? 10);
+    const retention = Number.isFinite(retentionParsed) ? Math.min(Math.max(Math.floor(retentionParsed), 1), 365) : 10;
+    const manualRows = db
+      .select({ id: backups.id, location: backups.location })
+      .from(backups)
+      .where(eq(backups.kind, "manual"))
+      .orderBy(desc(backups.id))
+      .all();
+    for (const stale of manualRows.slice(retention)) {
+      db.delete(backups).where(eq(backups.id, stale.id)).run();
+      if (stale.location) {
+        try {
+          await unlink(stale.location);
+        } catch {
+          // file may already be gone — row removal is what matters
+        }
+      }
+    }
+  } catch {
+    // pruning is hygiene, never fail the backup over it
+  }
   // best-effort Drive upload (disabled by default)
   void tryUploadBackupToDrive(target).catch(() => {});
   revalidatePath("/dashboard/settings");
@@ -308,8 +337,15 @@ export async function deleteBackupAction(backupId: number): Promise<NonNullable<
     logAudit(db, { workspaceId: wsId2, action: "backup.delete", entityType: "backup", entityId: backupId });
   }
   if (row.location) {
+    // Constrain the unlink to the backups dir: the location comes from the
+    // DB, and a tampered row must not become an arbitrary-file-delete.
     try {
-      await unlink(row.location);
+      const dbFile = resolveDbPath(process.env.DATABASE_PATH);
+      const allowedDir = path.resolve(path.dirname(dbFile), "backups");
+      const resolved = path.resolve(row.location);
+      if (resolved === allowedDir || resolved.startsWith(allowedDir + path.sep)) {
+        await unlink(row.location);
+      }
     } catch {
       // file may already be gone — row removal is what matters
     }
@@ -351,6 +387,20 @@ export async function restoreBackupAction(backupId: number): Promise<NonNullable
     const { unlink: unlinkSync } = await import("node:fs/promises");
     for (const suffix of ["-wal", "-shm"]) {
       try { await unlinkSync(dbFile + suffix); } catch { /* may not exist */ }
+    }
+    // Connection healing (no restart needed): this process's open connection
+    // still pages the OLD file — close it so the next request reopens the
+    // restored one. The worker heals itself the same way via the marker file
+    // it checks every tick (see apps/worker/src/index.ts).
+    try {
+      closeDb();
+    } catch {
+      // reopen happens lazily anyway — a stale cache clear is best-effort
+    }
+    try {
+      await writeFileProm(path.join(path.dirname(dbFile), DB_REPLACED_MARKER), new Date().toISOString());
+    } catch {
+      // worker restart covers a missed marker — never fail the restore over it
     }
     if (wsId) logAudit(db, { workspaceId: wsId, action: "backup.restore", entityType: "backup", entityId: backupId, meta: { restored: 1 } });
   } catch (e) {

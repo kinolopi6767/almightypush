@@ -63,7 +63,7 @@ export async function inviteTeamMemberAction(_prev: TeamFormState, formData: For
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
   db.insert(teamInvites).values({ workspace_id: workspaceId, email: emailLower, role: parsed.data.role, token_hash: tokenHash, expires_at: expiresAt }).run();
-  logAudit(db, { workspaceId, action: "settings.update", entityType: "team_invite", meta: { email: parsed.data.email, role: parsed.data.role, invited: true } });
+  logAudit(db, { workspaceId, action: "team.invite", entityType: "team_invite", meta: { email: parsed.data.email, role: parsed.data.role, invited: true } });
 
   return { ok: true, token };
 }
@@ -72,6 +72,7 @@ export async function revokeInviteAction(inviteId: number): Promise<TeamFormStat
   try {
     const { workspaceId } = await requireOwnerOrAdmin();
     db.delete(teamInvites).where(and(eq(teamInvites.id, inviteId), eq(teamInvites.workspace_id, workspaceId))).run();
+    logAudit(db, { workspaceId, action: "team.revoke", entityType: "team_invite", entityId: inviteId });
     return { ok: true };
   } catch (e) {
     return { error: (e as Error).message };
@@ -154,7 +155,7 @@ export async function acceptInviteAction(_prev: { error?: string; ok?: boolean }
       .run();
   });
 
-  logAudit(db, { workspaceId: invite.workspace_id, action: "settings.update", entityType: "team_invite", meta: { email, accepted: true, role: invite.role } });
+  logAudit(db, { workspaceId: invite.workspace_id, action: "team.accept", entityType: "team_invite", meta: { email, accepted: true, role: invite.role } });
   return { ok: true };
 }
 

@@ -46,7 +46,21 @@ export function TfaPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
    </div>
 
    {!enabled && !pendingSecret && (
-    <form action={startAction} className="mt-4">
+    <form action={startAction} className="mt-4 space-y-3">
+     <div>
+      <label htmlFor="tfa-setup-password" className="text-sm font-medium">
+       Current password
+      </label>
+      <input
+       id="tfa-setup-password"
+       name="password"
+       type="password"
+       required
+       autoComplete="current-password"
+       className="input mt-1"
+       placeholder="Required to set up 2FA"
+      />
+     </div>
      <button
       type="submit"
       disabled={startPending}

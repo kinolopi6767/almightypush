@@ -6,9 +6,20 @@ import { campaigns, deliveries, domains, segments, settings } from "@pushpanel/d
 import { and, eq, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { InvalidTimezoneError, naiveLocalToUtcMs } from "@pushpanel/core";
+import { rateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 
 export type CampaignFormState = { error?: string; ok?: boolean; id?: number } | undefined;
+
+/**
+ * Panel-side creation throttle (mirrors SEND_CREATE_RPM on the REST route):
+ * each created campaign can fan out to 1M deliveries, so a compromised
+ * session or runaway client must not mint campaigns at line rate and bloat
+ * the queue. Internal automation enqueue paths don't go through here.
+ */
+function creationThrottled(workspaceId: number): boolean {
+  return !rateLimit(`campaign:create:${workspaceId}`, 120, 60_000);
+}
 
 const createCampaignSchema = z.object({
   domainId: z.coerce.number().int().positive("Choose a domain"),
@@ -50,6 +61,7 @@ export async function createCampaignAction(
   if (!workspaceId) return { error: "No workspace" };
   const roleErr = requireCampaignRole(session.user.role);
   if (roleErr) return { error: roleErr };
+  if (creationThrottled(workspaceId)) return { error: "Too many campaigns — slow down" };
 
   const labels = formData.getAll("buttonLabel");
   const urls = formData.getAll("buttonUrl");
@@ -300,6 +312,7 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
   if (!workspaceId) return { error: "No workspace" };
   const roleErr3 = requireCampaignRole(session.user.role);
   if (roleErr3) return { error: roleErr3 };
+  if (creationThrottled(workspaceId)) return { error: "Too many campaigns — slow down" };
 
   const [source] = db
     .select({
@@ -366,6 +379,7 @@ export async function resendToNonClickersAction(campaignId: number): Promise<Cam
   if (!workspaceId) return { error: "No workspace" };
   const roleErr4 = requireCampaignRole(session.user.role);
   if (roleErr4) return { error: roleErr4 };
+  if (creationThrottled(workspaceId)) return { error: "Too many campaigns — slow down" };
 
   const [source] = db
     .select({
