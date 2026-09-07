@@ -40,6 +40,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
+        // Brute-force + memory-DoS guard: argon2id costs ~64MB per verify.
+        // Without a throttle, credential stuffing also becomes a memory-DoS.
+        // (In-memory bucket: single-process; sufficient for single-tenant.)
+        try {
+          const { rateLimitWithHeaders } = await import("@/lib/rate-limit");
+          // No request headers available in authorize() — use a global login
+          // bucket plus per-email throttle as defense in depth.
+          const rlGlobal = rateLimitWithHeaders("login:global", 60, 60_000);
+          if (!rlGlobal.allowed) return null;
+          const emailKey = parsed.data.email.toLowerCase().slice(0, 200);
+          const rlEmail = rateLimitWithHeaders(`login:email:${emailKey}`, 10, 15 * 60_000);
+          if (!rlEmail.allowed) return null;
+        } catch {
+          // Rate limiter must never break login — fail open here (auth still enforced).
+        }
+
         const [user] = await db
           .select()
           .from(users)

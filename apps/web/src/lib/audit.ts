@@ -42,6 +42,9 @@ export type AuditAction =
   | "data.export"
   | "data.import"
   | "journey.create"
+  | "journey.pause"
+  | "journey.resume"
+  | "journey.delete"
   | "track.ingest";
 
 /** Append a row to the audit log. Best-effort: never throws into callers. */

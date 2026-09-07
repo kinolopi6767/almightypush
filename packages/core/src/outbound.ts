@@ -17,12 +17,37 @@ export function emitWebhookEvent(
   config: OutboundWebhookConfig,
   event: string,
   data: Record<string, unknown>,
+  opts: { onError?: (err: Error) => void } = {},
 ): void {
   try {
     // Validate the URL cheaply before any async work; never emit to a
     // malformed destination.
     const target = new URL(config.url);
-    const body = JSON.stringify({ event, created_at: new Date().toISOString(), data });
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      opts.onError?.(new Error(`webhook rejected: non-http(s) scheme for event ${event}`));
+      return;
+    }
+    if (target.username || target.password) {
+      opts.onError?.(new Error(`webhook rejected: credentials in URL for event ${event}`));
+      return;
+    }
+    if (!config.secret) {
+      // Unsigned webhooks are a misconfiguration, not a silent default —
+      // surface once via the hook so operators notice.
+      opts.onError?.(new Error(`webhook ${event}: no secret configured, sending unsigned`));
+    }
+    let body: string;
+    try {
+      const safe = JSON.stringify({ event, created_at: new Date().toISOString(), data });
+      if (safe.length > 100_000) {
+        opts.onError?.(new Error(`webhook ${event}: payload too large, dropped`));
+        return;
+      }
+      body = safe;
+    } catch {
+      opts.onError?.(new Error(`webhook ${event}: unserializable payload, dropped`));
+      return;
+    }
     const timestamp = Date.now();
     const headers: Record<string, string> = {
       "content-type": "application/json",
@@ -43,9 +68,12 @@ export function emitWebhookEvent(
       body,
       signal: AbortSignal.timeout(3_000),
     })
-      .then((res) => res.arrayBuffer().catch(() => undefined))
-      .catch(() => undefined);
-  } catch {
-    void 0;
+      .then((res) => {
+        if (!res.ok) opts.onError?.(new Error(`webhook ${event} failed: ${res.status}`));
+        return res.arrayBuffer().catch(() => undefined);
+      })
+      .catch((e) => opts.onError?.(e instanceof Error ? e : new Error(String(e))));
+  } catch (e) {
+    opts.onError?.(e instanceof Error ? e : new Error(String(e)));
   }
 }

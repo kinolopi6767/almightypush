@@ -31,9 +31,10 @@ const DEFAULT_CONCURRENCY = 25;
  * A delivery left `sending` longer than this is assumed to belong to a dead
  * worker (crash) and is requeued so it still delivers and the campaign can
  * finalize. Must be far above any realistic single-cycle time: worst case is
- * BATCH_SIZE/concurrency * provider timeout (500/25*30s = 600s), so 30min
- * guarantees a slow-but-alive cycle is never revived mid-send (double-send
- * is worse than delayed recovery).
+ * BATCH_SIZE/concurrency * provider timeout (2000/1*30s = 60000s), so the
+ * stale window is ENFORCED below by clamping effective concurrency — a
+ * slow-but-alive cycle is never revived mid-send (double-send is worse than
+ * delayed recovery).
  */
 const STALE_CLAIM_MS = 30 * 60_000;
 
@@ -125,7 +126,14 @@ export async function runSendCycle(
   stats.claimed = rows.length;
   if (rows.length === 0) return stats;
 
-  const concurrency = resolveConcurrency(db);
+  const rawConcurrency = resolveConcurrency(db);
+  // Stale-claim safety: worst-case cycle time (BATCH/concurrency * 30s
+  // provider timeout) must stay well under STALE_CLAIM_MS, or a live cycle's
+  // claims get revived mid-send → double-send. Clamp concurrency up so the
+  // bound always holds (e.g. BATCH=2000 needs concurrency≥34 for 30min).
+  const PROVIDER_TIMEOUT_S = 30;
+  const minConcurrency = Math.max(1, Math.ceil((BATCH_SIZE * PROVIDER_TIMEOUT_S) / (STALE_CLAIM_MS / 1000 / 2)));
+  const concurrency = Math.max(rawConcurrency, minConcurrency);
   const utmEnabled = readSetting(db, "utm_enabled") === "1";
   // Click-beacon origin: one env read per cycle, not one per delivery.
   const panelOrigin = (process.env.APP_URL ?? "").replace(/\/$/, "") || undefined;
@@ -280,6 +288,7 @@ export function withUtm(url: string | null | undefined, title: string, content: 
   if (!url) return undefined;
   try {
     const target = new URL(url);
+    if (target.protocol !== "http:" && target.protocol !== "https:") return url;
     if (!target.searchParams.has("utm_source")) {
       const slug = title.trim().replace(/\s+/g, "-").slice(0, 64) || "campaign";
       target.searchParams.set("utm_source", "pushpanel");
@@ -289,7 +298,9 @@ export function withUtm(url: string | null | undefined, title: string, content: 
     }
     return target.toString();
   } catch {
-    return undefined;
+    // Invalid launch_url: keep the original so the notification still opens
+    // *something* (previous code dropped the URL silently → click did nothing).
+    return url;
   }
 }
 
@@ -371,18 +382,26 @@ async function deliverOne(
   }
   // Operator cancelled/paused while this batch was claimed: do not push.
   if (campaign.status === "cancelled" || campaign.status === "paused") {
-    db.update(deliveries)
+    const cancelWrite = db.update(deliveries)
       .set({ status: "cancelled", error: `campaign ${campaign.status}`, sent_at: now })
       .where(and(eq(deliveries.id, row.id), owned))
       .run();
-    return "failed";
+    return cancelWrite.changes === 0 ? "requeued" : "failed";
   }
   // Domain paused mid-flight (pause cancels queued rows at the top of the
   // next cycle, but THIS row is already claimed): park it back as queued so
   // the pause-cancellation picks it up — never push into a paused domain,
   // and never fail it (resume must not lose the delivery).
-  const domainStatus = domainStatusCache?.get(row.domain_id) ??
-    db.select({ status: domains.status }).from(domains).where(eq(domains.id, row.domain_id)).limit(1).all()[0]?.status;
+  let domainStatus: string | undefined = domainStatusCache?.get(row.domain_id);
+  if (domainStatus === undefined && !domainStatusCache?.has(row.domain_id)) {
+    try {
+      domainStatus = db.select({ status: domains.status }).from(domains).where(eq(domains.id, row.domain_id)).limit(1).all()[0]?.status;
+    } catch {
+      // A locked-DB hiccup here must not strand the row in `sending` — treat
+      // as unknown (proceed; the top-of-cycle pause sweep catches it next tick).
+      domainStatus = "active";
+    }
+  }
   if (domainStatus !== undefined && domainStatus !== "active") {
     db.update(deliveries)
       .set({ status: "queued", claimed_at: null, error: "domain paused" })
@@ -481,7 +500,8 @@ async function deliverOne(
   // {{subscriber_id}}) resolved from the subscriber's tags. Unknown or empty
   // tokens render as empty strings — never leak raw {{...}} to users.
   let tokens: Record<string, string> | null = null;
-  if (/\{\{\s*[\w-]+\s*\}\}/.test(`${variantTitle}|${variantMessage ?? ""}|${campaign.launch_url ?? ""}`)) {
+  const needsTokens = /\{\{\s*[\w-]+\s*\}\}/.test(`${variantTitle}|${variantMessage ?? ""}|${campaign.launch_url ?? ""}|${variantButtonsJson ?? ""}`);
+  if (needsTokens) {
     tokens = {};
     if (row.subscriber_id) {
       const [subMeta] = db
@@ -510,6 +530,19 @@ async function deliverOne(
     tokens.subscriber_id = String(row.subscriber_id ?? "");
     variantTitle = renderTokens(variantTitle, tokens);
     variantMessage = variantMessage ? renderTokens(variantMessage, tokens) : variantMessage;
+    if (variantButtonsJson) {
+      try {
+        const btnList = JSON.parse(variantButtonsJson) as { label: string; url: string }[];
+        if (Array.isArray(btnList)) {
+          for (const b of btnList) {
+            if (typeof b.label === "string") b.label = renderTokens(b.label, tokens);
+            if (typeof b.url === "string") b.url = renderTokens(b.url, tokens);
+          }
+        }
+      } catch {
+        // Corrupt buttons JSON degrades below (no buttons), never throws here.
+      }
+    }
   }
 
   // Building the message (buttons_json parse), decrypting the VAPID key and
@@ -519,17 +552,29 @@ async function deliverOne(
 
   let result: SendResult;
   try {
+    // Corrupt buttons_json degrades to no-buttons (a malformed button must
+    // never fail the whole delivery — previous code failed it).
+    let buttons: PushMessage["buttons"];
+    if (variantButtonsJson) {
+      try {
+        const parsed = JSON.parse(variantButtonsJson) as NonNullable<PushMessage["buttons"]>;
+        buttons = Array.isArray(parsed)
+          ? parsed
+              .filter((b) => b && typeof b.label === "string" && typeof b.url === "string")
+              .slice(0, 3)
+              .map((b) => (utmEnabled ? { ...b, url: withUtm(b.url, variantTitle, "button") ?? b.url } : b))
+          : undefined;
+      } catch {
+        buttons = undefined;
+      }
+    }
     const message: PushMessage = {
       title: variantTitle,
       body: variantMessage ?? undefined,
       icon: campaign.icon_url ?? undefined,
       image: variantImage ?? undefined,
-      url: utmEnabled ? withUtm(campaign.launch_url, variantTitle, "push") : (campaign.launch_url ?? undefined),
-      buttons: variantButtonsJson
-        ? (JSON.parse(variantButtonsJson) as NonNullable<PushMessage["buttons"]>).map((b) =>
-            utmEnabled ? { ...b, url: withUtm(b.url, variantTitle, "button") ?? b.url } : b,
-          )
-        : undefined,
+      url: utmEnabled ? withUtm(campaign.launch_url, variantTitle, "push") ?? campaign.launch_url ?? undefined : (campaign.launch_url ?? undefined),
+      buttons,
       // M8: the service worker echoes these in its click beacon.
       deliveryId: row.id,
       campaignId: row.campaign_id,
@@ -642,8 +687,9 @@ async function deliverOne(
   // `attempts` was incremented at claim time, so it includes this attempt.
   // Fail fast on permanent provider config errors (bad VAPID keys, rejected
   // payload): retrying a misconfigured domain 3x per delivery turns one bad
-  // campaign into millions of failing push requests.
-  if (result.statusCode === 400 || result.statusCode === 401 || result.statusCode === 403) {
+  // campaign into millions of failing push requests. 413 (payload too large)
+  // and non-Google 404 are likewise never retried.
+  if (result.statusCode === 400 || result.statusCode === 401 || result.statusCode === 403 || result.statusCode === 413 || result.statusCode === 404) {
     const permWrite = db
       .update(deliveries)
       .set({ status: "failed", error: result.error ?? `provider rejected: ${result.statusCode}`, sent_at: now })
@@ -667,11 +713,14 @@ async function deliverOne(
   // Honor the push service's Retry-After on 429 (rate limited): hammering a
   // throttled endpoint with fixed 30s backoff prolongs the throttle. Clamp to
   // BACKOFF_MAX_MS so a malicious/absurd header can't park a row for days.
+  // Jitter (±20%) prevents thundering-herd after a restart/global throttle.
   const serverBackoff =
     result.statusCode === 429 && typeof result.retryAfterMs === "number" && result.retryAfterMs > 0
       ? Math.min(Math.floor(result.retryAfterMs), BACKOFF_MAX_MS)
       : 0;
-  const backoff = Math.max(serverBackoff, Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS));
+  const base = Math.max(serverBackoff, Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS));
+  const jitter = Math.floor(base * (0.8 + Math.random() * 0.4));
+  const backoff = Math.min(jitter, BACKOFF_MAX_MS);
   const requeueWrite = db
     .update(deliveries)
     .set({ status: "queued", claimed_at: null, next_attempt_at: now + backoff, error: result.error ?? null })
@@ -692,14 +741,20 @@ export function renderTokens(input: string, tokens: Record<string, string>): str
 function bumpCampaignStat(db: PushDb, campaignId: number, key: "delivered" | "failed") {
   // Single-statement JSON increment: safe under the pool's concurrency
   // (read-modify-write in JS would drop increments on simultaneous sends).
-  db.update(campaigns)
-    .set({
-      stats_json: sql`CASE WHEN json_valid(${campaigns.stats_json})
+  // Never throws: a locked-DB hiccup here must not convert a sent delivery
+  // into a pool-counted failure.
+  try {
+    db.update(campaigns)
+      .set({
+        stats_json: sql`CASE WHEN json_valid(${campaigns.stats_json})
         THEN json_set(${campaigns.stats_json}, '$.${sql.raw(key)}', COALESCE(json_extract(${campaigns.stats_json}, '$.${sql.raw(key)}'), 0) + 1)
         ELSE json_object('${sql.raw(key)}', 1) END`,
-    })
-    .where(eq(campaigns.id, campaignId))
-    .run();
+      })
+      .where(eq(campaigns.id, campaignId))
+      .run();
+  } catch {
+    // Stat increments are best-effort; delivery state is already committed.
+  }
 }
 
 /** A campaign is done once it has no queued/sending deliveries left. */

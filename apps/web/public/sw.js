@@ -93,10 +93,30 @@ self.addEventListener("notificationclick", (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      // Focus an existing tab WITHOUT navigating it away from what the user
-      // was doing — hijacking a checkout page to a promo article is hostile.
-      for (const client of clientList) {
-        if ("focus" in client) return client.focus();
+      // Same-origin tab exists → focus AND navigate it (clicking a sale push
+      // must open the sale, not just focus a stale checkout tab). Cross-origin
+      // tabs are never hijacked — open the URL in a new window instead.
+      try {
+        const target = new URL(actionUrl, self.location.origin);
+        for (const client of clientList) {
+          try {
+            const existing = new URL(client.url);
+            if (existing.origin === target.origin && "navigate" in client && "focus" in client) {
+              return client.navigate(target.toString()).then((c) => c.focus());
+            }
+          } catch {
+            // unparseable client URL — try next
+          }
+        }
+        for (const client of clientList) {
+          if ("focus" in client) {
+            // No same-origin tab: focus is still better than nothing, then
+            // open the target (avoids stranding the user on an old tab).
+            return client.focus().then(() => clients.openWindow(actionUrl).catch(() => undefined));
+          }
+        }
+      } catch {
+        // malformed actionUrl — fall through to openWindow attempt
       }
       return clients.openWindow(actionUrl).catch(() => undefined);
     }),

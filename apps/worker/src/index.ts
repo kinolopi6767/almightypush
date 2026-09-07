@@ -49,6 +49,16 @@ function main() {
   if (!process.env.APP_URL) {
     throw new Error("APP_URL is required — push payloads embed it as the click-beacon origin");
   }
+  try {
+    const appUrl = new URL(process.env.APP_URL);
+    if (appUrl.protocol !== "http:" && appUrl.protocol !== "https:") {
+      throw new Error("APP_URL must be http(s)");
+    }
+    if (appUrl.username || appUrl.password) throw new Error("APP_URL must not contain credentials");
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("APP_URL")) throw e;
+    throw new Error("APP_URL is invalid — must be an absolute http(s) URL");
+  }
 
   const path = resolveDbPath(env.DATABASE_PATH);
   if (path === ":memory:") {
@@ -85,28 +95,44 @@ function main() {
     logger.info("database reopened after panel restore");
   };
 
+  // Per-stage isolation: one throwing stage (locked DB in scheduler, corrupt
+  // automation row, disk-full backup) must NEVER starve the other stages for
+  // the whole tick. Each stage gets its own try/catch + timing.
+  const runStage = async <T>(name: string, fn: () => T | Promise<T>): Promise<T | null> => {
+    const start = Date.now();
+    try {
+      const result = await fn();
+      const ms = Date.now() - start;
+      if (ms > 5000) logger.warn({ stage: name, ms }, "slow worker stage");
+      return result;
+    } catch (error) {
+      logger.error({ stage: name, err: error }, "worker stage failed");
+      return null;
+    }
+  };
+
   const tick = async () => {
     if (running) return;
     running = true;
     try {
       reopenDbIfReplaced();
-      const sched = runScheduler(db);
+      const sched = (await runStage("scheduler", () => runScheduler(db))) ?? { campaignsStarted: 0, queued: 0, skipped: 0 };
       if (sched.campaignsStarted > 0) {
         logger.info({ ...sched }, "scheduler started campaigns");
       }
-      const auto = await runAutomations(db);
+      const auto = (await runStage("automations", () => runAutomations(db))) ?? { ran: 0, ok: 0, failed: 0, campaigns: 0 };
       if (auto.ran > 0) {
         logger.info({ ...auto }, "automations ran");
       }
-      const journey = await runJourneys(db);
+      const journey = (await runStage("journeys", () => runJourneys(db))) ?? { ran: 0 };
       if (journey.ran > 0) {
         logger.info({ ...journey }, "journeys ran");
       }
-      const email = runEmailCampaigns(db);
+      const email = (await runStage("email", () => runEmailCampaigns(db))) ?? { started: 0 };
       if (email.started > 0) {
         logger.info({ ...email }, "email campaigns ran");
       }
-      const stats = await runSendCycle(db, env.APP_ENC_KEY);
+      const stats = (await runStage("send", () => runSendCycle(db, env.APP_ENC_KEY))) ?? { claimed: 0 };
       if (stats.claimed > 0) {
         logger.info({ ...stats }, "send cycle complete");
       }
@@ -115,15 +141,15 @@ function main() {
       const retention = effectiveUnsubRetentionDays(readSetting(db, "cleanup_unsubs_retention_days"));
       let cleaned = 0;
       if (retention > 0) {
-        const cleanup = runCleanup(db, { retentionDays: retention });
+        const cleanup = (await runStage("cleanup", () => runCleanup(db, { retentionDays: retention }))) ?? { ran: false, deleted: 0 };
         cleaned = cleanup.deleted;
         if (cleanup.ran && cleanup.deleted > 0) {
           logger.info({ deleted: cleanup.deleted }, "cleanup purged unsubscribed subscribers");
         }
       }
-      const backupMade = await runBackupScheduler(db, path);
+      const backupMade = (await runStage("backup", () => runBackupScheduler(db, path))) ?? false;
       if (backupMade) logger.info({ interval: readSetting(db, "backup_auto_interval") }, "auto backup snapshot created");
-      const pruned = runRetentionPruning(db, new Date(), logger);
+      const pruned = (await runStage("retention", () => runRetentionPruning(db, new Date(), logger))) ?? { deliveries: 0, events: 0 };
       if (pruned.deliveries > 0 || pruned.events > 0) logger.info(pruned, "retention pruning");
       traceActive = sched.campaignsStarted > 0 || auto.ran > 0 || journey.ran > 0 || email.started > 0 || stats.claimed > 0 || cleaned > 0 || pruned.deliveries > 0 || pruned.events > 0 || backupMade;
     } catch (error) {
@@ -167,6 +193,22 @@ function main() {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+  // Crash visibility: an unhandled rejection would otherwise kill the process
+  // silently (or leave it hung). Log and exit so the orchestrator restarts.
+  process.on("unhandledRejection", (reason) => {
+    try {
+      logger.error({ err: reason }, "unhandled rejection — exiting");
+    } finally {
+      process.exit(1);
+    }
+  });
+  process.on("uncaughtException", (err) => {
+    try {
+      logger.error({ err }, "uncaught exception — exiting");
+    } finally {
+      process.exit(1);
+    }
+  });
 }
 
 main();

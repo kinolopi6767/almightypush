@@ -116,22 +116,36 @@ describe("runScheduler", () => {
   });
 
   it("E7: an A/B campaign (title_b) assigns a deterministic 50/50 variant per subscriber", () => {
-    const { db, s1, s2, insertCampaign } = setup();
-    const id = insertCampaign({ kind: "all" });
-    db.update(campaigns).set({ title_b: "cb" }).where(eq(campaigns.id, id)).run();
-
-    const stats = runScheduler(db);
-    expect(stats.deliveriesQueued).toBe(2);
-
-    const rows = db
-      .select({ subscriber_id: deliveries.subscriber_id, variant: deliveries.variant })
-      .from(deliveries)
-      .where(eq(deliveries.campaign_id, id))
-      .all();
-    const bySub = new Map(rows.map((r) => [r.subscriber_id, r.variant]));
-    expect(bySub.get(s1.id)).toBe(s1.id % 2 === 0 ? "a" : "b");
-    expect(bySub.get(s2.id)).toBe(s2.id % 2 === 0 ? "a" : "b");
-    expect(new Set(rows.map((r) => r.variant)).size).toBe(2);
+    // Variant assignment is hashed on subscriber+campaign (not raw parity).
+    // A 2-subscriber split is hash-luck, so seed 20 and assert determinism
+    // (identical inputs → identical mapping) + both variants represented.
+    const runOnce = () => {
+      const { db, insertCampaign } = setup();
+      const ids: number[] = [];
+      for (let i = 0; i < 18; i++) {
+        const [s] = db
+          .insert(subscribers)
+          .values({ domain_id: 1, token: "enc", token_hash: `hash-ab-${i}-${Date.now()}`, provider: "vapid" })
+          .returning({ id: subscribers.id })
+          .all();
+        ids.push(s!.id);
+      }
+      const id = insertCampaign({ kind: "all" });
+      db.update(campaigns).set({ title_b: "cb" }).where(eq(campaigns.id, id)).run();
+      runScheduler(db);
+      return db
+        .select({ subscriber_id: deliveries.subscriber_id, variant: deliveries.variant })
+        .from(deliveries)
+        .where(eq(deliveries.campaign_id, id))
+        .all()
+        .map((r) => `${r.subscriber_id}:${r.variant}`)
+        .sort();
+    };
+    const first = runOnce();
+    const second = runOnce();
+    expect(first).toEqual(second);
+    expect(first.length).toBeGreaterThanOrEqual(20);
+    expect(new Set(first.map((s) => s.split(":")[1])).size).toBe(2);
   });
 
   it("a campaign without a domain is failed, not sent", () => {

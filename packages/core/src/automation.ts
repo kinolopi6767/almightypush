@@ -50,19 +50,19 @@ export const automationConfigSchema = z.object({
   /** automagic_dynamic: how many recent posts to pick from. */
   range: z.coerce.number().int().min(1).max(100).default(10),
   /** automagic_static: JSON array of {title, message?, launch_url?}. */
-  rotation_json: z.string().trim().optional().or(z.literal("")),
+  rotation_json: z.string().trim().max(50_000).optional().or(z.literal("")),
   /** youtube_push: RSS feed URL (autodiscovered at creation). */
   feed_url: httpUrl.optional().or(z.literal("")),
   /** push_on_publish: webhook auth secret (generated at creation). */
   secret: z.string().min(16).max(256).optional(),
   /** internal: round-robin cursor for automagic_static. */
-  rotation_index: z.coerce.number().int().min(0).optional(),
+  rotation_index: z.coerce.number().int().min(0).max(1_000_000).optional(),
   /** internal: last sent youtube video id (dedupe). */
-  last_video_id: z.string().optional(),
+  last_video_id: z.string().max(500).optional(),
   /** internal: last sent rss item key (dedupe). */
-  last_item_guid: z.string().optional(),
+  last_item_guid: z.string().max(500).optional(),
   /** internal: newest accepted webhook timestamp (replay dedupe). */
-  last_seen_ts: z.coerce.number().optional(),
+  last_seen_ts: z.coerce.number().min(0).max(9_999_999_999_999).optional(),
   /** drip: ordered sequence of pushes, each delayed from the previous step. */
   steps: z.array(dripStepSchema).max(MAX_DRIP_STEPS).optional(),
 });
@@ -78,13 +78,24 @@ export const AUTOMATION_TYPE_LABEL: Record<AutomationType, string> = {
   drip: "Drip sequence",
 };
 
-export function parseAutomationConfig(json: string | null | undefined): AutomationConfig {
+export function parseAutomationConfig(json: string | null | undefined): AutomationConfig | null {
   try {
     const parsed = automationConfigSchema.safeParse(json ? JSON.parse(json) : {});
-    return parsed.success ? parsed.data : { payload: { title: "" }, delay_seconds: 0, interval_minutes: 15, range: 10 };
+    // Fail-closed: a corrupt config must NEVER degrade to a sendable default
+    // (previous code returned {title:""} which downstream mapped to "New
+    // update" and sent a real push). Callers must skip/fail the run on null.
+    if (!parsed.success) return null;
+    return parsed.data;
   } catch {
-    return { payload: { title: "" }, delay_seconds: 0, interval_minutes: 15, range: 10 };
+    return null;
   }
+}
+
+/** Lenient variant for read-only UI display: corrupt config → empty draft (never sent). */
+export function parseAutomationConfigLenient(json: string | null | undefined): AutomationConfig {
+  return (
+    parseAutomationConfig(json) ?? { payload: { title: "" }, delay_seconds: 0, interval_minutes: 15, range: 10 }
+  );
 }
 
 /**

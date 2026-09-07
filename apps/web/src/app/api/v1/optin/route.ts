@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { clientIp, rateLimitHeaders, rateLimitWithHeaders } from "@/lib/rate-limit";
 import { domains, events } from "@pushpanel/db/schema";
+import { requestOriginAllowed } from "@/lib/subscribe-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +40,15 @@ export async function POST(req: Request) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 300) });
   }
 
-  const [domain] = db.select({ id: domains.id, status: domains.status }).from(domains).where(eq(domains.id, domainId)).limit(1).all();
+  const [domain] = db.select({ id: domains.id, name: domains.name, status: domains.status }).from(domains).where(eq(domains.id, domainId)).limit(1).all();
   if (!domain || domain.status !== "active") return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
+
+  // Funnel-poisoning guard: anyone could otherwise inflate/poison grant-rate
+  // analytics for any domain. Unconditional origin check (no-Origin fails
+  // closed via requestOriginAllowed fallback).
+  if (!requestOriginAllowed(req, `https://${domain.name}/`, domain.name)) {
+    return corsJson({ ok: false, error: "Origin not allowed for this domain" }, { status: 403 });
+  }
 
   // Dedupe within a browser session is handled SDK-side (sessionStorage);
   // here we only bound volume.

@@ -119,14 +119,20 @@ function parseDomainFilter(json: string | null, override?: number): number[] | n
       // Positive integers only: 0/negatives/NaN match nothing downstream, so
       // reject them here instead of emitting dead IN-list entries.
       fromStore = parsed.map(Number).filter((n) => Number.isInteger(n) && n > 0);
-      if (fromStore.length === 0) fromStore = null;
+      if (fromStore.length === 0) {
+        // Invalid stored filter must fail CLOSED (match nothing), never broaden
+        // to "no filter" (whole workspace). Use the impossible-id sentinel.
+        return [-1];
+      }
     }
   } catch {
-    fromStore = null;
+    // Corrupt filter JSON: fail closed, not broad.
+    return [-1];
   }
   if (override) {
     // Disjoint intersection must match NOTHING — returning [] would be
     // treated as "no filter" downstream and match the whole workspace.
+    // [-1] is the explicit impossible-domain sentinel (real ids are >0).
     if (fromStore) {
       const hit = fromStore.filter((id) => id === override);
       return hit.length > 0 ? hit : [-1];
@@ -145,29 +151,17 @@ function parseRules(json: string): SegmentRules | null {
     return null;
   }
   const rules = normalizeRules(parsed);
-  if (rules) return rules;
-  // Legacy compat: a saved segment with empty condition lists historically
-  // resolved to "everything" (old parseRules fell back to {groups:[]}).
-  // Preserve that contract; all other off-whitelist inputs fail closed.
-  if (
-    parsed &&
-    typeof parsed === "object" &&
-    Array.isArray((parsed as { groups?: unknown }).groups)
-  ) {
-    const groups = (parsed as { groups: unknown[] }).groups;
-    if (groups.length === 0) return { groups: [] };
-    if (
-      groups.every(
-        (g) =>
-          !!g &&
-          typeof g === "object" &&
-          Array.isArray((g as { conditions?: unknown }).conditions) &&
-          ((g as { conditions: unknown[] }).conditions.length === 0),
-      )
-    ) {
-      return { groups: [] };
-    }
+  if (rules) {
+    // Fail-closed: an explicitly empty ruleset ({groups:[]}) means "all
+    // subscribers" ONLY when stored intentionally. A group with ZERO
+    // conditions is never valid (normalizeRules rejects it) — a UI bug saving
+    // empty conditions must NOT mass-send to the workspace. Since
+    // normalizeRules already returned non-null here, groups are well-formed.
+    return rules;
   }
   // Fail closed: invalid/off-whitelist segment JSON matches nothing.
+  // NOTE: legacy compat that mapped empty-condition groups to {groups:[]}
+  // (match-everything) was REMOVED — it turned a UI save bug into a
+  // workspace-wide mass-send. Empty conditions now match nothing.
   return null;
 }

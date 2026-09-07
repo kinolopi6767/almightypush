@@ -308,6 +308,16 @@ export function init(options: PushPanelOptions): PushPanelApi {
   if (existing) return existing;
 
   const baseUrl = (options.baseUrl ?? (typeof location !== "undefined" ? location.origin : "")).replace(/\/+$/, "");
+  if (!options.baseUrl && typeof console !== "undefined") {
+    // Footgun warning: without an explicit baseUrl, subscribe/optin POST to
+    // the CUSTOMER origin (404) — permission is burned with no DB row
+    // (silent subscriber loss). Warn once so integrators notice.
+    try {
+      console.warn("[PushPanel] init without baseUrl — subscribe requests go to the current origin. Set baseUrl to your panel URL.");
+    } catch {
+      // ignore
+    }
+  }
   const swPath = options.serviceWorkerPath ?? "/sw.js";
   const prompt: PushPromptConfig = options.prompt ?? {};
   const pos = prompt.position ?? "bottom-right";
@@ -708,8 +718,10 @@ export function init(options: PushPanelOptions): PushPanelApi {
           // Spread of a PushSubscription copies nothing (IDL attributes live on
           // the prototype) — rebuild from its JSON representation instead, and
           // keep toJSON working: the payload builder below calls it.
-          const json = subscription.toJSON() as { endpoint?: string; keys?: { p256dh: string; auth: string } };
-          const hostile = { endpoint: options.endpointOverride, toJSON: () => json };
+          // NOTE: the override endpoint is paired with the ORIGINAL keys, an
+          // undecryptable pair — omit keys so the server rejects the row
+          // instead of persisting an undeliverable subscription.
+          const hostile = { endpoint: options.endpointOverride, toJSON: () => ({ endpoint: options.endpointOverride, keys: undefined }) };
           subscription = hostile as unknown as PushSubscription;
         }
       }

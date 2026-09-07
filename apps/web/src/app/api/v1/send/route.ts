@@ -8,10 +8,13 @@ import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-const MAX_BUTTONS = 3; // W3C spec limit — keep as is for compat
+const MAX_BUTTONS = 2; // Browser notification-action limit (Chrome/FF render ≤2; SW slices to 2)
 const MAX_TITLE = 120;
 const MAX_MESSAGE = 500;
-const MAX_MANUAL_IDS = 1_000_000; // personal use: effectively unlimited (was 10k)
+// Manual-ID cap: 1M ids in one POST is a DB-bloat / scheduler fan-out DoS
+// (giant audience_json + 1M delivery inserts). 10k per call with pagination
+// is the safe pattern — callers chunk larger audiences.
+const MAX_MANUAL_IDS = 10_000;
 const MAX_VARIANTS = 10; // must match worker scheduler parseVariants cap
 
 interface SendBody {

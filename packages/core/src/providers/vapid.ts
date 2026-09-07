@@ -8,8 +8,8 @@ interface WebPushError extends Error {
 
 /** Parse a Retry-After value (delay-seconds or HTTP-date) into ms, clamped. */
 export function parseRetryAfterMs(value: string | undefined, nowMs = Date.now()): number | undefined {
-  if (!value) return undefined;
-  const trimmed = value.trim();
+  if (typeof value !== "string" || !value) return undefined;
+  const trimmed = value.trim().slice(0, 200);
   if (/^\d+$/.test(trimmed)) {
     return Math.min(Number(trimmed) * 1000, 15 * 60_000);
   }
@@ -32,10 +32,16 @@ export const MAX_PUSH_PAYLOAD_BYTES = 4096;
 export function fitPushPayload(message: PushMessage, budget: number = MAX_PUSH_PAYLOAD_BYTES): PushMessage {
   const size = (m: PushMessage) => Buffer.byteLength(JSON.stringify(m), "utf8");
   if (size(message) <= budget) return message;
+  // Surrogate-safe truncation: slice by code points so emoji are never split.
   const cut = (s: string | undefined, maxChars: number): string | undefined => {
     if (!s) return s;
-    if (s.length <= maxChars) return s;
-    return `${s.slice(0, Math.max(0, maxChars - 1))}…`;
+    const chars = Array.from(s);
+    if (chars.length <= maxChars) return s;
+    // maxChars<=0 → empty string (never "…" alone): fixed overhead alone may
+    // exceed the budget, and the result must be allowed to shrink to empty
+    // so the tiered degradation below can still fit.
+    if (maxChars <= 0) return "";
+    return `${chars.slice(0, Math.max(0, maxChars - 1)).join("")}…`;
   };
   // Binary-search the body length: multibyte chars make byte math nonlinear.
   let body = message.body;
@@ -51,7 +57,13 @@ export function fitPushPayload(message: PushMessage, budget: number = MAX_PUSH_P
   }
   const shrunk: PushMessage = { ...message, body };
   if (size(shrunk) <= budget) return shrunk;
-  // Still over (giant URLs/buttons): trim the title as a last resort.
+  // Still over (giant URLs/buttons): degrade gracefully instead of failing
+  // 100% of deliveries — drop image, then buttons, then title, then body.
+  const noImage: PushMessage = { ...shrunk, image: undefined };
+  if (size(noImage) <= budget) return noImage;
+  const noButtons: PushMessage = { ...noImage, buttons: undefined };
+  if (size(noButtons) <= budget) return noButtons;
+  // Still over: trim the title as a last resort.
   const title = message.title;
   let lo = 0;
   let hi = title.length;
@@ -61,6 +73,39 @@ export function fitPushPayload(message: PushMessage, budget: number = MAX_PUSH_P
     else hi = mid - 1;
   }
   return { ...shrunk, title: cut(title, lo) ?? title };
+}
+
+/**
+ * Validate a push message before send: scheme allowlist + length clamps.
+ * A `javascript:` URL in payload → SW clients.openWindow(url) = XSS/open-redirect.
+ */
+export function validatePushMessage(message: PushMessage): void {
+  if (!message || typeof message.title !== "string" || message.title.trim().length === 0) {
+    throw new Error("Push title is required");
+  }
+  if (message.title.length > 200) throw new Error("Push title too long");
+  if (message.body && message.body.length > 1000) throw new Error("Push body too long");
+  const httpOnly = (u: string | undefined, label: string) => {
+    if (!u) return;
+    if (u.length > 2000) throw new Error(`${label} too long`);
+    if (!/^https?:\/\//i.test(u)) throw new Error(`${label} must be an http(s) URL`);
+  };
+  httpOnly(message.url, "Push URL");
+  httpOnly(message.icon, "Push icon");
+  httpOnly(message.image, "Push image");
+  if (message.buttons) {
+    if (message.buttons.length > 3) throw new Error("Too many buttons");
+    for (const b of message.buttons) {
+      if (!b.label || b.label.length > 50) throw new Error("Invalid button label");
+      httpOnly(b.url, "Button URL");
+    }
+  }
+}
+
+export function clampSendTtl(ttl: number | undefined): number {
+  if (ttl === undefined) return 86_400;
+  if (!Number.isFinite(ttl)) return 86_400;
+  return Math.min(Math.max(Math.floor(ttl), 0), 2_419_200);
 }
 
 /**
@@ -74,6 +119,27 @@ export class VapidPushProvider implements PushProvider {
     message: PushMessage,
     options: SendOptions,
   ): Promise<SendResult> {
+    // Fail-closed input validation (runtime callers may be plain JS).
+    try {
+      validatePushMessage(message);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Invalid push message" };
+    }
+    if (!subscription?.endpoint || typeof subscription.endpoint !== "string") {
+      return { ok: false, error: "Invalid subscription endpoint" };
+    }
+    // Production endpoints are https: (http allowed only for loopback dev).
+    try {
+      const u = new URL(subscription.endpoint);
+      const loopback = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "::1";
+      if (u.protocol !== "https:" && !(u.protocol === "http:" && loopback)) {
+        return { ok: false, error: "Subscription endpoint must be https:" };
+      }
+    } catch {
+      return { ok: false, error: "Invalid subscription endpoint" };
+    }
+    const ttl = clampSendTtl(options.ttl);
+    const topic = typeof options.topic === "string" ? options.topic.slice(0, 64) : options.topic;
     const payload = JSON.stringify(fitPushPayload(message));
     const vapidDetails = {
       subject: options.vapid.subject,
@@ -86,9 +152,9 @@ export class VapidPushProvider implements PushProvider {
         payload,
         {
           vapidDetails,
-          TTL: options.ttl ?? 86_400,
+          TTL: ttl,
           urgency: options.urgency ?? "normal",
-          topic: options.topic,
+          topic,
           // Hard cap per request — without it one black-holed push endpoint
           // holds a pool slot indefinitely (Node https has no default timeout),
           // which can stretch a send cycle past the stale-claim window.
@@ -100,7 +166,10 @@ export class VapidPushProvider implements PushProvider {
       const err = error as WebPushError;
       const retryAfterMs =
         err.statusCode === 429 ? parseRetryAfterMs(err.headers?.["retry-after"]) : undefined;
-      return { ok: false, statusCode: err.statusCode, error: err.message ?? String(error), retryAfterMs };
+      // Sanitize: web-push errors may contain endpoint/JWT internals — log
+      // only the status class, never the raw message with PII.
+      const safe = typeof err.statusCode === "number" ? `Push failed with status ${err.statusCode}` : "Push failed";
+      return { ok: false, statusCode: err.statusCode, error: safe, retryAfterMs };
     }
   }
 }

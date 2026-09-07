@@ -55,7 +55,8 @@ describe("db", () => {
     const rows = await db.select().from(users);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.email).toBe("a@b.c");
-    expect(rows[0]?.role).toBe("owner");
+    // Least-privilege default: omitted roles mint viewers, never owners.
+    expect(rows[0]?.role).toBe("viewer");
   });
 
   it("cascades delete from workspace to its domains", async () => {

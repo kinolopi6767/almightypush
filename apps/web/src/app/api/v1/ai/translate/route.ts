@@ -22,10 +22,14 @@ export async function POST(req: Request) {
   }
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
   const aiConfig = getAiConfig();
-  const translated = await translateText(parsed.data.text, parsed.data.lang, {
-    apiKey: aiConfig.apiKey,
-    model: aiConfig.model,
-    baseUrl: aiConfig.baseUrl,
-  });
-  return NextResponse.json({ ok: true, translated });
+  try {
+    const translated = await translateText(parsed.data.text, parsed.data.lang, {
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      baseUrl: aiConfig.baseUrl,
+    });
+    return NextResponse.json({ ok: true, translated });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Translation failed" }, { status: 502 });
+  }
 }

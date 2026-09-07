@@ -72,15 +72,31 @@ export function CampaignForm({
   if (state?.ok && state.id) router.push(`/dashboard/campaigns/${state.id}`);
  }, [state, router]);
 
- const applyTemplate = (id: string) => {
-  setTemplateId(id);
-  const t = templates.find((x) => String(x.id) === id);
-  if (t) {
-   if (t.title) setTitle(t.title);
-   if (t.message !== null) setMessage(t.message);
-   if (t.launch_url) setLaunchUrl(t.launch_url);
-  }
- };
+  const applyTemplate = (id: string) => {
+   setTemplateId(id);
+   const t = templates.find((x) => String(x.id) === id);
+   if (t) {
+    if (t.title) setTitle(t.title);
+    if (t.message !== null) setMessage(t.message);
+    if (t.launch_url) setLaunchUrl(t.launch_url);
+    // Templates carry icon/image/buttons too — dropping them on apply loses
+    // data (and editing a template with buttons then saving wipes them).
+    const tExtra = t as unknown as { icon_url?: string | null; image_url?: string | null; buttons_json?: string | null };
+    if (tExtra.icon_url) setIconUrl(tExtra.icon_url);
+    if (tExtra.image_url) setImageUrl(tExtra.image_url);
+    try {
+      const raw = tExtra.buttons_json;
+      if (raw) {
+        const parsed = JSON.parse(raw) as { label: string; url: string }[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setButtons(parsed.slice(0, 2).map((b) => ({ rid: nextRid(), label: String(b.label ?? "").slice(0, 24), url: String(b.url ?? "").slice(0, 500) })));
+        }
+      }
+    } catch {
+      // corrupt template buttons → keep current buttons
+    }
+   }
+  };
 
  const updateButton = (index: number, field: "label" | "url", value: string) => {
   setButtons((prev) => prev.map((b, i) => (i === index ? { ...b, [field]: value.slice(0, field === "label" ? 24 : 500) } : b)));
@@ -88,7 +104,7 @@ export function CampaignForm({
 
  const removeButton = (index: number) => setButtons((prev) => prev.filter((_, i) => i !== index));
 
- const addButton = () => setButtons((prev) => (prev.length >= 3 ? prev : [...prev, { rid: nextRid(), label: "", url: "" }]));
+  const addButton = () => setButtons((prev) => (prev.length >= 2 ? prev : [...prev, { rid: nextRid(), label: "", url: "" }]));
 
  const updateVariant = (i: number, patch: Partial<(typeof variants)[number]>) =>
   setVariants((prev) => prev.map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
@@ -396,13 +412,13 @@ export function CampaignForm({
        </button>
       </div>
      ))}
-     {buttons.length < 3 && (
+     {buttons.length < 2 && (
       <button
        type="button"
        onClick={addButton}
        className="btn btn-secondary btn-sm mt-2"
       >
-       + Add button
+       + Add button (max 2 — browser limit)
       </button>
      )}
      {/* Submit every touched row (even half-filled) so the server can

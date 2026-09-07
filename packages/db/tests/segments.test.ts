@@ -160,10 +160,19 @@ describe("estimateSegmentRules", () => {
     const segId = Number(
       db
         .insert(segments)
-        .values({ workspace_id: wsId, name: "all-devices", conditions_json: JSON.stringify({ groups: [{ logic: "AND", conditions: [] }] }) })
+        .values({ workspace_id: wsId, name: "all-devices", conditions_json: JSON.stringify({ groups: [] }) })
         .run().lastInsertRowid,
     );
+    // {groups:[]} = intentional match-all → 4. A group with EMPTY conditions
+    // is invalid and fail-closes to 0 (never a mass-send).
     expect(resolveSegment(db, { workspaceId: wsId, segmentId: segId }).count).toBe(4);
+    const badSegId = Number(
+      db
+        .insert(segments)
+        .values({ workspace_id: wsId, name: "bad", conditions_json: JSON.stringify({ groups: [{ logic: "AND", conditions: [] }] }) })
+        .run().lastInsertRowid,
+    );
+    expect(resolveSegment(db, { workspaceId: wsId, segmentId: badSegId }).count).toBe(0);
   });
 });
 

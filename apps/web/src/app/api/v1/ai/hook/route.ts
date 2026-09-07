@@ -28,14 +28,18 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
 
   const aiConfig = getAiConfig();
-  const angles = await generateHookAnglesAI(parsed.data.topic, parsed.data.count ?? 3, {
-    apiKey: aiConfig.apiKey,
-    model: aiConfig.model,
-    baseUrl: aiConfig.baseUrl,
-  });
-  const model = aiConfig.apiKey ? aiConfig.model : "heuristic-v1";
-  db.insert(aiGenerations)
-    .values({ workspace_id: wsId, kind: "hook", prompt: parsed.data.topic, output_json: JSON.stringify(angles), model })
-    .run();
-  return NextResponse.json({ ok: true, angles, model });
+  try {
+    const angles = await generateHookAnglesAI(parsed.data.topic, parsed.data.count ?? 3, {
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      baseUrl: aiConfig.baseUrl,
+    });
+    const model = aiConfig.apiKey ? aiConfig.model : "heuristic-v1";
+    db.insert(aiGenerations)
+      .values({ workspace_id: wsId, kind: "hook", prompt: parsed.data.topic, output_json: JSON.stringify(angles), model })
+      .run();
+    return NextResponse.json({ ok: true, angles, model });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Generation failed" }, { status: 502 });
+  }
 }

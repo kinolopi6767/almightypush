@@ -58,7 +58,9 @@ export async function POST(req: Request) {
   if (!domain) return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
 
   // Cross-origin guard: only the domain itself (or panel host) may set tags.
-  if (req.headers.get("origin") && !requestOriginAllowed(req, `https://${domain.name}/`, domain.name)) {
+  // Unconditional: curl (no Origin) must NOT bypass — fall back to
+  // subscribeUrl binding when Origin is absent (fail-closed).
+  if (!requestOriginAllowed(req, `https://${domain.name}/`, domain.name)) {
     return corsJson({ ok: false, error: "Origin not allowed for this domain" }, { status: 403 });
   }
 

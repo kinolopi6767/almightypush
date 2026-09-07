@@ -10,7 +10,7 @@ describe("enqueueAutomationCampaign (empty audience)", () => {
     const wsId = Number(db.insert(workspaces).values({ name: "W" }).run().lastInsertRowid);
     const domainId = Number(db.insert(domains).values({ name: "x.io", workspace_id: wsId }).run().lastInsertRowid);
     const automationId = Number(
-      db.insert(automations).values({ workspace_id: wsId, domain_id: domainId, name: "A", type: "push_on_publish" }).run()
+      db.insert(automations).values({ workspace_id: wsId, domain_id: domainId, name: "A", type: "push_on_publish", config_json: JSON.stringify({ payload: { title: "Hello" } }) }).run()
         .lastInsertRowid,
     );
 
@@ -19,6 +19,7 @@ describe("enqueueAutomationCampaign (empty audience)", () => {
       workspaceId: wsId,
       domainId,
       automationId,
+      payload: { title: "Hello" },
     });
 
     expect(result.queued).toBe(0);

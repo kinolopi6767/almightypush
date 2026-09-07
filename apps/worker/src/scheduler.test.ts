@@ -76,9 +76,9 @@ describe("runScheduler", () => {
     insertCampaign(db, workspaceId, domainId, { schedule_at: new Date(Date.now() - 60_000).toISOString() });
 
     const stats = runScheduler(db);
-    // campaignsStarted counts visited rows (existing semantics — see the
-    // no-domain test); the pause shows up as skipped + zero deliveries.
-    expect(stats).toEqual({ campaignsStarted: 1, deliveriesQueued: 0, skipped: 1 });
+    // Not counted as started: nothing was claimed or queued (paused rows stay
+    // `scheduled` and must not trigger fast-poll "started" activity).
+    expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 1 });
     expect(db.select().from(deliveries).all()).toHaveLength(0);
 
     const [campaign] = db.select().from(campaigns).all();
@@ -129,7 +129,8 @@ describe("runScheduler", () => {
     insertCampaign(db, workspaceId, domainId);
 
     const stats = runScheduler(db);
-    expect(stats).toEqual({ campaignsStarted: 1, deliveriesQueued: 0, skipped: 1 });
+    // Empty audience finalizes to done but counts no start (no work claimed).
+    expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 1 });
 
     const [campaign] = db.select().from(campaigns).all();
     expect(campaign?.status).toBe("done");
@@ -143,7 +144,7 @@ describe("runScheduler", () => {
     insertCampaign(db, workspaceId, null!, { schedule_at: new Date(Date.now() - 60_000).toISOString() });
 
     const stats = runScheduler(db);
-    expect(stats).toEqual({ campaignsStarted: 1, deliveriesQueued: 0, skipped: 1 });
+    expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 1 });
 
     const [campaign] = db.select().from(campaigns).all();
     expect(campaign?.status).toBe("failed");
@@ -168,10 +169,18 @@ describe("runScheduler", () => {
   });
 
   describe("stuck-campaign reaper", () => {
+    // The reaper ignores freshly-claimed rows (updated_at < 5min): a campaign
+    // claimed seconds ago with no deliveries yet is mid-fan-out, not crashed.
+    // Tests backdate updated_at past the guard via raw SQL ($onUpdateFn would
+    // otherwise bump it back to now on a drizzle update).
+    const backdate = (client: { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, id: number) =>
+      client.prepare("UPDATE campaigns SET updated_at = ? WHERE id = ?").run(new Date(Date.now() - 10 * 60_000).toISOString(), id);
+
     it("fails a sending campaign left with zero deliveries by a crash", () => {
       const { db, client } = createMemoryDb();
       const { workspaceId, domainId } = seed(db);
       const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      backdate(client as unknown as { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, stuckId);
 
       const stats = runScheduler(db);
       expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 0 });
@@ -186,6 +195,7 @@ describe("runScheduler", () => {
       const { db, client } = createMemoryDb();
       const { workspaceId, domainId } = seed(db);
       const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      backdate(client as unknown as { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, stuckId);
       db.insert(deliveries).values({ campaign_id: stuckId, subscriber_id: null, domain_id: domainId, status: "sent", sent_at: Date.now() }).run();
 
       runScheduler(db);
@@ -199,6 +209,7 @@ describe("runScheduler", () => {
       const { db, client } = createMemoryDb();
       const { workspaceId, domainId } = seed(db);
       const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      backdate(client as unknown as { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, stuckId);
       db.insert(deliveries).values({ campaign_id: stuckId, subscriber_id: null, domain_id: domainId, status: "unsubscribed", sent_at: Date.now() }).run();
 
       runScheduler(db);

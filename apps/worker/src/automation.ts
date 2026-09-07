@@ -1,5 +1,5 @@
-import { and, eq, sql } from "drizzle-orm";
-import { automations } from "@pushpanel/db";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { automations, subscribers } from "@pushpanel/db";
 import { assertPublicHttpUrl, hasCronSchedule, nextCronRun, parseAutomationConfig, sha256Hex, ssrfDispatcher, type AutomationConfig } from "@pushpanel/core";
 import { activeSubscriberIds, enqueueAutomationCampaign, recordAutomationRun, type AutomationPayload, type PushDb } from "@pushpanel/db";
 import Parser from "rss-parser";
@@ -74,6 +74,30 @@ export async function runAutomations(db: PushDb, now: Date = new Date()): Promis
     if (claimed.changes === 0) continue;
 
     const config = parseAutomationConfig(row.config_json);
+    // Fail-closed: corrupt config never sends (parse returns null). Record as
+    // failed so auto-pause eventually quarantines the broken row.
+    if (!config) {
+      stats.ran++;
+      stats.failed++;
+      const fails = (row.consecutive_failures ?? 0) + 1;
+      const autoPaused = fails >= MAX_CONSECUTIVE_FAILURES;
+      try {
+        db.update(automations)
+          .set({
+            last_run_at: nowIso,
+            next_run_at: autoPaused ? null : new Date(now.getTime() + FAILURE_RETRY_MINUTES * 60_000).toISOString(),
+            status: autoPaused ? "paused" : "active",
+            consecutive_failures: fails,
+            error: autoPaused ? `Auto-paused after ${fails} consecutive failures: Invalid automation config` : "Invalid automation config",
+          })
+          .where(eq(automations.id, row.id))
+          .run();
+        recordAutomationRun(db, row.id, "error", "Invalid automation config");
+      } catch {
+        void 0;
+      }
+      continue;
+    }
     const outcome = await handleAutomation(db, row, config, now);
     stats.ran++;
     if (outcome.ok) {
@@ -202,6 +226,23 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
         // 1M subs) in a single tick and stall the worker for minutes.
         const steps = config.steps ?? [];
         if (steps.length === 0) return { ok: false, campaigns: 0, queued: 0, error: "Drip sequence has no steps" };
+        // COUNT first: loading 1M ids into RAM before the fan-out guard fires
+        // OOMs the worker. Fail fast on size, then load.
+        let total = 0;
+        try {
+          const [c] = db
+            .select({ value: count() })
+            .from(subscribers)
+            .where(and(eq(subscribers.domain_id, row.domain_id), isNull(subscribers.unsubscribed_at)))
+            .limit(1)
+            .all();
+          total = c?.value ?? 0;
+        } catch {
+          total = 0;
+        }
+        if (total * steps.length > 100_000) {
+          return { ok: false, campaigns: 0, queued: 0, error: `Drip fan-out too large (${total} subs × ${steps.length} steps) — trigger per-subscriber instead` };
+        }
         // Load the audience ONCE and hand the same ids to every step:
         // enqueueAutomationCampaign would otherwise re-resolve (re-load) the
         // full id list per step — steps × 1M row loads on a large domain.

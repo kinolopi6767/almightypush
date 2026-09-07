@@ -27,6 +27,7 @@ export function createCipher(encKey?: string) {
       return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
     },
     decrypt(payload: string): string {
+      if (typeof payload !== "string" || payload.length > 100_000) throw new Error("Malformed encrypted payload");
       const parts = payload.split(":");
       // Strict arity: trailing garbage (v1:a:b:c:evil) must not be silently
       // ignored — base64 never contains ':', so exactly 4 parts are valid.
@@ -35,12 +36,17 @@ export function createCipher(encKey?: string) {
       if (version !== "v1" || !ivB64 || !tagB64 || !ctB64) {
         throw new Error("Malformed encrypted payload");
       }
-      const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivB64, "base64"));
-      decipher.setAuthTag(Buffer.from(tagB64, "base64"));
-      return Buffer.concat([
-        decipher.update(Buffer.from(ctB64, "base64")),
-        decipher.final(),
-      ]).toString("utf8");
+      const iv = Buffer.from(ivB64, "base64");
+      const tag = Buffer.from(tagB64, "base64");
+      const ct = Buffer.from(ctB64, "base64");
+      // Explicit length checks: base64 never throws, so a truncated payload
+      // must be rejected here instead of surfacing as a generic GCM failure.
+      if (iv.length !== IV_LEN) throw new Error("Malformed encrypted payload");
+      if (tag.length !== 16) throw new Error("Malformed encrypted payload");
+      if (ct.length === 0 || ct.length > 4_000_000) throw new Error("Malformed encrypted payload");
+      const decipher = createDecipheriv("aes-256-gcm", key, iv);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(ct), decipher.final()]).toString("utf8");
     },
   };
 }
@@ -52,16 +58,15 @@ export function sha256Hex(input: string): string {
 
 /** Constant-time comparison for API key / token checks. */
 export function safeEqual(a: string, b: string): boolean {
+  // Cap inputs before Buffer.alloc: an unbounded attacker-controlled header
+  // (e.g. a 10MB Authorization value) must not cause a 10MB allocation per
+  // request. All legitimate compared values (hashes, signatures, TOTP codes)
+  // are well under 4KB.
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length > 4096 || b.length > 4096) return false;
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
   if (ba.length !== bb.length) {
-    // Avoid early-return timing leak on length: compare dummy buffers of same length
-    const dummy = Buffer.alloc(Math.max(ba.length, bb.length));
-    try {
-      timingSafeEqual(dummy, dummy);
-    } catch {
-      // never throws for equal length
-    }
     return false;
   }
   return timingSafeEqual(ba, bb);

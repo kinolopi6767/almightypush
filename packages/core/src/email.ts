@@ -2,9 +2,13 @@ import { z } from "zod";
 
 export const emailBlockSchema = z.object({
   type: z.enum(["hero", "text", "button", "divider", "social", "product"]),
-  content: z.string().optional(),
-  url: z.string().url().optional(),
-  style: z.record(z.string()).optional(),
+  content: z.string().max(20_000).optional(),
+  url: z
+    .string()
+    .max(2000)
+    .optional()
+    .refine((u) => u === undefined || isSafeEmailUrl(u), { message: "URL must be http(s) or mailto:" }),
+  style: z.record(z.string().max(500)).optional(),
 });
 export type EmailBlock = z.infer<typeof emailBlockSchema>;
 
@@ -12,7 +16,24 @@ export const emailCampaignSchema = z.object({
   subject: z.string().trim().min(1).max(200),
   preheader: z.string().trim().max(200).optional().or(z.literal("")),
   html: z.string().max(500_000).optional().or(z.literal("")),
-  blocks_json: z.string().max(500_000).optional().or(z.literal("")),
+  blocks_json: z
+    .string()
+    .max(500_000)
+    .optional()
+    .or(z.literal(""))
+    .refine(
+      (v) => {
+        if (!v) return true;
+        try {
+          const parsed = JSON.parse(v) as unknown;
+          if (!Array.isArray(parsed) || parsed.length > 200) return false;
+          return parsed.every((b) => emailBlockSchema.safeParse(b).success);
+        } catch {
+          return false;
+        }
+      },
+      { message: "blocks_json must be a JSON array of ≤200 valid blocks" },
+    ),
   from_email: z.string().email().optional().or(z.literal("")),
   audience_json: z
     .string()
@@ -88,3 +109,5 @@ function isSafeEmailUrl(url: string | undefined): boolean {
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+export { isSafeEmailUrl };

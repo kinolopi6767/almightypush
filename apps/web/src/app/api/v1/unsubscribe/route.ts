@@ -39,9 +39,10 @@ export async function POST(req: Request) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlDom, 60) });
   }
   // Cross-origin guard: a third-party site must not unsubscribe a victim's
-  // subscription on another domain. Browsers always send Origin on POST.
+  // subscription on another domain. Unconditional — curl (no Origin) must
+  // NOT bypass (requestOriginAllowed falls back to subscribeUrl binding).
   const [dom] = db.select({ name: domains.name }).from(domains).where(eq(domains.id, domainId)).limit(1).all();
-  if (dom && req.headers.get("origin") && !requestOriginAllowed(req, `https://${dom.name}/`, dom.name)) {
+  if (dom && !requestOriginAllowed(req, `https://${dom.name}/`, dom.name)) {
     return corsJson({ ok: false, error: "Origin not allowed for this domain" }, { status: 403 });
   }
   const tokenHash = sha256Hex(endpoint);

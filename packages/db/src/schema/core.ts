@@ -23,8 +23,11 @@ export const users = sqliteTable(
     password_hash: text("password_hash"),
     totp_secret: text("totp_secret"),
     totp_enabled: integer("totp_enabled").notNull().default(0),
+    // Default viewer (least privilege): any user-creation path that omits
+    // role must NEVER mint owners (privesc). The /setup bootstrap sets
+    // role=owner explicitly for the first user.
     /** owner | admin | editor | viewer */
-    role: text("role").notNull().default("owner"),
+    role: text("role").notNull().default("viewer"),
     last_login_at: text("last_login_at"),
     ...timestamps(),
   },

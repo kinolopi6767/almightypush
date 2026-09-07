@@ -19,6 +19,17 @@ export interface EmailStats {
 export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStats {
   const nowIso = now.toISOString();
   const stats: EmailStats = { started: 0, sent: 0 };
+  // Reaper: crash between claim (sending) and done strands the row forever —
+  // no reaper existed. Reset `sending` rows untouched for 30min to scheduled.
+  try {
+    const cutoff = new Date(now.getTime() - 30 * 60_000).toISOString();
+    db.update(emailCampaigns)
+      .set({ status: "scheduled" })
+      .where(and(eq(emailCampaigns.status, "sending"), sql`(${emailCampaigns.updated_at} IS NULL OR ${emailCampaigns.updated_at} <= ${cutoff})`))
+      .run();
+  } catch {
+    // best-effort; main loop still runs
+  }
   const rows = db
     .select({ id: emailCampaigns.id, workspace_id: emailCampaigns.workspace_id, audience_json: emailCampaigns.audience_json })
     .from(emailCampaigns)
@@ -40,6 +51,10 @@ export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStat
         .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "scheduled")))
         .run();
       if (claimed.changes === 0) continue;
+      // Reap orphan: a crash between claim and done strands `sending` forever
+      // (no reaper existed). Rows claimed >30min ago with no progress are
+      // reset to scheduled for retry — terminal states are only written via
+      // the guarded WHERE(status='sending') below.
       const audience = resolveEmailAudience(db, row.workspace_id, row.audience_json);
       if (audience.length === 0) {
         db.update(emailCampaigns).set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: 0 }) }).where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "sending"))).run();

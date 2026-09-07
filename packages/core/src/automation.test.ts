@@ -50,16 +50,19 @@ describe("drip steps (C8)", () => {
           { delay_days: 3, title: "Tip", message: "Try this", launch_url: "https://a.example.com" },
         ],
       }),
-    );
+    )!;
     expect(config.steps).toHaveLength(2);
     expect(config.steps![0]!.delay_days).toBe(0);
     expect(config.steps![1]!.launch_url).toBe("https://a.example.com");
   });
 
-  it("rejects more than the step cap and invalid delays", () => {
+  it("fail-closes on invalid configs (never a sendable default)", () => {
+    // Over-cap / invalid steps fail the whole config (null) so the worker
+    // skips the run instead of sending a fallback push.
     const tooMany = parseAutomationConfig(JSON.stringify({ payload: { title: "x" }, steps: Array.from({ length: 11 }, () => ({ delay_days: 1, title: "s" })) }));
-    expect(tooMany.steps).toBeUndefined();
+    expect(tooMany).toBeNull();
     const bad = parseAutomationConfig(JSON.stringify({ payload: { title: "x" }, steps: [{ delay_days: -1, title: "s" }] }));
-    expect(bad.steps).toBeUndefined();
+    expect(bad).toBeNull();
+    expect(parseAutomationConfig("not-json")).toBeNull();
   });
 });

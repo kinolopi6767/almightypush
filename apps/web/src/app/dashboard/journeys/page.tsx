@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
+import { JourneyRowActions } from "./row-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,16 +29,16 @@ export default async function JourneysPage() {
     <div className="grid gap-3">
      {rows.map((r) => (
       <div key={r.id} className=" rounded-md border bg-card p-5">
-       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-         <p className="truncate font-medium">{r.name}</p>
-         <p className="mt-0.5 text-sm text-muted-foreground break-words">
-          Trigger: <span className="font-mono text-xs">{r.trigger_type}</span> · Status: <span className={r.status === "active" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}>{r.status}</span>
-          {r.next_run_at ? ` · next ${new Date(r.next_run_at).toLocaleString()}` : " · on demand"}
-         </p>
+        <div className="flex items-start justify-between gap-3">
+         <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{r.name}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground break-words">
+           Trigger: <span className="font-mono text-xs">{r.trigger_type}</span> · Status: <span className={r.status === "active" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}>{r.status}</span>
+           {r.next_run_at ? ` · next ${new Date(r.next_run_at).toLocaleString()}` : " · on demand"}
+          </p>
+         </div>
+         <JourneyRowActions id={r.id} status={r.status ?? "paused"} />
         </div>
-        <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">{r.status}</span>
-       </div>
        <details className="mt-3">
         <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">View canvas JSON</summary>
         <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs leading-relaxed break-words whitespace-pre-wrap">{(() => {

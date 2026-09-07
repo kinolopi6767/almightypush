@@ -17,6 +17,7 @@ export function StatCard({
  href,
  tone = "brand",
  className = "",
+ ariaLabel,
 }: {
  label: string;
  value: ReactNode;
@@ -26,6 +27,8 @@ export function StatCard({
  href?: string;
  tone?: "brand" | "ok" | "warn" | "info";
  className?: string;
+ /** Explicit accessible name — numeric values stringify to "" otherwise. */
+ ariaLabel?: string;
 }) {
  const body = (
   <>
@@ -45,15 +48,18 @@ export function StatCard({
   </>
  );
 
- const cls = `kpi ${className}`;
- const testId = `stat-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
- return href ? (
-  <Link href={href} className={cls} data-testid={testId} aria-label={`${label}: ${typeof value === "string" ? value : ""}`}>
-   {body}
-  </Link>
- ) : (
-  <div className={cls} data-testid={testId}>
-   {body}
-  </div>
- );
+  const cls = `kpi ${className}`;
+  const testId = `stat-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  // Numeric values produce "Label: " (empty) — stringify ReactNode text when
+  // no explicit ariaLabel is given.
+  const accessibleName = ariaLabel ?? `${label}: ${typeof value === "string" || typeof value === "number" ? String(value) : ""}`;
+  return href ? (
+   <Link href={href} className={cls} data-testid={testId} aria-label={accessibleName}>
+    {body}
+   </Link>
+  ) : (
+   <div className={cls} data-testid={testId} role="group" aria-label={accessibleName}>
+    {body}
+   </div>
+  );
 }

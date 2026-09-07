@@ -1,6 +1,6 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { campaigns, deliveries, subscribers } from "../schema";
+import { campaigns, deliveries, domains, subscribers } from "../schema";
 import { automations, automationRuns } from "../schema/marketing";
 import type { allTables } from "../schema";
 
@@ -44,16 +44,41 @@ export interface EnqueueResult {
 export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): EnqueueResult {
   const db = opts.db;
   const now = opts.now ?? new Date();
+  // Cross-tenant guard: the domain MUST belong to the calling workspace.
+  // Without this, mismatched caller args create cross-workspace campaigns and
+  // push to someone else's subscribers. Fail-closed (throw) — never send.
+  const [domain] = db
+    .select({ id: domains.id, workspace_id: domains.workspace_id })
+    .from(domains)
+    .where(eq(domains.id, opts.domainId))
+    .limit(1)
+    .all();
+  if (!domain || domain.workspace_id !== opts.workspaceId) {
+    throw new Error("Domain does not belong to workspace");
+  }
+  // Automation row must also belong to the workspace (unscoped reads could
+  // otherwise pull another tenant's payload/secret).
+  const [autoRow] = db
+    .select({ id: automations.id })
+    .from(automations)
+    .where(and(eq(automations.id, opts.automationId), eq(automations.workspace_id, opts.workspaceId)))
+    .limit(1)
+    .all();
+  if (!autoRow) throw new Error("Automation does not belong to workspace");
   const config = readAutomationConfig(db, opts.automationId, opts.workspaceId);
   const base = config?.payload ?? {};
+  const rawTitle = opts.payload?.title ?? base.title ?? "";
+  // Fail-closed: a corrupt config (or missing title) must NEVER degrade to a
+  // sendable "New update" default push. Throw so the caller skips the run.
+  if (typeof rawTitle !== "string" || rawTitle.trim().length === 0) {
+    throw new Error("Automation payload has no title — refusing to send");
+  }
   const payload: AutomationPayload = {
-    // Corrupt automation configs parse to an empty title (fail-open shape in
-    // parseAutomationConfig) — never create an untitled campaign from one.
-    title: (opts.payload?.title ?? base.title ?? "") || "New update",
-    message: opts.payload?.message ?? base.message,
-    icon_url: opts.payload?.icon_url ?? base.icon_url,
-    image_url: opts.payload?.image_url ?? base.image_url,
-    launch_url: opts.payload?.launch_url ?? base.launch_url,
+    title: rawTitle.trim().slice(0, 200),
+    message: (opts.payload?.message ?? base.message ?? null) as string | null,
+    icon_url: (opts.payload?.icon_url ?? base.icon_url ?? null) as string | null,
+    image_url: (opts.payload?.image_url ?? base.image_url ?? null) as string | null,
+    launch_url: (opts.payload?.launch_url ?? base.launch_url ?? null) as string | null,
   };
   const delaySeconds = opts.delaySeconds ?? config?.delay_seconds ?? 0;
 
@@ -76,7 +101,14 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
   if (delayed) values.schedule_at = new Date(now.getTime() + delaySeconds * 1000).toISOString();
 
   let subscriberIds = opts.subscriberIds;
-  if (subscriberIds === undefined) subscriberIds = activeSubscriberIds(db, opts.domainId);
+  if (subscriberIds === undefined) {
+    subscriberIds = activeSubscriberIds(db, opts.domainId);
+  } else {
+    // Scope caller-supplied IDs to the domain: filter out ids that are not
+    // active subscribers of THIS domain (prevents cross-tenant delivery when
+    // a stale/forged id list is passed).
+    subscriberIds = scopeSubscriberIdsToDomain(db, opts.domainId, subscriberIds);
+  }
 
   // Campaign row + delivery inserts. Deliveries are written in bounded
   // chunks (mirroring the scheduler) instead of one transaction over the
@@ -112,20 +144,52 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
 }
 
 /** All active (never unsubscribed) subscriber ids of a domain, oldest first. */
-export function activeSubscriberIds(db: PushDb, domainId: number): number[] {
-  const rows = db
+export function activeSubscriberIds(db: PushDb, domainId: number, opts: { limit?: number; offset?: number } = {}): number[] {
+  const limit = opts.limit !== undefined ? Math.min(Math.max(Math.floor(opts.limit), 1), 5000) : undefined;
+  const offset = opts.offset !== undefined ? Math.max(Math.floor(opts.offset), 0) : undefined;
+  const base = db
     .select({ id: subscribers.id })
     .from(subscribers)
     .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
-    .orderBy(subscribers.id)
-    .all();
+    .orderBy(subscribers.id);
+  const rows = (limit !== undefined ? base.limit(limit).offset(offset ?? 0) : base).all();
   return rows.map((r) => r.id);
+}
+
+/** Count active subscribers without loading ids (OOM-safe guard for fan-out). */
+export function countActiveSubscribers(db: PushDb, domainId: number): number {
+  const [row] = db
+    .select({ value: count() })
+    .from(subscribers)
+    .where(and(eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+    .limit(1)
+    .all();
+  return row?.value ?? 0;
+}
+
+/** Filter an explicit id list to active subscribers of the domain (chunked). */
+export function scopeSubscriberIdsToDomain(db: PushDb, domainId: number, ids: number[]): number[] {
+  const clean = [...new Set(ids.filter((id) => Number.isInteger(id) && (id as number) > 0))];
+  if (clean.length === 0) return [];
+  const out: number[] = [];
+  for (let i = 0; i < clean.length; i += 500) {
+    const slice = clean.slice(i, i + 500);
+    const rows = db
+      .select({ id: subscribers.id })
+      .from(subscribers)
+      .where(and(inArray(subscribers.id, slice), eq(subscribers.domain_id, domainId), isNull(subscribers.unsubscribed_at)))
+      .all();
+    for (const r of rows) out.push(r.id);
+  }
+  return out;
 }
 
 /** Per-run log row (observability). */
 export function recordAutomationRun(db: PushDb, automationId: number, status: "ok" | "error", detail?: string): void {
+  // Truncate: exception stacks / feed bodies would otherwise bloat the DB.
+  const safe = typeof detail === "string" && detail.length > 2000 ? detail.slice(0, 2000) : (detail ?? null);
   db.insert(automationRuns)
-    .values({ automation_id: automationId, status, detail: detail ?? null })
+    .values({ automation_id: automationId, status, detail: safe })
     .run();
 }
 
@@ -136,7 +200,10 @@ interface AutomationConfigRow {
 }
 
 function readAutomationConfig(db: PushDb, automationId: number, workspaceId?: number): AutomationConfigRow | null {
-  const where = workspaceId === undefined ? eq(automations.id, automationId) : and(eq(automations.id, automationId), eq(automations.workspace_id, workspaceId));
+  // Workspace scoping is REQUIRED at this layer (not optional): an unscoped
+  // read could pull another tenant's payload into a campaign.
+  if (workspaceId === undefined) return null;
+  const where = and(eq(automations.id, automationId), eq(automations.workspace_id, workspaceId));
   const [row] = db.select({ config_json: automations.config_json }).from(automations).where(where).limit(1).all();
   if (!row) return null;
   try {

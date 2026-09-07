@@ -18,12 +18,26 @@ export interface UrlCheckResult {
 export async function assertPublicHttpUrl(raw: string): Promise<UrlCheckResult> {
   let url: URL;
   try {
+    if (typeof raw !== "string" || raw.length > 2048) return { ok: false, url: null, error: "Invalid URL" };
     url = new URL(raw.trim());
   } catch {
     return { ok: false, url: null, error: "Invalid URL" };
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return { ok: false, url, error: "Only http/https URLs are allowed" };
+  }
+  // Reject embedded credentials (http://user:pass@host/) — they would leak to
+  // the upstream and enable phishing-via-redirect confusion.
+  if (url.username || url.password) {
+    return { ok: false, url, error: "URLs with credentials are not allowed" };
+  }
+  // Restrict ports to web traffic. Non-web ports (22/3306/6379/...) on public
+  // IPs enable port probing even when the fetch itself fails.
+  const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+  if (![80, 443].includes(port) && url.hostname !== "localhost") {
+    // Allow explicit opt-in only via private-upstream mode; otherwise reject.
+    const allowPrivate = process.env.ALLOW_PRIVATE_UPSTREAM === "1";
+    if (!allowPrivate) return { ok: false, url, error: "Only ports 80/443 are allowed" };
   }
 
   const allowPrivate = process.env.ALLOW_PRIVATE_UPSTREAM === "1";
@@ -99,8 +113,13 @@ export async function ssrfFetch(
   init: RequestInit = {},
   opts: { maxRedirects?: number } = { maxRedirects: 3 },
 ): Promise<Response> {
+  // A caller-supplied signal must NOT disable the timeout: combine both so a
+  // never-firing external signal can never hang the worker tick forever.
+  const timeoutSignal = AbortSignal.timeout(SSRF_DEFAULT_TIMEOUT_MS);
   const withTimeout: RequestInit =
-    init.signal == null ? { ...init, signal: AbortSignal.timeout(SSRF_DEFAULT_TIMEOUT_MS) } : init;
+    init.signal == null
+      ? { ...init, signal: timeoutSignal }
+      : { ...init, signal: AbortSignal.any([init.signal, timeoutSignal]) };
   let current = raw;
   for (let hop = 0; hop <= (opts.maxRedirects ?? 3); hop++) {
     const check = await assertPublicHttpUrl(current);
@@ -142,6 +161,7 @@ export function isPrivateIp(ip: string): boolean {
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (100.64.0.0/10)
     if (a === 192 && b === 0) return true; // IETF protocol assignments incl. 192.0.0.9/10
     if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+    if (a === 192 && b === 0 && c === 2) return true; // documentation TEST-NET-1 (192.0.2.0/24)
     if (a === 198 && b === 51 && c === 100) return true; // documentation TEST-NET-2 (198.51.100.0/24)
     if (a === 203 && b === 0 && c === 113) return true; // documentation TEST-NET-3 (203.0.113.0/24)
     if (a >= 224) return true;

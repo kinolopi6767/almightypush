@@ -195,6 +195,12 @@ ${safeCss}
     const existing = w.__pushpanel_instances__.get(options.domain);
     if (existing) return existing;
     const baseUrl = ((_a = options.baseUrl) != null ? _a : typeof location !== "undefined" ? location.origin : "").replace(/\/+$/, "");
+    if (!options.baseUrl && typeof console !== "undefined") {
+      try {
+        console.warn("[PushPanel] init without baseUrl \u2014 subscribe requests go to the current origin. Set baseUrl to your panel URL.");
+      } catch (e) {
+      }
+    }
     const swPath = (_b = options.serviceWorkerPath) != null ? _b : "/sw.js";
     const prompt = (_c = options.prompt) != null ? _c : {};
     const pos = (_d = prompt.position) != null ? _d : "bottom-right";
@@ -535,8 +541,7 @@ ${safeCss}
             } catch (e) {
             }
           } else {
-            const json = subscription.toJSON();
-            const hostile = { endpoint: options.endpointOverride, toJSON: () => json };
+            const hostile = { endpoint: options.endpointOverride, toJSON: () => ({ endpoint: options.endpointOverride, keys: void 0 }) };
             subscription = hostile;
           }
         }

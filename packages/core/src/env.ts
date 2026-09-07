@@ -26,7 +26,20 @@ export const baseEnvSchema = z
     /** Bootstrap owner account created on first run (email only; password set via /setup). */
     OWNER_EMAIL: z.string().email().optional(),
     OWNER_NAME: z.string().min(1).optional(),
-    DEFAULT_TIMEZONE: z.string().default("UTC"),
+    DEFAULT_TIMEZONE: z
+      .string()
+      .default("UTC")
+      .refine(
+        (tz) => {
+          try {
+            Intl.DateTimeFormat(undefined, { timeZone: tz });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: "DEFAULT_TIMEZONE must be a valid IANA timezone" },
+      ),
     /** When 1, X-Forwarded-For is trusted for rate limiting (behind reverse proxy). */
     TRUST_PROXY: z.enum(["0", "1"]).optional(),
     /** You.com API key for web-grounded AI (Search + Research). Free tier works without it. */
@@ -39,6 +52,11 @@ export const baseEnvSchema = z
       if (!data.APP_ENC_KEY) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_ENC_KEY"], message: "APP_ENC_KEY is required in production (64 hex chars)" });
       if (!data.AUTH_SECRET) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["AUTH_SECRET"], message: "AUTH_SECRET is required in production" });
       if (!data.APP_URL) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_URL"], message: "APP_URL is required in production (https://...)" });
+      // ALLOW_PRIVATE_UPSTREAM disables the SSRF guard — it must never be on
+      // in production, even if set accidentally in the environment.
+      if ((process.env.ALLOW_PRIVATE_UPSTREAM ?? "") === "1") {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ALLOW_PRIVATE_UPSTREAM"], message: "ALLOW_PRIVATE_UPSTREAM=1 is forbidden in production" });
+      }
     }
   });
 

@@ -31,7 +31,9 @@ const createCampaignSchema = z.object({
   imageUrl: z.string().trim().pipe(z.string().refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL")).optional().or(z.literal("")),
   buttons: z
     .array(z.object({ label: z.string().trim().min(1, "Button label is required").max(24), url: z.string().trim().refine((u) => /^https?:\/\//i.test(u), "Button URL must be http(s)") }))
-    .max(3, "At most 3 action buttons")
+    // Chrome/Edge/Firefox render at most 2 notification actions — the service
+    // worker slices to 2, so accepting a 3rd here would silently drop it.
+    .max(2, "At most 2 action buttons (browser limit)")
     .default([]),
   schedule: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, "Invalid schedule time").optional().or(z.literal("")),
   audienceKind: z.enum(["all", "segment"]).default("all"),

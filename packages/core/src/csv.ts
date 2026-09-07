@@ -5,7 +5,11 @@
  */
 
 /** Split a CSV document into rows of cells, handling quotes, CRLF and BOM. */
-export function parseCsv(text: string): string[][] {
+export function parseCsv(text: string, opts: { maxBytes?: number; maxRows?: number } = {}): string[][] {
+  const maxBytes = opts.maxBytes ?? 10_000_000;
+  const maxRows = opts.maxRows ?? 100_000;
+  if (typeof text !== "string") throw new Error("Invalid CSV input");
+  if (text.length > maxBytes) throw new Error(`CSV too large (max ${maxBytes} bytes)`);
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -60,6 +64,7 @@ export function parseCsv(text: string): string[][] {
     }
     cell += ch;
     i += 1;
+    if (rows.length > maxRows) throw new Error(`CSV has too many rows (max ${maxRows})`);
   }
   if (inQuotes) {
     row.push(cell);
@@ -77,8 +82,9 @@ export function csvCell(value: string | null | undefined): string {
   // CSV formula injection defense: spreadsheet apps interpret cells starting
   // with = + - @ TAB CR LF as formulas/DDE. Attacker-controlled fields
   // (browser, os, city… via the public subscribe API) must never execute on
-  // export. Newline included: a quoted cell can begin with one.
-  if (/^[=+\-@\t\r\n]/.test(str)) str = `'${str}`;
+  // export. Newline included: a quoted cell can begin with one. Excel also
+  // trims leading spaces, so " =1+1" executes — check after stripping.
+  if (/^[\s]*[=+\-@\t\r\n]/.test(str)) str = `'${str}`;
   return `"${str.replace(/"/g, '""')}"`;
 }
 

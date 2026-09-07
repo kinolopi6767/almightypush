@@ -66,7 +66,7 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
    : undefined,
  );
 
- const [totalRow, activeRow, unsubRow, list] = await Promise.all([
+  const [totalRow, activeRow, unsubRow, filteredRow] = await Promise.all([
   db.select({ value: count() }).from(subscribers).where(eq(subscribers.domain_id, domainId)).get(),
   db
    .select({ value: count() })
@@ -78,7 +78,19 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
    .from(subscribers)
    .where(and(eq(subscribers.domain_id, domainId), isNotNull(subscribers.unsubscribed_at)))
    .get(),
-  db
+  db.select({ value: count() }).from(subscribers).where(where).get(),
+  ]);
+
+  const total = totalRow?.value ?? 0;
+  const active = activeRow?.value ?? 0;
+  const unsubscribed = unsubRow?.value ?? 0;
+  // Page count MUST use the filtered count (same WHERE as the list) — using
+  // the unfiltered total shows phantom pages when q/status filters are active.
+  const filtered = filteredRow?.value ?? 0;
+  const pages = Math.max(1, Math.ceil(filtered / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+
+  const list = db
    .select({
     id: subscribers.id,
     browser: subscribers.browser,
@@ -96,14 +108,8 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
    .where(where)
    .orderBy(desc(subscribers.id))
    .limit(PAGE_SIZE)
-   .offset((page - 1) * PAGE_SIZE)
-   .all(),
- ]);
-
- const total = totalRow?.value ?? 0;
- const active = activeRow?.value ?? 0;
- const unsubscribed = unsubRow?.value ?? 0;
- const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+   .offset((safePage - 1) * PAGE_SIZE)
+   .all();
 
  const qs = (extra: Record<string, string | undefined>) => {
   const p = new URLSearchParams();
@@ -221,20 +227,20 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
    {pages > 1 && (
     <div className="flex items-center justify-between text-sm">
      <p className="text-muted-foreground">
-      Page {page} of {pages}
+      Page {safePage} of {pages} ({filtered} matching)
      </p>
      <div className="flex gap-2">
-      {page > 1 && (
+      {safePage > 1 && (
        <Link
-        href={qs({ page: String(page - 1) })}
+        href={qs({ page: String(safePage - 1) })}
         className="btn btn-secondary"
        >
         ← Previous
        </Link>
       )}
-      {page < pages && (
+      {safePage < pages && (
        <Link
-        href={qs({ page: String(page + 1) })}
+        href={qs({ page: String(safePage + 1) })}
         className="btn btn-secondary"
        >
         Next →

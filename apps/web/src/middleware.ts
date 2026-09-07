@@ -1,11 +1,36 @@
 import NextAuth from "next-auth";
 import { authConfig } from "@/auth.config";
 
-const PUBLIC_PATHS = ["/login", "/setup", "/demo", "/invite", "/api/auth", "/api/health", "/api/v1", "/p/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/sdk/", "/sw.js"];
+const PUBLIC_PATHS = ["/login", "/setup", "/demo", "/invite", "/api/auth", "/api/health", "/p/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/sdk/", "/sw.js"];
+
+// Fail-closed public API allowlist: every FUTURE /api/v1/* route defaults to
+// authenticated. Only the SDK/browser routes that must work without a panel
+// session are listed here — each still enforces its own origin/rate-limit/HMAC
+// checks. Server-to-server routes (send/stats/track) and panel authed routes
+// (ai/*, journeys, test-connection) are intentionally NOT public at the edge.
+const PUBLIC_V1_PREFIXES = [
+  "/api/v1/info",
+  "/api/v1/subscribe",
+  "/api/v1/resubscribe",
+  "/api/v1/unsubscribe",
+  "/api/v1/tags",
+  "/api/v1/optin",
+  "/api/v1/click",
+  "/api/v1/lp/",
+  "/api/v1/plugin/",
+  "/api/v1/openapi.json",
+  "/api/v1/automations/",
+];
 
 /** Segment-aware public match: "/api/v1" must not match "/api/v1xyz". */
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => (p.endsWith("/") ? pathname.startsWith(p) : pathname === p || pathname.startsWith(`${p}/`)));
+  if (PUBLIC_PATHS.some((p) => (p.endsWith("/") ? pathname.startsWith(p) : pathname === p || pathname.startsWith(`${p}/`)))) {
+    return true;
+  }
+  if (pathname.startsWith("/api/v1/") || pathname === "/api/v1") {
+    return PUBLIC_V1_PREFIXES.some((p) => pathname === p || pathname.startsWith(p));
+  }
+  return false;
 }
 
 const { auth } = NextAuth(authConfig);

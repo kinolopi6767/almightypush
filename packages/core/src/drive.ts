@@ -86,7 +86,14 @@ export async function uploadToGDrive(opts: {
   mimeType?: string;
   folderId?: string;
 }): Promise<{ id: string; webViewLink?: string }> {
-  const boundary = `pushpanel_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const { randomBytes } = await import("node:crypto");
+  const boundary = `pushpanel_${Date.now()}_${randomBytes(8).toString("hex")}`;
+  if (typeof opts.fileName !== "string" || opts.fileName.length === 0 || opts.fileName.length > 200) {
+    throw new Error("Invalid fileName");
+  }
+  if (opts.folderId && (typeof opts.folderId !== "string" || opts.folderId.length > 200)) {
+    throw new Error("Invalid folderId");
+  }
   const metadata: Record<string, unknown> = { name: opts.fileName };
   if (opts.folderId) metadata.parents = [opts.folderId];
 
@@ -106,8 +113,10 @@ export async function uploadToGDrive(opts: {
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Drive upload failed ${res.status}: ${body.slice(0, 500)}`);
+    const text = await res.text().catch(() => "");
+    // Sanitize: Drive error bodies may echo tokens/HTML — never propagate raw.
+    const safe = text.replace(/ya29\.[A-Za-z0-9_-]+/g, "[token]").replace(/<[^>]*>/g, " ").slice(0, 300);
+    throw new Error(`Drive upload failed ${res.status}: ${safe}`);
   }
   return (await res.json()) as { id: string; webViewLink?: string };
 }

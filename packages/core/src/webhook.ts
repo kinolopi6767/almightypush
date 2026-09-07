@@ -14,9 +14,16 @@ export function signWebhook(secret: string, body: string | Buffer, timestamp?: n
 }
 
 export function verifyWebhook(secret: string, body: string | Buffer, signature: string | null | undefined, timestamp?: number): boolean {
-  if (!signature) return false;
-  const [scheme, hex] = signature.split("=", 2);
+  if (!signature || typeof signature !== "string") return false;
+  if (typeof secret !== "string" || secret.length < 16) return false;
+  // Strict parse: exactly one "=", lowercase 64-hex digest. signature.split("=",2)
+  // would accept "sha256=<valid>=evil" (malleable) — reject any extra "=".
+  const eq = signature.indexOf("=");
+  if (eq < 0 || signature.indexOf("=", eq + 1) !== -1) return false;
+  const scheme = signature.slice(0, eq);
+  const hex = signature.slice(eq + 1);
   if (scheme !== "sha256" || !hex) return false;
+  if (!/^[0-9a-f]{64}$/.test(hex)) return false;
   // No downgrade: when the caller enforces timestamps, a body-only signature
   // (timestamp omitted) must not verify. Callers that pass a timestamp get
   // timestamp-bound verification; callers that pass undefined get body-only

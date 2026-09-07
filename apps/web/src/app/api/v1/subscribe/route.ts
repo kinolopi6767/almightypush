@@ -228,6 +228,8 @@ function fireWelcomeAutomations(domainId: number, workspaceId: number, subscribe
     .all();
   for (const row of rows) {
     const config = parseAutomationConfig(row.config_json);
+    // Fail-closed: skip broken automation configs — never send a default push.
+    if (!config) continue;
     try {
       if (row.type === "drip") {
         // Each step becomes its own campaign, delayed from the previous step.

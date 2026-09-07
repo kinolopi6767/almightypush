@@ -66,16 +66,21 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
     // permanently stalls the whole send pipeline.
     try {
       const outcome = startCampaign(db, row, nowIso);
-      stats.campaignsStarted++;
+      // Only count real starts (queued>0) as activity — paused/empty/failed
+      // rows must not trigger fast-poll + "started" log spam.
+      if (outcome.queued > 0) stats.campaignsStarted++;
       stats.deliveriesQueued += outcome.queued;
       stats.skipped += outcome.skipped;
     } catch {
       stats.skipped++;
       try {
-        // Mark failed so it never re-matches the due-campaigns query.
+        // Mark failed regardless of current status: failures BEFORE the
+        // scheduled→sending CAS leave the row `scheduled` (the old code only
+        // matched `sending`, so pre-claim poison pills retried every 5s
+        // forever). Claiming the row to failed here breaks the hot loop.
         db.update(campaigns)
           .set({ status: "failed" })
-          .where(and(eq(campaigns.id, row.id), eq(campaigns.status, "sending")))
+          .where(eq(campaigns.id, row.id))
           .run();
       } catch {
         void 0;
@@ -86,12 +91,18 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
 }
 
 function reapStuckCampaigns(db: PushDb, nowIso: string): void {
+  // Multi-worker race guard: a campaign claimed seconds ago (scheduled→sending
+  // CAS done, first delivery chunk not yet inserted) looks identical to a
+  // crash-orphaned row. Only reap rows whose updated_at is older than 5 min —
+  // fresh claims are left alone for the owning worker to fill.
+  const cutoff = new Date(Date.parse(nowIso) - 5 * 60_000).toISOString();
   const stuck = db
     .select({ id: campaigns.id })
     .from(campaigns)
     .where(
       and(
         eq(campaigns.status, "sending"),
+        sql`(${campaigns.updated_at} IS NULL OR ${campaigns.updated_at} <= ${cutoff})`,
         sql`NOT EXISTS (SELECT 1 FROM deliveries WHERE ${deliveries.campaign_id} = ${campaigns.id} AND ${deliveries.status} IN ('queued', 'sending'))`,
       ),
     )
@@ -140,6 +151,25 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
   // Atomic claim: only the worker that flips scheduled→sending may enqueue.
   // Two workers sharing the SQLite file would otherwise both resolve the
   // audience and insert duplicate deliveries for every subscriber.
+  // non_clickers readiness pre-check BEFORE the claim: resolving while the
+  // source is still sending would finalize an empty retarget as done. Stay
+  // scheduled and retry next tick instead.
+  try {
+    const pre = campaign.audience_json ? (JSON.parse(campaign.audience_json) as { kind?: string; source_campaign_id?: number }) : {};
+    if (pre.kind === "non_clickers" && Number.isInteger(pre.source_campaign_id)) {
+      const [source] = db
+        .select({ status: campaigns.status })
+        .from(campaigns)
+        .where(eq(campaigns.id, pre.source_campaign_id as number))
+        .limit(1)
+        .all();
+      if (!source || source.status === "sending" || source.status === "scheduled") {
+        return { queued: 0, skipped: 1 };
+      }
+    }
+  } catch {
+    // Corrupt audience JSON → fall through to fail-closed resolve (empty → done/failed).
+  }
   const claimed = db
     .update(campaigns)
     .set({ status: "sending" })
@@ -176,7 +206,7 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
     const slice = audience.slice(i, i + CHUNK);
     db.transaction((tx) => {
       for (const subscriberId of slice) {
-        const variant = variants ? pickVariant(subscriberId, variants) : campaign.title_b ? (subscriberId % 2 === 0 ? "a" : "b") : null;
+        const variant = variants ? pickVariant(subscriberId, variants, campaign.id) : campaign.title_b ? (subscriberId % 2 === 0 ? "a" : "b") : null;
         tx.insert(deliveries)
           .values({
             campaign_id: campaign.id,
@@ -248,7 +278,7 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
     }
     if (!sourceCampaignId) return [];
     const rows = db
-      .select({ id: subscribers.id })
+      .selectDistinct({ id: subscribers.id })
       .from(deliveries)
       .innerJoin(subscribers, eq(subscribers.id, deliveries.subscriber_id))
       .leftJoin(events, and(eq(events.delivery_id, deliveries.id), eq(events.type, "clicked")))
@@ -312,12 +342,14 @@ function parseVariants(json: string | null, titleB: string | null): { key: strin
   return null;
 }
 
-function pickVariant(subscriberId: number, variants: { key: string; weight: number }[]): string {
+function pickVariant(subscriberId: number, variants: { key: string; weight: number }[], campaignId = 0): string {
   const total = variants.reduce((s, v) => s + v.weight, 0);
-  // deterministic weighted pick via subscriberId hash (LCG)
+  // Deterministic weighted pick hashed on subscriber+campaign: hashing only
+  // subscriberId assigned the SAME variant key in every campaign (breaks
+  // experiment fairness). Mixing campaignId restores per-campaign rotation.
   // Math.imul keeps the multiply in int32 — plain * overflows float precision
   // past 2^53 and skews distribution for large subscriber ids.
-  let h = Math.imul(subscriberId, 2654435761) >>> 0;
+  let h = Math.imul(subscriberId ^ Math.imul(campaignId, 2246822519), 2654435761) >>> 0;
   h = (h ^ (h >>> 16)) >>> 0;
   const r = h % total;
   let acc = 0;

@@ -150,16 +150,26 @@ export function normalizeRules(input: unknown): SegmentRules | null {
   const groups = (input as { groups?: unknown }).groups;
   if (!Array.isArray(groups)) return null;
   if (groups.length === 0) return { groups: [] }; // empty = everything
+  // DoS caps: without these a 5k-group × 200-item payload compiles to a
+  // million-placeholder statement (SQLITE_ERROR / worker OOM).
+  if (groups.length > 10) return null;
+  let totalConditions = 0;
+  let totalParams = 0;
   const out: SegmentGroup[] = [];
   for (const g of groups) {
     if (!g || typeof g !== "object") return null;
     const { logic, conditions } = g as { logic?: unknown; conditions?: unknown };
     if (logic !== "AND" && logic !== "OR") return null;
     if (!Array.isArray(conditions) || conditions.length === 0) return null;
+    if (conditions.length > 25) return null;
     const normalized: SegmentCondition[] = [];
     for (const c of conditions) {
       const nc = normalizeCondition(c);
       if (!nc) return null;
+      totalConditions++;
+      if (totalConditions > 50) return null;
+      totalParams += Array.isArray(nc.value) ? nc.value.length : 1;
+      if (totalParams > 500) return null;
       normalized.push(nc);
     }
     out.push({ logic, conditions: normalized });
@@ -202,7 +212,9 @@ function compileCondition(cond: SegmentCondition, alias: string, params: unknown
   if (cond.field === "opened_campaign") {
     if (cond.op !== "equals") throw new Error(`Unsupported operator for opened_campaign: ${cond.op}`);
     const v = Array.isArray(cond.value) ? cond.value[0] : cond.value;
-    const p = push(params, Number(v));
+    const n = Number(v);
+    if (!Number.isFinite(n)) throw new Error(`Invalid value for opened_campaign: must be a finite number`);
+    const p = push(params, n);
     return `EXISTS (SELECT 1 FROM events e WHERE e.subscriber_id = ${alias}.id AND e.campaign_id = ${p} AND e.type = 'clicked')`;
   }
   if (cond.field === "campaign_total_opens") {
@@ -210,7 +222,9 @@ function compileCondition(cond: SegmentCondition, alias: string, params: unknown
       throw new Error(`Unsupported operator for campaign_total_opens: ${cond.op}`);
     }
     const v = Array.isArray(cond.value) ? cond.value[0] : cond.value;
-    const p = push(params, Number(v));
+    const n = Number(v);
+    if (!Number.isFinite(n)) throw new Error(`Invalid value for campaign_total_opens: must be a finite number`);
+    const p = push(params, n);
     const sqlOp = cond.op === "equals" ? "=" : cond.op === "gt" ? ">" : cond.op === "gte" ? ">=" : cond.op === "lt" ? "<" : "<=";
     return `(SELECT COUNT(*) FROM events e WHERE e.subscriber_id = ${alias}.id AND e.campaign_id IS NOT NULL AND e.type = 'clicked') ${sqlOp} ${p}`;
   }

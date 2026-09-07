@@ -13,11 +13,17 @@ export default async function AIStudioPage() {
  const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : 0;
  const gens = wsId ? db.select().from(aiGenerations).where(eq(aiGenerations.workspace_id, wsId)).orderBy(desc(aiGenerations.id)).limit(20).all() : [];
 
- // Check if you.com grounding is available (env or panel secret)
- const hasYdcKey =
-  !!process.env.YDC_API_KEY ||
-  !!process.env.YOU_API_KEY ||
-  !!db.select().from(settings).where(eq(settings.key, "secret:ydc_api_key")).get?.();
+  // Check if you.com grounding is available (env or panel secret).
+  // NOTE: db.select()...get is a FUNCTION — forgetting the call (`.get?.()`
+  // without parens) is always truthy and the badge lies "active" forever.
+  let hasDbYdcKey = false;
+  try {
+    const row = db.select().from(settings).where(eq(settings.key, "secret:ydc_api_key")).get();
+    hasDbYdcKey = !!row;
+  } catch {
+    hasDbYdcKey = false;
+  }
+  const hasYdcKey = !!process.env.YDC_API_KEY || !!process.env.YOU_API_KEY || hasDbYdcKey;
  return (
   <div className="space-y-6">
    <PageHeader eyebrow="System · AI Studio"

@@ -52,8 +52,25 @@ export function createSqlite(path: string, pragmas = DEFAULT_PRAGMAS): Database.
     mkdirSync(dirname(path), { recursive: true });
   }
   const client = new Database(path);
+  // Pragma allowlist: keys are interpolated into `PRAGMA <key> = <value>`,
+  // so caller-supplied keys must never reach the template unchecked (SQL
+  // injection via pragma name). Values are numbers or single-quoted with
+  // embedded quotes escaped.
+  const ALLOWED_PRAGMAS = new Set([
+    "journal_mode",
+    "busy_timeout",
+    "foreign_keys",
+    "synchronous",
+    "cache_size",
+    "journal_size_limit",
+    "wal_checkpoint",
+    "temp_store",
+    "mmap_size",
+  ]);
   for (const [key, value] of Object.entries(pragmas)) {
-    client.pragma(`${key} = ${typeof value === "number" ? value : `'${value}'`}`);
+    if (!ALLOWED_PRAGMAS.has(key) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    const safeValue = typeof value === "number" ? value : `'${String(value).replace(/'/g, "''")}'`;
+    client.pragma(`${key} = ${safeValue}`);
   }
   return client;
 }
@@ -148,6 +165,9 @@ export async function backupDatabase(
   db: BetterSQLite3Database<typeof allTables>,
   target: string,
 ): Promise<void> {
+  const { mkdirSync } = await import("node:fs");
+  const { dirname } = await import("node:path");
+  mkdirSync(dirname(target), { recursive: true });
   const client = (db as unknown as { $client: Database.Database }).$client;
   await client.backup(target);
 }
@@ -170,6 +190,17 @@ const globalForDb = globalThis as unknown as { __pushpanelDb?: BetterSQLite3Data
 export function getDb(path?: string): BetterSQLite3Database<typeof allTables> {
   if (!globalForDb.__pushpanelDb) {
     globalForDb.__pushpanelDb = createDb(resolveDbPath(path), { migrate: true });
+    // Remember the resolved path: a second caller with a DIFFERENT path must
+    // never silently get the old DB (data would go to the wrong file).
+    (globalForDb as unknown as { __pushpanelDbPath?: string }).__pushpanelDbPath = resolveDbPath(path);
+    return globalForDb.__pushpanelDb;
+  }
+  if (path !== undefined) {
+    const resolved = resolveDbPath(path);
+    const first = (globalForDb as unknown as { __pushpanelDbPath?: string }).__pushpanelDbPath;
+    if (first !== undefined && first !== resolved) {
+      throw new Error(`getDb path mismatch: initialized with ${first}, requested ${resolved}`);
+    }
   }
   return globalForDb.__pushpanelDb;
 }

@@ -100,8 +100,19 @@ export async function createSnapshot(db: PushDb, dbFile: string, kind: "manual" 
     // size 0 is acceptable — row presence is what matters
   }
 
-  db.insert(backups).values({ kind, status: "done", size_bytes: size, location: target }).run();
-  writeSetting(db, "last_backup_at", new Date(nowMs).toISOString());
+  // Success-path writes must not throw out of the scheduler: a locked DB or
+  // full disk here would otherwise hammer every tick (no cooldown recorded)
+  // and abort the rest of the worker tick. Record best-effort.
+  try {
+    db.insert(backups).values({ kind, status: "done", size_bytes: size, location: target }).run();
+  } catch {
+    return false;
+  }
+  try {
+    writeSetting(db, "last_backup_at", new Date(nowMs).toISOString());
+  } catch {
+    // Row exists; marker loss only causes an extra snapshot next interval.
+  }
 
   // Fire-and-forget Google Drive upload (disabled by default, best-effort)
   void tryUploadToDrive(db, target).catch(() => {});

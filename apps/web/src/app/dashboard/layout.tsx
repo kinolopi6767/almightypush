@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { SignOutButton } from "@/components/sign-out-button";
 import { RailToggle } from "@/components/rail-toggle";
 import { ConsoleBreadcrumb } from "@/components/console-breadcrumb";
+import { HealthBadge } from "@/components/health-badge";
 import { db } from "@/lib/db";
 import { workspaces } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
@@ -136,13 +137,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </Link>
             <div className="hidden min-w-0 items-center gap-2 sm:flex">
               <ConsoleBreadcrumb workspaceName={workspaceName} />
-              <Link
-                href="/dashboard/status"
-                className="badge badge-ok ml-1 hidden shrink-0 md:inline-flex"
-              >
-                <span className="badge-dot livedot pulsing" aria-hidden />
-                System operational
-              </Link>
+              <HealthBadge />
             </div>
           </div>
      <div className="flex shrink-0 items-center gap-2">
