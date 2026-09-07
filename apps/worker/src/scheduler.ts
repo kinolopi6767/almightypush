@@ -100,10 +100,13 @@ function reapStuckCampaigns(db: PushDb, nowIso: string): void {
     .all();
   for (const row of stuck) {
     try {
+      // Mirror finalizeCampaigns semantics exactly: a 410/404-cleaned
+      // (`unsubscribed`) delivery is a successful push-service handshake, not
+      // a failure — an all-dead-token campaign finishes `done` on both paths.
       const [sentRow] = db
         .select({ value: count() })
         .from(deliveries)
-        .where(and(eq(deliveries.campaign_id, row.id), eq(deliveries.status, "sent")))
+        .where(and(eq(deliveries.campaign_id, row.id), inArray(deliveries.status, ["sent", "unsubscribed"])))
         .all();
       const anySent = (sentRow?.value ?? 0) > 0;
       db.update(campaigns)
@@ -192,7 +195,11 @@ function resolveAudience(db: PushDb, campaign: CampaignRow, domainId: number): n
     kind = parsed.kind ?? "all";
     segmentId = parsed.segment_id;
     if (Array.isArray(parsed.ids)) {
-      ids = parsed.ids.filter((id: unknown): id is number => Number.isFinite(id as number) && (id as number) > 0);
+      // Integer-only + deduped: fractional ids match nothing, and duplicate
+      // ids would otherwise enqueue duplicate deliveries (double push) for
+      // the same subscriber. API/drip entry points dedupe upstream; this is
+      // the last line of defense at enqueue time.
+      ids = [...new Set(parsed.ids.filter((id: unknown): id is number => Number.isInteger(id) && (id as number) > 0))];
     }
   } catch {
     // Fail closed: corrupt audience JSON must match nothing, never broadcast

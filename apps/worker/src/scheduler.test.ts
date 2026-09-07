@@ -158,6 +158,33 @@ describe("runScheduler", () => {
       client.close();
     });
 
+    it("marks done when all deliveries were 410-cleaned (mirrors finalize)", () => {
+      const { db, client } = createMemoryDb();
+      const { workspaceId, domainId } = seed(db);
+      const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      db.insert(deliveries).values({ campaign_id: stuckId, subscriber_id: null, domain_id: domainId, status: "unsubscribed", sent_at: Date.now() }).run();
+
+      runScheduler(db);
+
+      const [stuck] = db.select().from(campaigns).where(eq(campaigns.id, stuckId)).all();
+      expect(stuck?.status).toBe("done");
+      client.close();
+    });
+
+    it("dedupes manual audience ids (no double push)", () => {
+      const { db, client } = createMemoryDb();
+      const { workspaceId, domainId, subscriberId } = seed(db);
+      insertCampaign(db, workspaceId, domainId, {
+        schedule_at: new Date(Date.now() - 60_000).toISOString(),
+        audience_json: JSON.stringify({ kind: "manual", ids: [subscriberId, subscriberId, 1.5, -3, 999999] }),
+      });
+
+      const stats = runScheduler(db);
+      expect(stats.deliveriesQueued).toBe(1);
+      expect(db.select().from(deliveries).all()).toHaveLength(1);
+      client.close();
+    });
+
     it("never touches cancelled campaigns", () => {
       const { db, client } = createMemoryDb();
       const { workspaceId, domainId } = seed(db);
