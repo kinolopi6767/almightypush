@@ -1,5 +1,7 @@
 import { and, count, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
-import { campaigns, deliveries, domains, events, settings, subscribers, subscriberTags } from "@pushpanel/db/schema";
+// NOTE: the stranded-deliveries prune below references the `campaigns` table
+// by literal SQL name inside NOT EXISTS subqueries (no drizzle binding needed).
+import { deliveries, domains, events, settings, subscribers, subscriberTags } from "@pushpanel/db/schema";
 import { automationRuns, journeyRuns, teamInvites } from "@pushpanel/db/schema";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { allTables } from "@pushpanel/db";
