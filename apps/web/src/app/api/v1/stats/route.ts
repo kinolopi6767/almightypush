@@ -45,9 +45,11 @@ async function getStats(req: Request) {
 
   let domainId: number | null = null;
   if (domainParam) {
+    // Hostnames are case-insensitive (domains are stored lowercased) — match
+    // the send route's normalization so ?domain=Example.COM works.
     const domain = /^\d+$/.test(domainParam)
       ? db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.id, Number(domainParam)), eq(domains.workspace_id, workspaceId))).limit(1).all()
-      : db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.name, domainParam), eq(domains.workspace_id, workspaceId))).limit(1).all();
+      : db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.name, domainParam.toLowerCase()), eq(domains.workspace_id, workspaceId))).limit(1).all();
     if (domain.length === 0) return apiJson({ ok: false, error: "Domain not found" }, { status: 404 });
     if (!domainAllowed(auth.context, domain[0]!.id)) {
       return apiJson({ ok: false, error: "Domain not covered by this key" }, { status: 403 });

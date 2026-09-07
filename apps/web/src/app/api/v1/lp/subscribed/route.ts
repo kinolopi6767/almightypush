@@ -2,6 +2,7 @@ import { corsJson, handlePublicOptions } from "@/lib/cors";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clientIp, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
+import { parseHostHeader } from "@/lib/subscribe-origin";
 import { lpLinks } from "@pushpanel/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
   // pair — both must equal each other, which still blocks cross-site forgeries
   // through the proxy path while keeping LAN setups functional.
   const appUrlHost = hostFromUrl(process.env.APP_URL);
-  const allowed = appUrlHost ? [appUrlHost] : [req.headers.get("host")?.split(":")[0]?.toLowerCase()].filter(Boolean) as string[];
+  const allowed = appUrlHost ? [appUrlHost] : [parseHostHeader(req.headers.get("host"))].filter(Boolean) as string[];
   if (allowed.length === 0 || !allowed.some((h) => host === h)) {
     return corsJson({ ok: false, error: "origin not allowed" }, { status: 403 });
   }

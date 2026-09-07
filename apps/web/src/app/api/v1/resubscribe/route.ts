@@ -1,9 +1,9 @@
 import { corsJson, handlePublicOptions } from "@/lib/cors";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientIp, envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "@/lib/rate-limit";
-import { domains, subscribers } from "@pushpanel/db/schema";
+import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { assertPublicHttpUrl, createCipher, sha256Hex } from "@pushpanel/core";
 import { requestOriginAllowed } from "@/lib/subscribe-origin";
 
@@ -83,13 +83,24 @@ export async function POST(req: Request) {
   // Migration path: rotate the OLD row in place (preserves id + metadata).
   if (oldEndpoint && oldEndpoint !== subscription.endpoint) {
     const oldHash = sha256Hex(oldEndpoint);
+    // Consent guard: if the old row exists but is UNSUBSCRIBED, the user
+    // opted out of this subscription lineage — a transparent endpoint
+    // rotation (no user gesture) must not resurrect them. Suppress quietly
+    // (ok:true so the SW stops retrying, but nothing becomes active).
+    const [oldRow] = db
+      .select({ id: subscribers.id, unsubscribed_at: subscribers.unsubscribed_at })
+      .from(subscribers)
+      .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, oldHash)))
+      .limit(1)
+      .all();
+    if (oldRow?.unsubscribed_at) return corsJson({ ok: true, suppressed: true });
     const migrated = db
       .update(subscribers)
       .set({ token: newTokenEnc, token_hash: newHash, provider: "vapid", last_active_at: nowIso })
       .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, oldHash), isNull(subscribers.unsubscribed_at)))
       .run();
     if (migrated.changes > 0) return corsJson({ ok: true, migrated: true });
-    // Old row gone (already pruned/unsubscribed) — fall through to insert path.
+    // Old row gone (already pruned) — fall through to insert path.
   }
 
   // Refresh an active row already keyed to this endpoint…
@@ -102,6 +113,17 @@ export async function POST(req: Request) {
 
   // …otherwise create it. Losing a race against the partial unique index is
   // success by definition (the concurrent writer inserted the same row).
+  // Same-endpoint consent guard (mirrors the migration path above): an
+  // unsubscribed row for THIS endpoint means the user opted out — the 12h
+  // background sync must not resurrect them. Only an explicit subscribe
+  // (user gesture) may re-activate.
+  const [deadRow] = db
+    .select({ id: subscribers.id })
+    .from(subscribers)
+    .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, newHash), sql`${subscribers.unsubscribed_at} IS NOT NULL`))
+    .limit(1)
+    .all();
+  if (deadRow) return corsJson({ ok: true, suppressed: true });
   try {
     // Honor the same per-domain cap as subscribe (only enforced when set).
     const rawCap = Number(process.env.MAX_SUBSCRIBERS_PER_DOMAIN);
@@ -117,14 +139,26 @@ export async function POST(req: Request) {
       }
     }
 
-    db.insert(subscribers)
+    // Mirror the subscribe route's bookkeeping: growth charts count the
+    // `subscribed` event and the domain counter is maintained incrementally.
+    const inserted = db
+      .insert(subscribers)
       .values({
         domain_id: domainId,
         token: newTokenEnc,
         token_hash: newHash,
         provider: "vapid",
         subscribe_at: nowIso,
+        last_active_at: nowIso,
       })
+      .run();
+    const createdId = Number(inserted.lastInsertRowid ?? 0);
+    if (createdId > 0) {
+      db.insert(events).values({ domain_id: domainId, subscriber_id: createdId, type: "subscribed" }).run();
+    }
+    db.update(domains)
+      .set({ subscribers_count: sql`${domains.subscribers_count} + 1` })
+      .where(eq(domains.id, domainId))
       .run();
     return corsJson({ ok: true, created: true });
   } catch (e) {
