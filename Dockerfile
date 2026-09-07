@@ -13,6 +13,7 @@ COPY apps/web/package.json ./apps/web/
 COPY apps/worker/package.json ./apps/worker/
 COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
+COPY packages/sdk-client/package.json ./packages/sdk-client/
 RUN pnpm install --frozen-lockfile
 
 # ---------- build ----------
@@ -20,6 +21,10 @@ FROM deps AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY . .
+# SDK first: copy-to-web.mjs refreshes apps/web/public/sdk/pushpanel-sdk.js
+# from source so the image never ships a stale committed bundle. Web is not
+# a workspace dependent of sdk-client, so turbo ordering alone won't do this.
+RUN pnpm --filter @pushpanel/sdk-client build
 # --concurrency=1 serializes builds: ~2x slower but peak RAM is far lower.
 # Prevents OOM-kill of the build container on small VPS (next build + tsup dts
 # running in parallel can spike past 1.5GB).

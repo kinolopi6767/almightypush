@@ -10,8 +10,8 @@ import { z } from "zod";
 
 const loginSchema = z.object({
   email: z.string().email(),
-  // Max bound: each login attempt costs up to 2 argon2id verifies (~64MB
-  // each) — an unbounded password field is a memory/CPU DoS vector.
+  // Max bound: each login attempt costs one argon2id verify (~64MB) — an
+  // unbounded password field is a memory/CPU DoS vector.
   password: z.string().min(1).max(256),
   totp: z.string().optional(),
 });

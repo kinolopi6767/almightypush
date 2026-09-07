@@ -1,4 +1,4 @@
-import { corsJson, handlePublicOptions } from "@/lib/cors";
+import { apiJson, handleKeyRouteOptions } from "@/lib/cors";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -28,26 +28,26 @@ const bodySchema = z.object({
  */
 export async function POST(req: Request) {
   const key = requireApiKey(req.headers);
-  if (!key.ok) return corsJson({ ok: false, error: key.error }, { status: key.status });
+  if (!key.ok) return apiJson({ ok: false, error: key.error }, { status: key.status });
   const ctx = key.context;
   const rl = rateLimitWithHeaders(`track:${ctx.keyId}`, envRateLimit("TRACK_RPM", 120), 60_000);
   if (!rl.allowed) {
-    return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 120) });
+    return apiJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 120) });
   }
   // Per-IP global: a compromised key must not allow unbounded event-table growth.
   const rlIp = rateLimitWithHeaders(`track:ip:${clientIp(req.headers)}`, envRateLimit("TRACK_IP_RPM", 600), 60_000);
   if (!rlIp.allowed) {
-    return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 600) });
+    return apiJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 600) });
   }
 
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());
   } catch {
-    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    return apiJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
   if (!parsed.success) {
-    return corsJson({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
+    return apiJson({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
   const { domain: domainRef, event, endpoint, tags } = parsed.data;
 
@@ -69,14 +69,14 @@ export async function POST(req: Request) {
       .all();
   }
   if (!domain || domain.workspace_id !== ctx.workspaceId) {
-    return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
+    return apiJson({ ok: false, error: "Unknown domain" }, { status: 404 });
   }
   if (ctx.domainId != null && ctx.domainId !== domain.id) {
-    return corsJson({ ok: false, error: "Domain not covered by this key" }, { status: 403 });
+    return apiJson({ ok: false, error: "Domain not covered by this key" }, { status: 403 });
   }
 
   if (tags && Object.keys(tags).length > 10) {
-    return corsJson({ ok: false, error: "At most 10 tags" }, { status: 400 });
+    return apiJson({ ok: false, error: "At most 10 tags" }, { status: 400 });
   }
 
   let subscriberId: number | null = null;
@@ -122,9 +122,9 @@ export async function POST(req: Request) {
     })
     .run();
 
-  return corsJson({ ok: true, matched: subscriberId != null });
+  return apiJson({ ok: true, matched: subscriberId != null });
 }
 
 export async function OPTIONS() {
-  return handlePublicOptions();
+  return handleKeyRouteOptions();
 }

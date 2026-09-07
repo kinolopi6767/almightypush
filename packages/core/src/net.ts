@@ -89,18 +89,23 @@ export function ssrfDispatcher(): Agent {
  * webhook targets): pre-validates the URL, then fetches with the
  * connect-time-validating dispatcher and manual redirects — each hop is
  * re-validated before it is followed (capped at `maxRedirects`).
- * `init.signal` and `init.headers`/`method`/`body` pass through.
+ * `init.signal` and `init.headers`/`method`/`body` pass through. When the
+ * caller provides no AbortSignal, a 10s default timeout applies so a hung
+ * upstream can never stall the worker tick forever.
  */
+const SSRF_DEFAULT_TIMEOUT_MS = 10_000;
 export async function ssrfFetch(
   raw: string,
   init: RequestInit = {},
   opts: { maxRedirects?: number } = { maxRedirects: 3 },
 ): Promise<Response> {
+  const withTimeout: RequestInit =
+    init.signal == null ? { ...init, signal: AbortSignal.timeout(SSRF_DEFAULT_TIMEOUT_MS) } : init;
   let current = raw;
   for (let hop = 0; hop <= (opts.maxRedirects ?? 3); hop++) {
     const check = await assertPublicHttpUrl(current);
     if (!check.ok || !check.url) throw new Error(check.error ?? "URL rejected by SSRF guard");
-    const res = await fetch(check.url, { ...init, redirect: "manual", dispatcher: ssrfDispatcher() } as RequestInit);
+    const res = await fetch(check.url, { ...withTimeout, redirect: "manual", dispatcher: ssrfDispatcher() } as RequestInit);
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
       // Drain the body so the socket is released back to the pool.

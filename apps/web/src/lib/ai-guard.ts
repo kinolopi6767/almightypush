@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { Session } from "next-auth";
+import { canEdit } from "@/lib/roles";
 
 /**
  * Shared gate for AI-studio endpoints (LLM + you.com calls cost money per
@@ -16,8 +17,9 @@ export async function requireAiAccess(
     return { ok: false, response: NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 }) };
   }
   // AI calls cost money per request — viewers must not burn credits.
+  // Fail closed: unknown/missing roles are viewers (canEdit normalizes).
   const role = (session.user as { role?: string }).role;
-  if (role === "viewer") {
+  if (!canEdit(role)) {
     return { ok: false, response: NextResponse.json({ ok: false, error: "Editors only" }, { status: 403 }) };
   }
   const limit = opts?.limit ?? 60;

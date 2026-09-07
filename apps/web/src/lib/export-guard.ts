@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { canEdit, canManage } from "@/lib/roles";
 
 export interface ExportContext {
   wsId: number;
@@ -22,7 +23,7 @@ export async function requireExportAccess(): Promise<{ ok: true; ctx: ExportCont
   if (!session?.user) return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return { ok: false, response: new Response("No workspace", { status: 400 }) };
-  if (session.user.role === "viewer") {
+  if (!canEdit(session.user.role)) {
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
   }
   const userId = Number(session.user.id);
@@ -35,7 +36,7 @@ export async function requireCredentialExportAccess(): Promise<{ ok: true; ctx: 
   if (!session?.user) return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return { ok: false, response: new Response("No workspace", { status: 400 }) };
-  if (session.user.role !== "owner" && session.user.role !== "admin") {
+  if (!canManage(session.user.role)) {
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
   }
   const userId = Number(session.user.id);

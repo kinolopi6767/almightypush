@@ -1,4 +1,4 @@
-import { corsJson, handlePublicOptions } from "@/lib/cors";
+import { apiJson, handleKeyRouteOptions } from "@/lib/cors";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, domains, events, subscribers } from "@pushpanel/db/schema";
@@ -16,13 +16,13 @@ export async function GET(req: Request) {
   try {
     return await getStats(req);
   } catch {
-    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+    return apiJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
   }
 }
 
 async function getStats(req: Request) {
   const auth = requireApiKey(req.headers);
-  if (!auth.ok) return corsJson({ ok: false, error: auth.error }, { status: auth.status });
+  if (!auth.ok) return apiJson({ ok: false, error: auth.error }, { status: auth.status });
   const { workspaceId } = auth.context;
 
   const url = new URL(req.url);
@@ -37,7 +37,7 @@ async function getStats(req: Request) {
     return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
   };
   if ((fromParam && !isRealDate(fromParam)) || (toParam && !isRealDate(toParam))) {
-    return corsJson({ ok: false, error: "from/to must be real dates (YYYY-MM-DD)" }, { status: 400 });
+    return apiJson({ ok: false, error: "from/to must be real dates (YYYY-MM-DD)" }, { status: 400 });
   }
   const from = fromParam ?? null;
   const to = toParam ?? null;
@@ -48,9 +48,9 @@ async function getStats(req: Request) {
     const domain = /^\d+$/.test(domainParam)
       ? db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.id, Number(domainParam)), eq(domains.workspace_id, workspaceId))).limit(1).all()
       : db.select({ id: domains.id, name: domains.name }).from(domains).where(and(eq(domains.name, domainParam), eq(domains.workspace_id, workspaceId))).limit(1).all();
-    if (domain.length === 0) return corsJson({ ok: false, error: "Domain not found" }, { status: 404 });
+    if (domain.length === 0) return apiJson({ ok: false, error: "Domain not found" }, { status: 404 });
     if (!domainAllowed(auth.context, domain[0]!.id)) {
-      return corsJson({ ok: false, error: "Domain not covered by this key" }, { status: 403 });
+      return apiJson({ ok: false, error: "Domain not covered by this key" }, { status: 403 });
     }
     domainId = domain[0]!.id;
   } else if (auth.context.domainId !== null) {
@@ -73,7 +73,7 @@ async function getStats(req: Request) {
 
   // Empty workspace (no domains yet) -> IN () is invalid SQL; short-circuit to zero rows.
   if (wsDomainIds.length === 0 && domainId === null) {
-    return corsJson({
+    return apiJson({
       ok: true,
       generated_at: new Date().toISOString(),
       query: { from: from ?? null, to: to ?? null, domain_id: domainId },
@@ -158,7 +158,7 @@ async function getStats(req: Request) {
     .all();
   const clickMap = new Map(clicksByCampaign.map((c) => [c.campaign_id, c.value]));
 
-  return corsJson({
+  return apiJson({
     ok: true,
     generated_at: new Date().toISOString(),
     query: { from: from ?? null, to: to ?? null, domain_id: domainId },
@@ -199,7 +199,7 @@ async function getStats(req: Request) {
   });
 }
 
-/** CORS preflight for cross-origin SDK/API callers. */
+/** Server-to-server route: no CORS preflight. Browsers must never call this with a leaked key. */
 export async function OPTIONS() {
-  return handlePublicOptions();
+  return handleKeyRouteOptions();
 }

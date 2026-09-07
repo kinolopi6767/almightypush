@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { backups } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { isOwner } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return new Response("Unauthorized", { status: 401 });
-  if (session.user.role !== "owner") return new Response("Forbidden", { status: 403 });
+  // Fail closed: unknown/missing roles are viewers, never owners.
+  if (!isOwner(session.user.role)) return new Response("Forbidden", { status: 403 });
 
   // Rate-limit backup downloads: 10/min per user, 30/min globally (prevent exfiltration loops)
   const { rateLimitWithHeaders, rateLimitHeaders } = await import("@/lib/rate-limit");
@@ -33,20 +35,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { id } = await params;
   const backupId = Number(id);
-  if (!Number.isInteger(backupId)) return new Response("Bad id", { status: 400 });
+  if (!Number.isInteger(backupId) || backupId <= 0) return new Response("Bad id", { status: 400 });
 
   const [row] = db.select({ location: backups.location }).from(backups).where(eq(backups.id, backupId)).limit(1).all();
   if (!row?.location) return new Response("Not found", { status: 404 });
 
-  logAudit(db, {
-    workspaceId: session.user.workspaceId ? Number(session.user.workspaceId) : 0,
-    userId: Number(session.user.id),
-    action: "backup.download",
-    entityType: "backup",
-    entityId: backupId,
-  });
-
-  // Path traversal hardening: ensure backup path is inside backups dir
+  // Path traversal hardening FIRST: the location comes from the DB (an admin-
+  // controlled value). Validate before audit + stat so traversal probes and
+  // missing files never spam the audit log.
   try {
     const { resolve } = await import("node:path");
     const { resolveDbPath } = await import("@pushpanel/db");
@@ -57,6 +53,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   } catch {
     return new Response("Forbidden", { status: 403 });
   }
+
+  logAudit(db, {
+    workspaceId: session.user.workspaceId ? Number(session.user.workspaceId) : 0,
+    userId: Number(session.user.id),
+    action: "backup.download",
+    entityType: "backup",
+    entityId: backupId,
+  });
 
   let stats;
   try {

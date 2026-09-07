@@ -23,8 +23,8 @@ export async function GET(req: Request) {
   if (!wsId) return new Response("Forbidden", { status: 403 });
 
   // Connection throttle: each stream polls the DB every 1.5s for 10min.
-  const { rateLimit } = await import("@/lib/rate-limit");
-  const who = session.user.id ?? req.headers.get("x-forwarded-for") ?? "anon";
+  const { rateLimit, clientIp } = await import("@/lib/rate-limit");
+  const who = session.user.id ?? clientIp(req.headers);
   if (!rateLimit(`live:${wsId}:${who}`, 5, 60_000)) {
     return new Response("Too many live connections", { status: 429 });
   }

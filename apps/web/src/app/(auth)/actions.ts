@@ -1,13 +1,12 @@
 "use server";
 
 import { AuthError } from "next-auth";
-import { decryptTotpSecret } from "@/lib/totp-crypto";
 import { signIn, signOut } from "@/auth";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { users } from "@pushpanel/db/schema";
-import { verifyPasswordOrDummy, verifyTotp } from "@pushpanel/core";
+import { verifyPasswordOrDummy } from "@pushpanel/core";
 import { clientIp, envRateLimit, rateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 
@@ -45,23 +44,11 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
     return { error: "Too many attempts — try again later" };
   }
 
-  const [user] = await db
-    .select({ password_hash: users.password_hash, totp_secret: users.totp_secret, totp_enabled: users.totp_enabled })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
-  // Timing-equalized: a missing account costs one argon2 verify, same as a
-  // wrong password, so emails can't be enumerated by latency.
-  if (!(await verifyPasswordOrDummy(user?.password_hash, parsed.data.password))) {
-    return { error: "Invalid email, password or code" };
-  }
-  // verifyPasswordOrDummy only returns true with a real stored hash, so the
-  // account exists here (the guard is for the type-checker).
-  if (!user) return { error: "Invalid email, password or code" };
-  if (user.totp_enabled && !verifyTotp(decryptTotpSecret(user.totp_secret), parsed.data.totp ?? "")) {
-    return { error: "Invalid email, password or code" };
-  }
-
+  // Single argon2 verify: the Credentials authorize() callback in auth.ts
+  // performs the (timing-equalized) password + TOTP check. A pre-verify here
+  // would double the ~64MB argon2 cost per attempt (DoS amplification), so
+  // this action only rate-limits and delegates — AuthError maps to the same
+  // generic inline error.
   try {
     await signIn("credentials", {
       email: formData.get("email"),
@@ -106,7 +93,8 @@ export async function checkTotpAction(_prev: TotpCheckState, formData: FormData)
     .from(users)
     .where(eq(users.email, email))
     .limit(1);
-  // Timing-equalized like loginAction above (no user enumeration by latency).
+  // Timing-equalized: a missing account costs one argon2 verify, same as a
+  // wrong password, so emails can't be enumerated by latency.
   const ok = await verifyPasswordOrDummy(user?.password_hash, parsed.data.password);
   if (!ok) return { error: "Invalid email or password" };
 

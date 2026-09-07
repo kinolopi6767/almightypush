@@ -35,12 +35,16 @@ export function emitWebhookEvent(
     }
     // ssrfFetch: connect-time IP re-validation + per-hop redirect validation
     // (a configured endpoint must never bounce onto a private address).
+    // Drain the body so the undici socket returns to the pool — an unread
+    // response body pins the connection until GC.
     void ssrfFetch(target.toString(), {
       method: "POST",
       headers,
       body,
       signal: AbortSignal.timeout(3_000),
-    }).catch(() => undefined);
+    })
+      .then((res) => res.arrayBuffer().catch(() => undefined))
+      .catch(() => undefined);
   } catch {
     void 0;
   }

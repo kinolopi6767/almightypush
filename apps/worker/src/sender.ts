@@ -173,26 +173,31 @@ export async function runSendCycle(
   return stats;
 }
 
-/** Mark queued/sending deliveries of cancelled/paused campaigns as cancelled. */
+/** Mark queued/sending deliveries of cancelled/paused/failed campaigns as cancelled. */
 function cancelTerminatedCampaignDeliveries(db: PushDb): void {
   const terminated = db
     .select({ id: campaigns.id })
     .from(campaigns)
-    .where(inArray(campaigns.status, ["cancelled", "paused"]))
+    .where(inArray(campaigns.status, ["cancelled", "paused", "failed"]))
     .all();
   if (terminated.length === 0) return;
-  db.update(deliveries)
-    .set({ status: "cancelled", error: "campaign cancelled/paused" })
-    .where(
-      and(
-        inArray(
-          deliveries.campaign_id,
-          terminated.map((t) => t.id),
+  // Chunk the IN list: SQLite host-parameter limits (~32k, lower on some
+  // builds) throw on unbounded historic cancelled/paused id lists.
+  const CHUNK = 500;
+  const ids = terminated.map((t) => t.id);
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
+    if (slice.length === 0) continue;
+    db.update(deliveries)
+      .set({ status: "cancelled", error: "campaign cancelled/paused/failed" })
+      .where(
+        and(
+          inArray(deliveries.campaign_id, slice),
+          inArray(deliveries.status, ["queued", "sending"]),
         ),
-        inArray(deliveries.status, ["queued", "sending"]),
-      ),
-    )
-    .run();
+      )
+      .run();
+  }
 }
 
 /** Revive deliveries stuck in `sending` past the stale threshold (crashed worker). */

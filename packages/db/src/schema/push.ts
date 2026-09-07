@@ -156,5 +156,7 @@ export const events = sqliteTable(
     uniqueIndex("idx_events_clicked_delivery")
       .on(t.delivery_id)
       .where(sql`type = 'clicked' AND delivery_id IS NOT NULL`),
+    // Migration-only (0014) — non_clickers resend joins events(delivery_id).
+    index("idx_events_delivery_id").on(t.delivery_id),
   ],
 );

@@ -89,7 +89,12 @@ export const subscriberTags = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [index("idx_subscriber_tags_sub").on(t.subscriber_id), index("idx_subscriber_tags_tag").on(t.tag)],
+  (t) => [
+    index("idx_subscriber_tags_sub").on(t.subscriber_id),
+    index("idx_subscriber_tags_tag").on(t.tag),
+    // Migration-only (0014) — one value per (subscriber, tag).
+    uniqueIndex("idx_subscriber_tags_sub_tag_uniq").on(t.subscriber_id, t.tag),
+  ],
 );
 
 /** Journeys — visual workflow (LumaPush + OneSignal Journeys + Braze Canvas) */
@@ -173,5 +178,9 @@ export const teamInvites = sqliteTable(
     accepted_at: text("accepted_at"),
     ...timestamps(),
   },
-  (t) => [index("idx_team_invites_ws").on(t.workspace_id)],
+  (t) => [
+    index("idx_team_invites_ws").on(t.workspace_id),
+    // Migration-only (0014) — single-use invite tokens (sha256) must be unique.
+    uniqueIndex("idx_team_invites_token_uniq").on(t.token_hash),
+  ],
 );

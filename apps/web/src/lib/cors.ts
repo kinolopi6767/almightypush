@@ -29,3 +29,17 @@ export function corsJson(data: unknown, init?: { status?: number; headers?: Reco
     headers: { ...CORS_HEADERS, ...(init?.headers ?? {}) },
   });
 }
+
+/**
+ * Plain JSON for server-to-server key-authenticated routes (send/track/
+ * stats). Must NOT carry ACAO:* — a leaked X-Api-Key must not be usable from
+ * any origin in a victim's browser. Browsers must never call these routes.
+ */
+export function apiJson(data: unknown, init?: { status?: number; headers?: Record<string, string> }): NextResponse {
+  return NextResponse.json(data, { status: init?.status, headers: init?.headers });
+}
+
+/** OPTIONS for key-authenticated routes: browsers must never preflight here. */
+export function handleKeyRouteOptions(): NextResponse {
+  return new NextResponse(null, { status: 405 });
+}
