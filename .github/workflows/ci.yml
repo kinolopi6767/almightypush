@@ -39,13 +39,15 @@ jobs:
         run: pnpm test:unit
 
       - name: Security audit
-        run: pnpm audit --prod || true
+        # Gate on high/critical only: moderate advisories in the UI-only
+        # dependency tree must not block panel releases, but high+ must.
+        run: pnpm audit --prod --audit-level=high
 
       - name: Build
         run: pnpm build
 
-  auth-smoke-e2e:
-    name: E2E smoke (login/setup)
+  e2e:
+    name: E2E (playwright, chromium)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: verify
@@ -75,3 +77,13 @@ jobs:
           AUTH_SECRET: smokestest-secret-smokestest-secret
           APP_ENC_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         run: pnpm --filter @pushpanel/web test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
