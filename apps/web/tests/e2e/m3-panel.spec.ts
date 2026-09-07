@@ -130,7 +130,7 @@ test("backups: create, list, download valid sqlite, delete", async ({ page }) =>
   test.setTimeout(120_000);
   await signInViaUi(page);
   await page.goto("/dashboard/settings");
-  await expect(page.getByText("No backups yet.")).toBeVisible();
+  await expect(page.getByText("No backups yet", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Create backup" }).click();
   await expect(page.getByText(/Backup created \(#/)).toBeVisible({ timeout: 20_000 });
@@ -150,7 +150,7 @@ test("backups: create, list, download valid sqlite, delete", async ({ page }) =>
   // delete
   page.once("dialog", (d) => d.accept());
   await row.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByText("No backups yet.")).toBeVisible();
+  await expect(page.getByText("No backups yet", { exact: true })).toBeVisible();
 });
 
 test("profile: update name and password, re-login works", async ({ page }) => {
