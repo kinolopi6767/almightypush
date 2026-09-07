@@ -92,6 +92,14 @@ var PushPanel = (() => {
       style.id = id;
       document.head.appendChild(style);
     }
+    let safeCss = customCss != null ? customCss : "";
+    if (safeCss && /(@import|url\s*\(|expression|javascript\s*:|behavior\s*:|-moz-binding|vbscript\s*:|<\/style)/i.test(safeCss)) {
+      try {
+        console.warn("[PushPanel] customCss blocked: unsafe construct detected");
+      } catch (e) {
+      }
+      safeCss = "";
+    }
     style.textContent = `
 .pp-sdk{all:initial;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:inherit;z-index:2147483647}
 .pp-sdk *{all:unset;box-sizing:border-box}
@@ -110,7 +118,7 @@ var PushPanel = (() => {
 .pp-sdk-backdrop{position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
 .pp-sdk-fullscreen{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 600px at 50% -10%, #1d4ed8, #0f172a);color:#fff;padding:24px}
 .pp-sdk-fullscreen-inner{max-width:460px;text-align:center}
-${customCss != null ? customCss : ""}
+${safeCss}
 `;
   }
   function positionClass(position) {
@@ -155,14 +163,15 @@ ${customCss != null ? customCss : ""}
       return;
     }
     setTimeout(async () => {
-      var _a2, _b;
+      var _a2, _b, _c;
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
       if (api.state() !== "subscribed") return;
       try {
         const reg = (_b = await navigator.serviceWorker.getRegistration((_a2 = opts.serviceWorkerPath) != null ? _a2 : "/sw.js")) != null ? _b : void 0;
         const sub = await (reg == null ? void 0 : reg.pushManager.getSubscription());
-        if (!reg || !sub || !opts.baseUrl) return;
-        await fetch(`${opts.baseUrl.replace(/\/+$/, "")}/api/v1/resubscribe`, {
+        const syncBase = ((_c = opts.baseUrl) != null ? _c : typeof location !== "undefined" ? location.origin : "").replace(/\/+$/, "");
+        if (!reg || !sub || !syncBase) return;
+        await fetch(`${syncBase}/api/v1/resubscribe`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -180,7 +189,7 @@ ${customCss != null ? customCss : ""}
     if (!w.__pushpanel_instances__) w.__pushpanel_instances__ = /* @__PURE__ */ new Map();
     const existing = w.__pushpanel_instances__.get(options.domain);
     if (existing) return existing;
-    const baseUrl = ((_a = options.baseUrl) != null ? _a : "").replace(/\/$/, "");
+    const baseUrl = ((_a = options.baseUrl) != null ? _a : typeof location !== "undefined" ? location.origin : "").replace(/\/$/, "");
     const swPath = (_b = options.serviceWorkerPath) != null ? _b : "/sw.js";
     const prompt = (_c = options.prompt) != null ? _c : {};
     const pos = (_d = prompt.position) != null ? _d : "bottom-right";
@@ -505,8 +514,17 @@ ${customCss != null ? customCss : ""}
           });
         }
         if (options.endpointOverride) {
-          const json = subscription.toJSON();
-          subscription = { endpoint: options.endpointOverride, keys: json.keys };
+          const host = typeof location !== "undefined" ? location.hostname : "";
+          const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "::1";
+          if (!isLoopback) {
+            try {
+              console.warn("[PushPanel] endpointOverride ignored: dev-only flag");
+            } catch (e) {
+            }
+          } else {
+            const json = subscription.toJSON();
+            subscription = { endpoint: options.endpointOverride, keys: json.keys };
+          }
         }
         const payload = {
           domainId: options.domain,
@@ -548,6 +566,10 @@ ${customCss != null ? customCss : ""}
     async function unsubscribe() {
       if (current === "unsupported") return "unsupported";
       try {
+        try {
+          localStorage.removeItem(pendingSubKey(options.domain));
+        } catch (e) {
+        }
         const registration = await getOwnRegistration();
         const sub = await (registration == null ? void 0 : registration.pushManager.getSubscription());
         if (!sub) {

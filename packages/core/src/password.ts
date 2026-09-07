@@ -17,6 +17,9 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(hash: string, password: string): Promise<boolean> {
+  // hashPassword() caps at 1024 chars; the verify path must too — otherwise
+  // a multi-MB login password burns argon2 CPU/memory (unauthenticated DoS).
+  if (typeof password !== "string" || password.length === 0 || password.length > 1024) return false;
   try {
     return await argon2.verify(hash, password);
   } catch {

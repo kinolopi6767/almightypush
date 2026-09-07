@@ -32,6 +32,12 @@ describe("totp", () => {
     expect(verifyTotp(secret, "abcdef")).toBe(false);
   });
 
+  it("rejects truncated (<80-bit) secrets even with a matching code", () => {
+    const tiny = "JBSW"; // 2 bytes — brute-forceable, must fail closed
+    const code = totpCode(tiny);
+    expect(verifyTotp(tiny, code)).toBe(false);
+  });
+
   it("builds an otpauth URI", () => {
     const uri = totpUri(secret, "owner@test.io");
     expect(uri).toContain("otpauth://totp/");

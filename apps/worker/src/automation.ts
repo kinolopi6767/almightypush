@@ -285,11 +285,15 @@ async function latestVideo(config: AutomationConfig): Promise<{ item: FeedItem |
 
   const videoId = entry.guid?.replace("yt:video:", "") ?? entry.link ?? null;
   const lastId = config.last_video_id ?? null;
-  if (lastId && (!videoId || videoId === lastId)) return { item: null };
+  // No stable id (guid-less feed entry with no link): never fire. Without
+  // this, `updated.last_video_id` is persisted as undefined and the same
+  // item re-fires on EVERY tick (push spam loop).
+  if (!videoId) return { item: null };
+  if (lastId && videoId === lastId) return { item: null };
 
   return {
     item: { title: entry.title ?? undefined, body: undefined, url: entry.link ?? undefined },
-    updated: { ...config, last_video_id: videoId ?? undefined },
+    updated: { ...config, last_video_id: videoId },
   };
 }
 

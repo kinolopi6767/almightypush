@@ -71,7 +71,10 @@ export function verifyTotp(secretB32: string | null | undefined, code: string, a
     // that would lock the user out with an unactionable error page.
     return false;
   }
-  if (secret.length === 0) return false;
+  // RFC 4226/6238 wants ≥128-bit secrets; we generate 160-bit. Reject
+  // truncated/1-byte secrets outright — a tiny secret makes the 6-digit code
+  // brute-forceable and usually signals a corrupt or hand-typed secret.
+  if (secret.length < 10) return false;
   const counter = Math.floor(atMs / 1000 / STEP_SECONDS);
   for (let i = -WINDOW; i <= WINDOW; i++) {
     if (safeEqual(hotp(secret, counter + i), code)) return true;

@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createECDH, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { VapidPushProvider } from "./providers/vapid";
+import { VapidPushProvider, parseRetryAfterMs } from "./providers/vapid";
 import { generateVapidKeys, createVapidConfig, decryptVapidConfig } from "./vapid";
 import type { PushSubscriptionPayload } from "./providers/index";
 
@@ -119,6 +119,27 @@ describe("vapid helpers", () => {
     const keys = generateVapidKeys();
     expect(keys.publicKey).toHaveLength(87);
     expect(keys.privateKey).toHaveLength(43);
+  });
+});
+
+describe("parseRetryAfterMs", () => {
+  it("parses delay-seconds and clamps to 15 minutes", () => {
+    expect(parseRetryAfterMs("120")).toBe(120_000);
+    expect(parseRetryAfterMs("5")).toBe(5_000);
+    expect(parseRetryAfterMs("99999")).toBe(15 * 60_000);
+    expect(parseRetryAfterMs(undefined)).toBeUndefined();
+    expect(parseRetryAfterMs("garbage")).toBeUndefined();
+    expect(parseRetryAfterMs("")).toBeUndefined();
+  });
+
+  it("parses HTTP-dates relative to now", () => {
+    const now = Date.now();
+    const future = new Date(now + 60_000).toUTCString();
+    const ms = parseRetryAfterMs(future, now)!;
+    expect(ms).toBeGreaterThan(50_000);
+    expect(ms).toBeLessThanOrEqual(60_000);
+    const past = new Date(now - 60_000).toUTCString();
+    expect(parseRetryAfterMs(past, now)).toBe(0);
   });
 });
 

@@ -50,10 +50,13 @@ export interface SendOptions {
   topic?: string;
 }
 
-export type SendResult = { ok: true; statusCode: number } | { ok: false; statusCode?: number; error: string };
+export type SendResult =
+  | { ok: true; statusCode: number }
+  | { ok: false; statusCode?: number; error: string; /** Honored for 429 backoff when the push service sends Retry-After. */
+      retryAfterMs?: number };
 
 export interface PushProvider {
   send(subscription: PushSubscriptionPayload, message: PushMessage, options: SendOptions): Promise<SendResult>;
 }
 
-export { VapidPushProvider } from "./vapid";
+export { VapidPushProvider, parseRetryAfterMs } from "./vapid";

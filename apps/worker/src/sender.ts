@@ -329,8 +329,12 @@ async function deliverOne(
   }
 
   const campaign = campaignCache?.get(row.campaign_id) ?? (() => {
+    // Cache-miss fallback must select the SAME columns as the cached batch
+    // query (sender cycle): variants_json drives A/B content and ttl/urgency/
+    // topic drive provider options. Omitting them silently downgraded every
+    // cache-miss delivery to control-content + default TTL.
     const [c] = db
-      .select({ status: campaigns.status, title: campaigns.title, title_b: campaigns.title_b, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json })
+      .select({ id: campaigns.id, status: campaigns.status, title: campaigns.title, title_b: campaigns.title_b, variants_json: campaigns.variants_json, message: campaigns.message, launch_url: campaigns.launch_url, icon_url: campaigns.icon_url, image_url: campaigns.image_url, buttons_json: campaigns.buttons_json, topic: campaigns.topic, ttl: campaigns.ttl, urgency: campaigns.urgency })
       .from(campaigns)
       .where(eq(campaigns.id, row.campaign_id))
       .limit(1)
@@ -623,7 +627,14 @@ async function deliverOne(
     return "failed";
   }
 
-  const backoff = Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS);
+  // Honor the push service's Retry-After on 429 (rate limited): hammering a
+  // throttled endpoint with fixed 30s backoff prolongs the throttle. Clamp to
+  // BACKOFF_MAX_MS so a malicious/absurd header can't park a row for days.
+  const serverBackoff =
+    result.statusCode === 429 && typeof result.retryAfterMs === "number" && result.retryAfterMs > 0
+      ? Math.min(Math.floor(result.retryAfterMs), BACKOFF_MAX_MS)
+      : 0;
+  const backoff = Math.max(serverBackoff, Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS));
   const requeueWrite = db
     .update(deliveries)
     .set({ status: "queued", claimed_at: null, next_attempt_at: now + backoff, error: result.error ?? null })

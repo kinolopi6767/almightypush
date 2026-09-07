@@ -3,6 +3,21 @@ import type { PushMessage, PushProvider, PushSubscriptionPayload, SendOptions, S
 
 interface WebPushError extends Error {
   statusCode?: number;
+  headers?: Record<string, string>;
+}
+
+/** Parse a Retry-After value (delay-seconds or HTTP-date) into ms, clamped. */
+export function parseRetryAfterMs(value: string | undefined, nowMs = Date.now()): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    return Math.min(Number(trimmed) * 1000, 15 * 60_000);
+  }
+  const at = Date.parse(trimmed);
+  if (Number.isFinite(at)) {
+    return Math.min(Math.max(at - nowMs, 0), 15 * 60_000);
+  }
+  return undefined;
 }
 
 /**
@@ -40,7 +55,9 @@ export class VapidPushProvider implements PushProvider {
       return { ok: true, statusCode: res.statusCode };
     } catch (error) {
       const err = error as WebPushError;
-      return { ok: false, statusCode: err.statusCode, error: err.message ?? String(error) };
+      const retryAfterMs =
+        err.statusCode === 429 ? parseRetryAfterMs(err.headers?.["retry-after"]) : undefined;
+      return { ok: false, statusCode: err.statusCode, error: err.message ?? String(error), retryAfterMs };
     }
   }
 }

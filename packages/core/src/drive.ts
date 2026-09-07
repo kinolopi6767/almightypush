@@ -40,17 +40,31 @@ export async function getGDriveAccessToken(saJson: string | GDriveServiceJson): 
     sa = saJson;
   }
   if (!sa.client_email || !sa.private_key) throw new Error("Invalid service account JSON: missing client_email/private_key");
+  // SSRF pin: token_uri comes from pasted JSON — only Google's OAuth hosts
+  // may receive the signed JWT. A crafted file pointing at 169.254.169.254
+  // or an intranet host would otherwise turn backup uploads into an SSRF relay.
+  const tokenUri = sa.token_uri ?? "https://oauth2.googleapis.com/token";
+  let tokenUrl: URL;
+  try {
+    tokenUrl = new URL(tokenUri);
+  } catch {
+    throw new Error("Invalid service account JSON: bad token_uri");
+  }
+  const tokenHost = tokenUrl.hostname.toLowerCase();
+  if (tokenUrl.protocol !== "https:" || (tokenHost !== "oauth2.googleapis.com" && !tokenHost.endsWith(".googleapis.com"))) {
+    throw new Error("Invalid service account JSON: token_uri must be a Google OAuth endpoint");
+  }
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
   const payload = {
     iss: sa.client_email,
     scope: "https://www.googleapis.com/auth/drive.file",
-    aud: sa.token_uri ?? "https://oauth2.googleapis.com/token",
+    aud: tokenUri,
     exp: now + 3600,
     iat: now,
   };
   const jwt = jwtSign(header, payload, sa.private_key);
-  const res = await fetch(sa.token_uri ?? "https://oauth2.googleapis.com/token", {
+  const res = await fetch(tokenUri, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }).toString(),
