@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isNonRoutableHost, requestOriginAllowed } from "@/lib/subscribe-origin";
+import { isNonRoutableHost, parseHostHeader, requestOriginAllowed } from "@/lib/subscribe-origin";
 
 function req(headers: Record<string, string>): Request {
   return new Request("https://panel.example.com/api/v1/subscribe", { method: "POST", headers });
 }
 
 describe("isNonRoutableHost", () => {
-  it.each(["localhost", "127.0.0.1", "127.0.0.5", "::1", "10.0.0.1", "172.16.0.9", "172.31.255.1", "192.168.1.5", "169.254.169.254", "fc00::1", "fd12::99", "fe80::1"])(
+  it.each(["localhost", "127.0.0.1", "127.0.0.5", "::1", "10.0.0.1", "172.16.0.9", "172.31.255.1", "192.168.1.5", "169.254.169.254", "fc00::1", "fd12::99", "fe80::1", "fe90::1", "febf::99"])(
     "treats %s as non-routable",
     (h) => expect(isNonRoutableHost(h)).toBe(true),
   );
@@ -14,6 +14,17 @@ describe("isNonRoutableHost", () => {
     "treats %s as routable",
     (h) => expect(isNonRoutableHost(h)).toBe(false),
   );
+});
+
+describe("parseHostHeader", () => {
+  it("strips ports and IPv6 brackets", () => {
+    expect(parseHostHeader("example.com:3000")).toBe("example.com");
+    expect(parseHostHeader("[::1]:3000")).toBe("::1");
+    expect(parseHostHeader("[::1]")).toBe("::1");
+    expect(parseHostHeader("127.0.0.1:3100")).toBe("127.0.0.1");
+    expect(parseHostHeader(null)).toBeNull();
+    expect(parseHostHeader("  ")).toBeNull();
+  });
 });
 
 describe("requestOriginAllowed", () => {

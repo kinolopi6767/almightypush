@@ -27,6 +27,8 @@ export async function requireExportAccess(): Promise<{ ok: true; ctx: ExportCont
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
   }
   const userId = Number(session.user.id);
+  // A malformed session id must not flow into audit rows as NaN.
+  if (!Number.isInteger(userId) || userId <= 0) return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
   return { ok: true, ctx: { wsId, userId } };
 }
 
@@ -40,5 +42,6 @@ export async function requireCredentialExportAccess(): Promise<{ ok: true; ctx: 
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
   }
   const userId = Number(session.user.id);
+  if (!Number.isInteger(userId) || userId <= 0) return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
   return { ok: true, ctx: { wsId, userId } };
 }

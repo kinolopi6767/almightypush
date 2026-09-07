@@ -41,12 +41,27 @@ function serializeError(err: unknown): string {
 }
 
 function log(level: LogLevel, message: string, ctx: LogContext = {}): void {
-  const prefix = `[pushpanel:${level}]`;
-  const suffix = formatContext(ctx);
-  const line = `${prefix} ${message}${suffix}`;
-  const meta = ctx.meta ? ` ${JSON.stringify(ctx.meta).slice(0, 2000)}` : "";
-  const err = ctx.error ? ` — ${serializeError(ctx.error)}` : "";
-  const full = `${line}${meta}${err}`;
+  // "Never throws" is a hard contract (log calls sit in catch blocks and
+  // request paths) — every serialization step is guarded, including meta
+  // (circular structures would otherwise throw out of the logger itself).
+  let full: string;
+  try {
+    const prefix = `[pushpanel:${level}]`;
+    const suffix = formatContext(ctx);
+    const line = `${prefix} ${message}${suffix}`;
+    let meta = "";
+    if (ctx.meta) {
+      try {
+        meta = ` ${JSON.stringify(ctx.meta).slice(0, 2000)}`;
+      } catch {
+        meta = " [unserializable meta]";
+      }
+    }
+    const err = ctx.error ? ` — ${serializeError(ctx.error)}` : "";
+    full = `${line}${meta}${err}`;
+  } catch {
+    full = `[pushpanel:${level}] ${message} [log-format-failed]`;
+  }
 
   // Use appropriate console level; pino is not bundled in web process by default
   switch (level) {

@@ -14,7 +14,7 @@
 export function requestOriginAllowed(req: Request, subscribeUrl: string, domainName: string): boolean {
   const name = domainName.toLowerCase().replace(/^\./, "");
   const appUrlHost = appUrlHostname();
-  const host = req.headers.get("host")?.split(":")[0]?.toLowerCase() ?? null;
+  const host = parseHostHeader(req.headers.get("host"));
 
   const origin = req.headers.get("origin");
   if (origin) {
@@ -49,6 +49,24 @@ export function requestOriginAllowed(req: Request, subscribeUrl: string, domainN
   return false;
 }
 
+/** Host header → bare lowercase hostname (strips port AND IPv6 brackets).
+ * A naive split(':')[0] turns '[::1]:3000' into '[' — breaking the
+ * same-machine sandbox allowance for IPv6-literal Hosts. */
+export function parseHostHeader(host: string | null): string | null {
+  if (!host) return null;
+  const h = host.trim().toLowerCase();
+  if (!h) return null;
+  if (h.startsWith("[")) {
+    const end = h.indexOf("]");
+    if (end === -1) return null;
+    return h.slice(1, end) || null;
+  }
+  const colon = h.lastIndexOf(":");
+  // A second colon means a bare (bracketless) IPv6 literal — no port present.
+  if (colon !== h.indexOf(":")) return h;
+  return (colon === -1 ? h : h.slice(0, colon)) || null;
+}
+
 /** Non-routable Host values (loopback / RFC1918 / link-local / localhost). */
 export function isNonRoutableHost(host: string): boolean {
   const h = host.toLowerCase();
@@ -66,8 +84,9 @@ export function isNonRoutableHost(host: string): boolean {
     return false;
   }
   if (h.includes(":")) {
-    // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
-    return h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80:");
+    // IPv6 unique-local (fc00::/7) and link-local (fe80::/10 = fe80-febf).
+    // A bare startsWith('fe80:') misses fe90-febf — match the /10 prefix bits.
+    return h.startsWith("fc") || h.startsWith("fd") || /^fe[89ab]/.test(h);
   }
   // Non-IP hostnames (incl. *.local): routable until proven otherwise.
   return h.endsWith(".localhost");

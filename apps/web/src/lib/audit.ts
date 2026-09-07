@@ -54,8 +54,19 @@ export function logAudit(
   },
 ): void {
   try {
-    // Premium: truncate meta to avoid SQLITE_TOOBIG on large payloads
-    const metaJson = opts.meta ? JSON.stringify(opts.meta).slice(0, 4000) : null;
+    // Truncate per-value BEFORE stringify: slicing the final JSON string can
+    // cut mid-escape and store invalid JSON that breaks log readers. Keys and
+    // strings are bounded; the whole object is capped as a backstop (valid
+    // JSON either way — never a truncated fragment).
+    let metaJson: string | null = null;
+    if (opts.meta) {
+      const safe: Record<string, string | number | boolean | null> = {};
+      for (const [k, v] of Object.entries(opts.meta)) {
+        safe[k.slice(0, 64)] = typeof v === "string" ? v.slice(0, 500) : v;
+      }
+      metaJson = JSON.stringify(safe);
+      if (metaJson.length > 4000) metaJson = JSON.stringify({ truncated: true, keys: Object.keys(safe) });
+    }
     db.insert(auditLog)
       .values({
         workspace_id: opts.workspaceId,

@@ -25,7 +25,9 @@ export function extractOpenGraph(html: string): { title?: string; description?: 
     }
     return undefined;
   };
-  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  // <title> is head-only: match inside the head slice so an inline SVG
+  // <title> in the body can never shadow the document title.
+  const titleMatch = head.match(/<title[^>]*>([^<]*)<\/title>/i);
   const title = getMetaContent("og:title") ?? titleMatch?.[1]?.trim() ?? undefined;
   return {
     title,

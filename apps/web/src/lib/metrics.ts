@@ -1,4 +1,5 @@
 import { stat } from "node:fs/promises";
+import os from "node:os";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { resolveDbPath } from "@pushpanel/db";
@@ -26,13 +27,11 @@ export interface MetricsPayload {
  */
 export async function collectMetrics(): Promise<MetricsPayload> {
   const mem = process.memoryUsage();
+  // Static import (node:os ships on every platform; loadavg returns zeros on
+  // win32) — the old lazy require() threw under ESM and always fell back.
   const load = (() => {
     try {
-      // os.loadavg is not available on win32; process.loadavg doesn't exist.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const os = require("node:os") as typeof import("node:os");
-      const l = os.loadavg();
-      return l[0] ?? null;
+      return os.loadavg()[0] ?? null;
     } catch {
       return null;
     }

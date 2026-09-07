@@ -46,6 +46,12 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 # Worker: bundled CJS (native deps resolved from traced node_modules)
 COPY --from=build /app/apps/worker/dist/index.cjs ./worker/index.cjs
 
+# The panel serves the WordPress plugin as a downloadable zip
+# (GET /api/v1/plugin/wordpress resolves plugins/wordpress at runtime by
+# walking up from the route module). Without this COPY the route 404s in
+# every Docker deploy while working in dev — ship the source files.
+COPY --from=build /app/plugins/wordpress ./plugins/wordpress
+
 # Definitive fix: copy the FULL hoisted node_modules into the runtime image.
 # The worker bundle keeps dotenv/drizzle-orm/better-sqlite3 as externals and the
 # web standalone trace can miss request-time dynamic imports — the full flat
