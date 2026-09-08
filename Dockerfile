@@ -32,7 +32,7 @@ RUN pnpm turbo run build --filter=@pushpanel/web --filter=@pushpanel/worker --co
 
 # ---------- runtime ----------
 FROM node:22-alpine AS runtime
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget su-exec
 ENV NODE_ENV=production PORT=3000
 WORKDIR /app
 
@@ -66,11 +66,16 @@ RUN chmod +x ./start.sh
 # Non-root runtime: web + worker + SQLite files run as `app` (least
 # privilege — a future RCE no longer lands as container root). Only
 # /app/data needs ownership (image files stay root-owned, world-readable).
-# NOTE (ops): pre-existing volumes created by older root-run images are
-# root-owned — chown once on the host (`chown -R 1001:1001 <volume>`) or the
-# container will fail fast with a clear message from start.sh.
+#
+# Upgrade path (root-owned legacy volumes): the ENTRYPOINT below starts as
+# root just long enough to chown /app/data to app:app WHEN the app user
+# cannot write (volumes created by older root-run images), then drops to
+# `app` via su-exec before starting anything. No manual host chown needed —
+# Coolify rolling updates heal themselves instead of rollback-looping.
 RUN mkdir -p /app/data && adduser -D -u 1001 app && chown app:app /app/data && chmod 755 /app/data
-USER app
+COPY --from=build /app/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # Shared data volume (SQLite + WAL + backups).
 VOLUME ["/app/data"]

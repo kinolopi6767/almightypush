@@ -6,11 +6,13 @@ set -e
 # the container IP instead of 0.0.0.0 → loopback healthchecks fail. Force it.
 export HOSTNAME=0.0.0.0
 
-# Fail fast on unwritable data dirs (e.g. a volume created by a pre-non-root
-# image, owned by root) — otherwise both processes die later with cryptic
-# SQLITE_CANTOPEN errors. Remediation: chown -R 1001:1001 <volume> on host.
+# Fail fast on unwritable data dirs. In the Docker image the entrypoint
+# (docker-entrypoint.sh, running as root pre-flight) already repaired
+# legacy root-owned volumes, so reaching here unwritable means a genuinely
+# broken mount (read-only volume, wrong driver) — die with a clear message
+# instead of cryptic SQLITE_CANTOPEN errors from both processes later.
 if ! touch /app/data/.writetest 2>/dev/null; then
-  echo "FATAL: /app/data is not writable by $(id -u 2>/dev/null || echo unknown) — if this volume was created by an older (root) image, chown it on the host: chown -R 1001:1001 <volume>" >&2
+  echo "FATAL: /app/data is not writable by $(id -u 2>/dev/null || echo unknown) — the volume mount is broken (read-only?); ownership repair already ran in the entrypoint" >&2
   exit 1
 fi
 rm -f /app/data/.writetest
