@@ -46,6 +46,24 @@ jobs:
       - name: Build
         run: pnpm build
 
+  docker:
+    name: Docker build + compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (same Dockerfile Coolify deploys)
+        run: docker build -t pushpanel:ci .
+
+      - name: Validate compose topology
+        env:
+          APP_URL: http://localhost:3000
+          APP_ENC_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          AUTH_SECRET: cismoketest-secret-cismoketest-secret
+        run: docker compose config --quiet && echo "compose config OK"
+
   e2e:
     name: E2E (playwright, chromium)
     runs-on: ubuntu-latest

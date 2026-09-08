@@ -44,13 +44,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Without a throttle, credential stuffing also becomes a memory-DoS.
         // (In-memory bucket: single-process; sufficient for single-tenant.)
         try {
-          const { rateLimitWithHeaders } = await import("@/lib/rate-limit");
+          const { rateLimitWithHeaders, envRateLimit } = await import("@/lib/rate-limit");
           // No request headers available in authorize() — use a global login
           // bucket plus per-email throttle as defense in depth.
-          const rlGlobal = rateLimitWithHeaders("login:global", 60, 60_000);
+          // Both honor env overrides (same pattern as the form actions in
+          // (auth)/actions.ts): the e2e harness raises them
+          // (LOGIN_RATE_LIMIT/ACCOUNT_RATE_LIMIT=1000) because every spec
+          // signs in as the same owner in rapid succession — without the
+          // override the per-email bucket throttles the suite's own logins
+          // and specs time out waiting for /dashboard. Production defaults
+          // (60/min global, 10/15min per email) are unchanged.
+          const rlGlobal = rateLimitWithHeaders("login:global", envRateLimit("LOGIN_RATE_LIMIT", 60), 60_000);
           if (!rlGlobal.allowed) return null;
           const emailKey = parsed.data.email.toLowerCase().slice(0, 200);
-          const rlEmail = rateLimitWithHeaders(`login:email:${emailKey}`, 10, 15 * 60_000);
+          const rlEmail = rateLimitWithHeaders(`login:email:${emailKey}`, envRateLimit("ACCOUNT_RATE_LIMIT", 10), 15 * 60_000);
           if (!rlEmail.allowed) return null;
         } catch {
           // Rate limiter must never break login — fail open here (auth still enforced).

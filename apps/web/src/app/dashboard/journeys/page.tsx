@@ -16,10 +16,14 @@ export default async function JourneysPage() {
 
  return (
   <div className="space-y-6">
-   <PageHeader eyebrow="Grow · Journeys"
-    title="Journeys"
-    description="Visual canvas: trigger → filter → wait → push/email branches — OneSignal Journeys + Braze Canvas parity."
-   />
+    <PageHeader eyebrow="Grow · Journeys"
+     title="Journeys"
+     description="Visual canvas: trigger → filter → wait → push/email branches — OneSignal Journeys + Braze Canvas parity."
+    />
+    <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+      Preview: journey canvases are stored and scheduled, but step execution (push/email branches) is not enabled yet — active journeys are
+      re-armed by the worker without sending anything. Journeys never send partially; this notice disappears once the runner lands.
+    </p>
     {rows.length === 0 ? (
       <div className="rounded-md border border-dashed p-8 text-center">
         <p className="text-sm font-medium">No journeys yet</p>

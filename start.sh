@@ -56,7 +56,14 @@ while true; do
   echo "worker exited ($code), restarting..."
   WORKER_RETRIES=$((WORKER_RETRIES + 1))
   if [ "$WORKER_RETRIES" -gt "$WORKER_MAX_RETRIES" ]; then
-    echo "worker exceeded $WORKER_MAX_RETRIES restarts — giving up"
+    # Fail the CONTAINER, not just the background job: if the supervisor only
+    # `exit 1`s here, the background loop dies while the web server keeps
+    # running — the panel looks healthy while every send/schedule/automation
+    # silently stalls (no deliveries, no heartbeats, no alerts). Signalling the
+    # parent (this script, blocked in `wait $WEB_PID`) runs the graceful
+    # shutdown trap and exits non-zero so the orchestrator restarts us.
+    echo "worker exceeded $WORKER_MAX_RETRIES restarts — stopping container so the orchestrator restarts it (running without a worker would silently stall all sends)" >&2
+    kill -TERM "$PPID" 2>/dev/null || true
     exit 1
   fi
   delay=$((WORKER_RETRIES * 3))
