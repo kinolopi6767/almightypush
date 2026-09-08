@@ -8,6 +8,7 @@
  *  - YDC_API_KEY set: real you.com Search API (live web grounding)
  *  - not set: graceful no-op, callers fall back to heuristics/regex OG parsing
  */
+import { ssrfFetch } from "./net.js";
 
 export interface YouSearchResult {
   title?: string;
@@ -24,6 +25,44 @@ export interface YouSearchResponse {
 export interface YouConfig {
   apiKey: string | null;
   baseUrl: string;
+}
+
+/** Cap on you.com response bodies — res.json() would buffer unbounded input. */
+const MAX_RESPONSE_BYTES = 1_000_000;
+/** you.com Search freshness values — anything else is dropped, not forwarded. */
+const FRESHNESS_ALLOWLIST = new Set(["day", "week", "month", "year"]);
+
+/**
+ * Read a JSON response with a hard byte cap. `res.json()` buffers the entire
+ * body before parsing — a compromised/hijacked upstream could stream
+ * gigabytes and OOM the panel. Anything past the cap aborts the read.
+ * Exported for unit tests (pure I/O on a Response object).
+ */
+export async function readCappedJson<T>(res: Response): Promise<T> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("you.com: empty response");
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* ignore */
+      }
+      throw new Error("you.com: response too large");
+    }
+    chunks.push(value);
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("you.com: invalid response");
+  }
 }
 
 function resolveYouConfig(overrides?: Partial<YouConfig>): YouConfig {
@@ -53,19 +92,50 @@ export async function youSearch(
     query: query.slice(0, 400),
     num_results: count,
   };
-  if (opts?.freshness) body.freshness = opts.freshness;
+  // Freshness is operator-influenced input — forward only known values so a
+  // typo or injection never reaches the upstream API.
+  if (opts?.freshness && FRESHNESS_ALLOWLIST.has(opts.freshness)) body.freshness = opts.freshness;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
-  });
+  // SSRF-hardened transport: the base URL comes from operator env
+  // (YDC_API_BASE_URL) and the API key is sent to it — a misconfigured or
+  // malicious override pointing at an internal host would otherwise exfiltrate
+  // the key. ssrfFetch pre-validates the host, pins the connection-time IP,
+  // re-validates every redirect hop, and bounds the whole call at 10s.
+  // (ALLOW_PRIVATE_UPSTREAM=1 keeps dev/e2e localhost mocks working.)
+  const res = await ssrfFetch(
+    url,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    },
+    { maxRedirects: 0 },
+  );
   if (!res.ok) throw new Error(`you.com search ${res.status}`);
-  const data = (await res.json()) as YouSearchResponse & { hits?: YouSearchResult[]; results?: YouSearchResult[] };
+  const data = (await readCappedJson<YouSearchResponse & { hits?: YouSearchResult[]; results?: YouSearchResult[] }>(res)) as YouSearchResponse & {
+    hits?: YouSearchResult[];
+    results?: YouSearchResult[];
+  };
   // API returns hits or results depending on version
   const hits = (data.hits ?? data.results ?? []) as YouSearchResult[];
-  return hits.slice(0, count);
+  return sanitizeYouHits(hits, count);
+}
+
+/**
+ * Bound each hit: a compromised upstream must not push megabytes of snippet
+ * text through the panel response into the browser. Pure — unit tested.
+ */
+export function sanitizeYouHits(hits: YouSearchResult[], count: number): YouSearchResult[] {
+  const str = (v: unknown, max: number): string | undefined => (typeof v === "string" ? v.slice(0, max) : undefined);
+  const strList = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.filter((s) => typeof s === "string").map((s) => (s as string).slice(0, 1000)).slice(0, 5) : undefined;
+  return hits.slice(0, count).map((h) => ({
+    title: str(h.title, 300),
+    url: str(h.url, 2048),
+    snippets: strList(h.snippets),
+    highlights: strList(h.highlights),
+  }));
 }
 
 /**
@@ -84,16 +154,27 @@ export async function youResearch(
   const { apiKey, baseUrl } = resolveYouConfig(opts?.config);
   if (!apiKey) throw new Error("YDC_API_KEY required for research");
 
-  const res = await fetch(`${baseUrl}/v1/research`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "X-API-Key": apiKey },
-    body: JSON.stringify({
-      query: query.slice(0, 400),
-      research_effort: opts?.effort ?? "standard",
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
+  // Same hardened transport as youSearch (SSRF guard + capped response) —
+  // the research call carries the API key and runs up to 30s.
+  const res = await ssrfFetch(
+    `${baseUrl}/v1/research`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({
+        query: query.slice(0, 400),
+        research_effort: opts?.effort ?? "standard",
+      }),
+      signal: AbortSignal.timeout(30000),
+    },
+    { maxRedirects: 0 },
+  );
   if (!res.ok) throw new Error(`you.com research ${res.status}`);
-  const data = (await res.json()) as { answer?: string; sources?: unknown[]; result?: string };
-  return { answer: data.answer ?? data.result ?? "", sources: data.sources };
+  const data = await readCappedJson<{ answer?: string; sources?: unknown[]; result?: string }>(res);
+  // Bound the surfaced payload: answer text + a small source sample. A
+  // compromised upstream returning megabytes of "sources" must not flow
+  // unbounded into the panel response / DB-backed audit rows.
+  const answer = (data.answer ?? data.result ?? "").slice(0, 20_000);
+  const sources = Array.isArray(data.sources) ? data.sources.slice(0, 20) : undefined;
+  return { answer, sources };
 }

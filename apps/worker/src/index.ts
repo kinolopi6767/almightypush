@@ -128,7 +128,7 @@ function main() {
       if (journey.ran > 0) {
         logger.info({ ...journey }, "journeys ran");
       }
-      const email = (await runStage("email", () => runEmailCampaigns(db))) ?? { started: 0 };
+      const email = (await runStage("email", () => runEmailCampaigns(db))) ?? { started: 0, sent: 0, resolved: 0 };
       if (email.started > 0) {
         logger.info({ ...email }, "email campaigns ran");
       }

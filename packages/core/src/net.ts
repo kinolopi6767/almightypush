@@ -130,9 +130,31 @@ export async function ssrfFetch(
     // a redirect and throw a confusing error.
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get("location");
-      // Drain the body so the socket is released back to the pool.
+      // Bounded drain so the socket can be released back to the pool WITHOUT
+      // buffering an unbounded redirect body in RAM (arrayBuffer() would hold
+      // the whole body — a malicious hop could stream gigabytes). Past 64KB
+      // the read is cancelled; keep-alive reuse for redirect hops is a
+      // nice-to-have, memory safety is not negotiable.
       try {
-        await res.arrayBuffer();
+        const reader = res.body?.getReader();
+        if (reader) {
+          let seen = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            seen += value.byteLength;
+            if (seen > 64 * 1024) {
+              try {
+                await reader.cancel();
+              } catch {
+                /* ignore */
+              }
+              break;
+            }
+          }
+        } else {
+          await res.body?.cancel();
+        }
       } catch {
         /* ignore drain errors */
       }

@@ -55,11 +55,15 @@ describe("email campaign claim", () => {
 
     const first = runEmailCampaigns(db);
     expect(first.started).toBe(1);
-    expect(first.sent).toBe(1);
+    // No transport exists: sent stays 0 (claiming deliveries that never left
+    // the box would fabricate analytics); the resolved audience is reported
+    // separately for the future transport loop.
+    expect(first.sent).toBe(0);
+    expect(first.resolved).toBe(1);
 
     // Already done — no second send even if another worker polls late.
     const second = runEmailCampaigns(db);
-    expect(second).toEqual({ started: 0, sent: 0 });
+    expect(second).toEqual({ started: 0, sent: 0, resolved: 0 });
 
     const [campaign] = db.select({ status: emailCampaigns.status }).from(emailCampaigns).all();
     expect(campaign?.status).toBe("done");
@@ -83,8 +87,9 @@ describe("email campaign claim", () => {
 
     const first = runEmailCampaigns(db);
     expect(first.started).toBe(1);
-    // Dedupe: 3 copies of the same id count once.
-    expect(first.sent).toBe(1);
+    // Dedupe: 3 copies of the same id resolve once — and resolve, not send.
+    expect(first.sent).toBe(0);
+    expect(first.resolved).toBe(1);
     client.close();
   });
 });

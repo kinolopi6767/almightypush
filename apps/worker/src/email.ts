@@ -11,7 +11,10 @@ const DUE_LIMIT = 200;
 
 export interface EmailStats {
   started: number;
+  /** Actually delivered via a transport. Always 0 until an SMTP/SES transport lands. */
   sent: number;
+  /** Contacts the campaign resolved to (scope for the future transport loop). */
+  resolved: number;
 }
 
 /**
@@ -21,7 +24,7 @@ export interface EmailStats {
  */
 export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStats {
   const nowIso = now.toISOString();
-  const stats: EmailStats = { started: 0, sent: 0 };
+  const stats: EmailStats = { started: 0, sent: 0, resolved: 0 };
   // Reaper: crash between claim (sending) and done strands the row forever —
   // no reaper existed. Reset `sending` rows untouched for 30min to scheduled.
   try {
@@ -69,15 +72,16 @@ export function runEmailCampaigns(db: PushDb, now: Date = new Date()): EmailStat
         continue;
       }
       // No transport plugged in yet (no SMTP/SES): report honestly. `sent`
-      // stays 0 — claiming deliveries that never left the box would
-      // fabricate analytics. `audience` preserves the resolved size so the
-      // future transport loop knows its scope.
+      // stays 0 — adding the audience size to `sent` (as the old code did)
+      // fabricated delivery analytics AND worker logs ("sent N emails" for
+      // mail that never left the box). `resolved` preserves the audience size
+      // so the future transport loop knows its scope.
       db.update(emailCampaigns)
         .set({ status: "done", sent_at: nowIso, stats_json: JSON.stringify({ sent: 0, audience: audience.length, transport: "none" }) })
         .where(and(eq(emailCampaigns.id, row.id), eq(emailCampaigns.status, "sending")))
         .run();
       stats.started++;
-      stats.sent += audience.length;
+      stats.resolved += audience.length;
     } catch {
       try {
         db.update(emailCampaigns)
