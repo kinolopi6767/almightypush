@@ -45,7 +45,22 @@ export async function POST(req: Request) {
     return corsJson({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
 
-  const { domainId, endpoint, tags } = parsed.data;
+  const { domainId, endpoint } = parsed.data;
+
+  // Normalize tag keys: trim whitespace, reject empty/overlong keys, dedupe
+  // (last wins). Untrimmed or empty keys would otherwise be stored verbatim —
+  // breaking segment tag matching (which compares exact strings) and the
+  // {{token}} personalization lookup, and risking unique-index collisions
+  // between " key" and "key" on re-submits.
+  const normalized = new Map<string, string | number | boolean>();
+  for (const [rawKey, value] of Object.entries(parsed.data.tags)) {
+    const key = rawKey.trim();
+    if (!key || key.length > 64) {
+      return corsJson({ ok: false, error: "Invalid tag key (1–64 chars, non-blank)" }, { status: 400 });
+    }
+    normalized.set(key, value);
+  }
+  const tags = Object.fromEntries(normalized);
 
   // Resource-level window so one noisy site cannot starve the shared IP bucket.
   const rlDom = rateLimitWithHeaders(`tags:dom:${domainId}`, 60, 60_000);

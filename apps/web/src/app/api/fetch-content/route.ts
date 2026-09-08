@@ -31,6 +31,12 @@ export async function GET(req: Request) {
   const role = (session.user as { role?: string }).role ?? "viewer";
   if (!canEdit(role)) return NextResponse.json({ ok: false, error: "Editors only" }, { status: 403 });
 
+  // Same-origin guard: this endpoint proxies arbitrary public URLs (an SSRF-
+  // safe but still real network oracle) — cross-site navigations must not be
+  // able to drive it with the victim's session.
+  const { isSameOriginRequest } = await import("@/lib/csrf");
+  if (!isSameOriginRequest(req)) return NextResponse.json({ ok: false, error: "Origin not allowed" }, { status: 403 });
+
   // Rate-limit OG scraping: 30/min per user + global 120/min (prevent SSRF abuse at scale)
   const { rateLimitWithHeaders, rateLimitHeaders, clientIp } = await import("@/lib/rate-limit");
   const rl = rateLimitWithHeaders(`fetch-content:${session.user.id ?? clientIp(req.headers)}`, 30, 60_000);

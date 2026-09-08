@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * delivered/failed/per-button from the campaign stats_json.
  */
 export async function GET(req: Request) {
-  const gate = await requireExportAccess();
+  const gate = await requireExportAccess(req);
   if (!gate.ok) return gate.response;
   const wsId = gate.ctx.wsId;
 

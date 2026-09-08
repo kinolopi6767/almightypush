@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * round-trip export).
  */
 export async function GET(request: Request) {
-  const gate = await requireExportAccess();
+  const gate = await requireExportAccess(request);
   if (!gate.ok) return gate.response;
   const wsId = gate.ctx.wsId;
 

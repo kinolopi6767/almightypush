@@ -26,6 +26,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // Fail closed: unknown/missing roles are viewers, never owners.
   if (!isOwner(session.user.role)) return new Response("Forbidden", { status: 403 });
 
+  // Same-origin guard: a backup is a full DB snapshot served as a download —
+  // a cross-site top-level navigation would otherwise start an authenticated
+  // exfil-to-disk with the victim's cookies (SameSite=Lax allows top-level
+  // GETs). Browsers sending a foreign Origin/Referer are rejected here.
+  const { isSameOriginRequest } = await import("@/lib/csrf");
+  if (!isSameOriginRequest(req)) return new Response("Origin not allowed", { status: 403 });
+
   // Rate-limit backup downloads: 10/min per user + 30/min globally (prevent exfiltration loops)
   const { rateLimitWithHeaders, rateLimitHeaders } = await import("@/lib/rate-limit");
   const { clientIp } = await import("@/lib/rate-limit");

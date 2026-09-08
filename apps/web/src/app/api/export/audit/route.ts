@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * stream instead of truncating the file with a 200 status.
  */
 export async function GET(req: Request) {
-  const gate = await requireExportAccess();
+  const gate = await requireExportAccess(req);
   if (!gate.ok) return gate.response;
   const wsId = gate.ctx.wsId;
 

@@ -22,6 +22,13 @@ export async function GET(req: Request) {
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return new Response("Forbidden", { status: 403 });
 
+  // Same-origin guard: the stream is cookie-authenticated, so a cross-site
+  // top-level navigation would otherwise hold a live DB-polling connection
+  // on the victim's session (EventSource itself is same-origin-gated by the
+  // absence of CORS headers, but a plain navigation is not).
+  const { isSameOriginRequest } = await import("@/lib/csrf");
+  if (!isSameOriginRequest(req)) return new Response("Origin not allowed", { status: 403 });
+
   // Connection throttle: each stream polls the DB every 1.5s for 10min.
   const { rateLimit, clientIp } = await import("@/lib/rate-limit");
   const who = session.user.id ?? clientIp(req.headers);

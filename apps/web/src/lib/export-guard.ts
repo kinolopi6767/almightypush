@@ -1,9 +1,24 @@
 import { auth } from "@/auth";
 import { canEdit, canManage } from "@/lib/roles";
+import { isSameOriginRequest } from "@/lib/csrf";
 
 export interface ExportContext {
   wsId: number;
   userId: number;
+}
+
+/**
+ * Reject cross-site navigation-triggered downloads. Session cookies are
+ * SameSite=Lax, which still sends cookies on top-level cross-site GET
+ * navigations (victim clicks attacker link → authenticated CSV download
+ * starts, spamming audit + disk). When the browser sends Origin/Referer it
+ * must match the panel origin; non-browser callers (no headers) pass.
+ */
+function sameOriginResponse(req: Request | undefined): Response | null {
+  if (req && !isSameOriginRequest(req)) {
+    return new Response("Origin not allowed", { status: 403 });
+  }
+  return null;
 }
 
 /**
@@ -18,9 +33,11 @@ export interface ExportContext {
  *
  * Returns the context on success, or a `Response` to return directly.
  */
-export async function requireExportAccess(): Promise<{ ok: true; ctx: ExportContext } | { ok: false; response: Response }> {
+export async function requireExportAccess(req?: Request): Promise<{ ok: true; ctx: ExportContext } | { ok: false; response: Response }> {
   const session = await auth();
   if (!session?.user) return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
+  const crossSite = sameOriginResponse(req);
+  if (crossSite) return { ok: false, response: crossSite };
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return { ok: false, response: new Response("No workspace", { status: 400 }) };
   if (!canEdit(session.user.role)) {
@@ -33,9 +50,11 @@ export async function requireExportAccess(): Promise<{ ok: true; ctx: ExportCont
 }
 
 /** Owner/admin only — for endpoints that decrypt push credentials. */
-export async function requireCredentialExportAccess(): Promise<{ ok: true; ctx: ExportContext } | { ok: false; response: Response }> {
+export async function requireCredentialExportAccess(req?: Request): Promise<{ ok: true; ctx: ExportContext } | { ok: false; response: Response }> {
   const session = await auth();
   if (!session?.user) return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
+  const crossSite = sameOriginResponse(req);
+  if (crossSite) return { ok: false, response: crossSite };
   const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!wsId) return { ok: false, response: new Response("No workspace", { status: 400 }) };
   if (!canManage(session.user.role)) {

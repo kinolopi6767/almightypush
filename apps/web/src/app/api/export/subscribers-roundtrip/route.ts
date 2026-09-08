@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   // Round-trip exports contain live push credentials — owner/admin only
   // (editors and viewers blocked), audited after the rate-limit passes.
-  const gate = await requireCredentialExportAccess();
+  const gate = await requireCredentialExportAccess(req);
   if (!gate.ok) return gate.response;
   const wsId = gate.ctx.wsId;
 
