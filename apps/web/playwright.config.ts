@@ -30,6 +30,11 @@ const appEnv = {
   // The sandbox loop subscribes endpoints pointing at the local mock push
   // service (127.0.0.1) — production's SSRF guard would reject them.
   ALLOW_PRIVATE_UPSTREAM: "1",
+  // Test-harness acknowledgment for the above: production env validation
+  // (worker + web instrumentation) only honors ALLOW_PRIVATE_UPSTREAM when
+  // E2E=1 is also set, so an accidental flag in a real deployment still
+  // fails closed. Never set E2E=1 outside tests.
+  E2E: "1",
 };
 
 export default defineConfig({

@@ -6,6 +6,15 @@ set -e
 # the container IP instead of 0.0.0.0 → loopback healthchecks fail. Force it.
 export HOSTNAME=0.0.0.0
 
+# Fail fast on unwritable data dirs (e.g. a volume created by a pre-non-root
+# image, owned by root) — otherwise both processes die later with cryptic
+# SQLITE_CANTOPEN errors. Remediation: chown -R 1001:1001 <volume> on host.
+if ! touch /app/data/.writetest 2>/dev/null; then
+  echo "FATAL: /app/data is not writable by $(id -u 2>/dev/null || echo unknown) — if this volume was created by an older (root) image, chown it on the host: chown -R 1001:1001 <volume>" >&2
+  exit 1
+fi
+rm -f /app/data/.writetest
+
 WORKER_PID=""
 SHUTTING_DOWN=0
 

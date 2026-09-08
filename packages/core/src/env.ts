@@ -50,11 +50,22 @@ export const baseEnvSchema = z
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === "production") {
       if (!data.APP_ENC_KEY) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_ENC_KEY"], message: "APP_ENC_KEY is required in production (64 hex chars)" });
-      if (!data.AUTH_SECRET) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["AUTH_SECRET"], message: "AUTH_SECRET is required in production" });
+      if (!data.AUTH_SECRET) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["AUTH_SECRET"], message: "AUTH_SECRET is required in production" });
+      } else if (data.AUTH_SECRET.length < 32) {
+        // 16-char secrets allow offline JWT-HMAC brute force → session forgery.
+        // Existing dev/test secrets are unaffected; only production enforces this.
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["AUTH_SECRET"], message: "AUTH_SECRET must be at least 32 chars in production (openssl rand -hex 32)" });
+      }
       if (!data.APP_URL) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_URL"], message: "APP_URL is required in production (https://...)" });
       // ALLOW_PRIVATE_UPSTREAM disables the SSRF guard — it must never be on
       // in production, even if set accidentally in the environment.
-      if ((process.env.ALLOW_PRIVATE_UPSTREAM ?? "") === "1") {
+      // Exception: the Playwright e2e harness runs a production build
+      // (`next start`, NODE_ENV=production) against a localhost mock push
+      // service, which the guard would reject. That harness sets E2E=1
+      // explicitly (playwright.config.ts) — a deliberate two-flag
+      // acknowledgment, not an accident. Real deployments never set E2E.
+      if ((process.env.ALLOW_PRIVATE_UPSTREAM ?? "") === "1" && (process.env.E2E ?? "") !== "1") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ALLOW_PRIVATE_UPSTREAM"], message: "ALLOW_PRIVATE_UPSTREAM=1 is forbidden in production" });
       }
     }

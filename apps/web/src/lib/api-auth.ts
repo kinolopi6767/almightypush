@@ -47,8 +47,14 @@ export function requireApiKey(headers: Headers): ApiKeyResult {
 
   // Throttle invalid guesses per client IP: without this, key-guessing is
   // unbounded (each guess costs a DB lookup). Valid keys are throttled per
-  // key below; this bucket only gates failures.
+  // key below; this bucket only gates failures. A global backstop pairs it:
+  // with TRUST_PROXY=1 a directly-exposed panel lets attackers rotate the
+  // per-IP bucket via forged X-Forwarded-For, so the global bucket (which
+  // cannot be rotated) caps aggregate guessing + indexed-lookup burn.
   if (!rateLimit(`apikey-invalid:${clientIp(headers)}`, envRateLimit("API_KEY_INVALID_RPM", 60), 60_000)) {
+    return { ok: false, error: "Rate limit exceeded", status: 429 };
+  }
+  if (!rateLimit("apikey-invalid:all", envRateLimit("API_KEY_INVALID_GLOBAL_RPM", 600), 60_000)) {
     return { ok: false, error: "Rate limit exceeded", status: 429 };
   }
 

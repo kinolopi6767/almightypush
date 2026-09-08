@@ -62,8 +62,15 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/start.sh ./start.sh
 RUN chmod +x ./start.sh
 
-# Ensure data dir exists with writable perms before VOLUME
-RUN mkdir -p /app/data && chmod 755 /app/data
+# Ensure data dir exists with writable perms before VOLUME.
+# Non-root runtime: web + worker + SQLite files run as `app` (least
+# privilege — a future RCE no longer lands as container root). Only
+# /app/data needs ownership (image files stay root-owned, world-readable).
+# NOTE (ops): pre-existing volumes created by older root-run images are
+# root-owned — chown once on the host (`chown -R 1001:1001 <volume>`) or the
+# container will fail fast with a clear message from start.sh.
+RUN mkdir -p /app/data && adduser -D -u 1001 app && chown app:app /app/data && chmod 755 /app/data
+USER app
 
 # Shared data volume (SQLite + WAL + backups).
 VOLUME ["/app/data"]
