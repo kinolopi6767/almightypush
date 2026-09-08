@@ -419,6 +419,9 @@ export async function resendToNonClickersAction(campaignId: number): Promise<Cam
       domain_id: source.domain_id,
       channel: source.channel,
       title: `Re: ${source.title}`.slice(0, 120),
+      // Preserve the A/B experiment: dropping title_b here silently turned
+      // the resend into a single-title send. Variants are copied below.
+      title_b: source.title_b,
       variants_json: source.variants_json,
       message: source.message,
       icon_url: source.icon_url,

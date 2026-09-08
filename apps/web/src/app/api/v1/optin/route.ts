@@ -18,6 +18,15 @@ const bodySchema = z.object({
  * counters so the panel can show grant-rate analytics per domain.
  */
 export async function POST(req: Request) {
+  // DB throws must surface as the JSON envelope, never an HTML 500.
+  try {
+    return await handleOptin(req);
+  } catch {
+    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+  }
+}
+
+async function handleOptin(req: Request) {
   const ip = clientIp(req.headers);
   const rl = rateLimitWithHeaders(`optin:${ip}`, 60, 60_000);
   if (!rl.allowed) {
@@ -56,7 +65,7 @@ export async function POST(req: Request) {
     db.insert(events).values({ domain_id: domain.id, type: stage }).run();
     return corsJson({ ok: true });
   } catch {
-    return corsJson({ ok: false }, { status: 500 });
+    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
   }
 }
 

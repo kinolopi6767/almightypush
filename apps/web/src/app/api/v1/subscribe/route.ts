@@ -44,6 +44,18 @@ const bodySchema = z.object({
  * Subscriptions are encrypted at rest; lookups/dedup run on a sha256 hash.
  */
 export async function POST(req: Request) {
+  // Any unexpected throw (locked DB, disk-full, missing APP_ENC_KEY) must
+  // surface as the JSON envelope — never a Next.js 500 HTML page that
+  // breaks the SDK contract. (The inner insert try/catch handles the
+  // concurrent-duplicate race; this outer one is the fail-closed net.)
+  try {
+    return await handleSubscribe(req);
+  } catch {
+    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+  }
+}
+
+async function handleSubscribe(req: Request) {
   // Rate limits BEFORE body parse + DNS-resolving SSRF check: an anonymous
   // sender must not be able to force unbounded req.json() buffering or
   // resolver lookups on hostnames they control.

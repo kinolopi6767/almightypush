@@ -17,6 +17,16 @@ const bodySchema = z.object({
 
 /** Public unsubscribe endpoint — called by the client SDK on logout/opt-out. */
 export async function POST(req: Request) {
+  // DB throws (locked DB, disk-full) must surface as the JSON envelope —
+  // never a Next.js 500 HTML page that breaks the SDK contract.
+  try {
+    return await handleUnsubscribe(req);
+  } catch {
+    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+  }
+}
+
+async function handleUnsubscribe(req: Request) {
   const ip = clientIp(req.headers);
   const rlIp = rateLimitWithHeaders(`unsub:${ip}`, 30, 60_000);
   if (!rlIp.allowed) {

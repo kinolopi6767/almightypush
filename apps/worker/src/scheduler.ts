@@ -17,6 +17,7 @@ interface CampaignRow {
   id: number;
   workspace_id: number;
   domain_id: number | null;
+  channel: string | null;
   schedule_at: string | null;
   audience_json: string | null;
   title_b: string | null;
@@ -46,6 +47,7 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
       id: campaigns.id,
       workspace_id: campaigns.workspace_id,
       domain_id: campaigns.domain_id,
+      channel: campaigns.channel,
       schedule_at: campaigns.schedule_at,
       audience_json: campaigns.audience_json,
       title_b: campaigns.title_b,
@@ -133,6 +135,15 @@ function reapStuckCampaigns(db: PushDb, nowIso: string): void {
 }
 
 function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { queued: number; skipped: number } {
+  // Channel guard: this is the PUSH scheduler. Email campaigns live in the
+  // same table (channel='email', created via panel/API) and must never fan
+  // out as push deliveries. Skip them here (stay `scheduled`) — they are
+  // owned by the email engine path, not this one. Claiming or failing them
+  // here would either send pushes the operator never asked for or destroy
+  // the operator's email intent.
+  if (campaign.channel !== null && campaign.channel !== undefined && campaign.channel !== "push") {
+    return { queued: 0, skipped: 1 };
+  }
   // Paused domains never start: check BEFORE the atomic claim so a paused
   // campaign stays `scheduled` (fires on resume) instead of churning through
   // claim → empty-enqueue → done every tick.

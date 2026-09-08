@@ -43,8 +43,25 @@ export async function runBackupScheduler(db: PushDb, dbFile: string, nowMs: numb
   if (lastAttempt && (!lastRunAt || lastAttempt > lastRunAt) && markerIsRecent(lastAttempt, nowMs, 3_600_000)) return false;
 
   const created = await createSnapshot(db, dbFile, "auto", nowMs);
-  if (created) pruneBackups(db, resolveRetention(db));
+  // Prune on every scheduler pass while auto-backups are enabled — not only
+  // after a successful snapshot. pruneBackups only ran post-snapshot, so a
+  // stretched interval (monthly) or repeated snapshot failures let rows +
+  // files accumulate unbounded. Pruning is a cheap indexed query over a
+  // tiny table; running it per tick is safe (throttled to 1/hour below).
+  maybePrune(db, nowMs);
   return created;
+}
+
+/** Hourly-throttled prune so every-tick calls stay cheap. */
+function maybePrune(db: PushDb, nowMs: number): void {
+  try {
+    const last = readSetting(db, "last_backup_prune_at");
+    if (markerIsRecent(last, nowMs, 3_600_000)) return;
+    pruneBackups(db, resolveRetention(db));
+    writeSetting(db, "last_backup_prune_at", new Date(nowMs).toISOString());
+  } catch {
+    // best-effort — prune must never break the backup tick
+  }
 }
 
 /** Create a consistent snapshot row + file (non-blocking backup API). */
@@ -133,6 +150,8 @@ async function tryUploadToDrive(db: PushDb, filePath: string): Promise<void> {
   // OOM the worker. Skip oversized snapshots (local copy still exists).
   const limit = 350 * 1024 * 1024;
   if (size > limit) {
+    // NOTE: pino logger is not threaded through here (signature is shared
+    // with tests); console is the worker's stderr stream — same destination.
     console.error("[backup] Drive upload skipped — file exceeds 350MB in-memory limit");
     return;
   }

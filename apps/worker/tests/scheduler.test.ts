@@ -213,4 +213,28 @@ describe("scheduler hardening", () => {
     expect(rows.length).toBe(0);
     expect(st).toBe("done");
   });
+
+  it("email-channel campaigns are never fanned out as push deliveries", async () => {
+    const { createMemoryDb } = await import("@pushpanel/db");
+    const { campaigns, domains, subscribers, workspaces } = await import("@pushpanel/db/schema");
+    const { runScheduler } = await import("../src/scheduler.js");
+    const { db } = createMemoryDb();
+    const [ws] = db.insert(workspaces).values({ name: "w", slug: "w-chan" }).returning().all();
+    const [dom] = db.insert(domains).values({ workspace_id: ws!.id, name: "c.example.test", status: "active" }).returning().all();
+    db.insert(subscribers).values({ domain_id: dom!.id, token: "e", token_hash: "h1", provider: "vapid" }).run();
+    const [c] = db
+      .insert(campaigns)
+      .values({ workspace_id: ws!.id, domain_id: dom!.id, channel: "email", title: "newsletter", audience_json: JSON.stringify({ kind: "all" }), status: "scheduled", scheduled: 1, source: "panel" })
+      .returning({ id: campaigns.id })
+      .all();
+    const stats = runScheduler(db);
+    const { eq: eq2 } = await import("drizzle-orm");
+    const { deliveries } = await import("@pushpanel/db/schema");
+    const rows = db.select().from(deliveries).where(eq2(deliveries.campaign_id, c!.id)).all();
+    expect(rows.length).toBe(0);
+    expect(stats.deliveriesQueued).toBe(0);
+    // Skipped, not claimed: stays scheduled for the email path, never sent as push.
+    const st = db.select({ status: campaigns.status }).from(campaigns).where(eq2(campaigns.id, c!.id)).all()[0]!.status;
+    expect(st).toBe("scheduled");
+  });
 });
