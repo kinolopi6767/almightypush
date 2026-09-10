@@ -120,6 +120,13 @@
       "when": 1788100000000,
       "tag": "0016_prune_covering_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788200000000,
+      "tag": "0017_integrity_hardening_ii",
+      "breakpoints": true
     }
   ]
 }

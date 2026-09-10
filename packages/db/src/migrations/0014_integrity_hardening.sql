@@ -7,8 +7,12 @@
 CREATE INDEX IF NOT EXISTS idx_events_delivery_id ON events (delivery_id);
 
 -- Dedupe before adding UNIQUEs (existing personal DBs may already hold dupes).
-DELETE FROM email_contacts WHERE id NOT IN (SELECT MIN(id) FROM email_contacts GROUP BY workspace_id, email);
-DELETE FROM subscriber_tags WHERE id NOT IN (SELECT MIN(id) FROM subscriber_tags GROUP BY subscriber_id, tag);
+-- Keep the NEWEST row per key so a later corrected value/status survives.
+DELETE FROM email_contacts WHERE id NOT IN (SELECT MAX(id) FROM email_contacts GROUP BY workspace_id, email);
+DELETE FROM subscriber_tags WHERE id NOT IN (SELECT MAX(id) FROM subscriber_tags GROUP BY subscriber_id, tag);
+-- team_invites could also hold duplicate hashes on upgraded DBs; without this
+-- the UNIQUE below aborts the whole migration transaction (and every boot).
+DELETE FROM team_invites WHERE id NOT IN (SELECT MAX(id) FROM team_invites GROUP BY token_hash);
 
 -- Dedupe email contacts per workspace (case handling stays in app code;
 -- index guards exact duplicates). NULL-safe: SQLite treats NULLs distinct.

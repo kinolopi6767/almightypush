@@ -18,12 +18,15 @@ interface CampaignRow {
   workspace_id: number;
   domain_id: number | null;
   channel: string | null;
-  schedule_at: string | null;
+  schedule_at?: string | null;
   audience_json: string | null;
   title_b: string | null;
   variants_json: string | null;
   topic: string | null;
-}/**
+  audience_complete: number;
+}
+
+/**
  * Enqueue deliveries for campaigns whose send time has arrived.
  * `scheduled` + (schedule_at is null or due) → audience resolved from
  * `audience_json` (kind: all = every active subscriber of the domain) →
@@ -34,13 +37,12 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
   const stats: SchedulerStats = { campaignsStarted: 0, deliveriesQueued: 0, skipped: 0 };
   const nowIso = now.toISOString();
 
-  // Crash reaper: a `sending` campaign with zero queued/sending deliveries
-  // will never be picked up again (the due-query only matches `scheduled`,
-  // and finalize only visits campaigns touched by the current send cycle).
-  // This happens when the worker crashes between the scheduled→sending claim
-  // and the first delivery chunk. Mirror finalize semantics: done if anything
-  // was sent, failed otherwise — never touch cancelled/paused/draft.
-  reapStuckCampaigns(db, nowIso);
+  // Crash reaper: a `sending` campaign whose fan-out did not finish (process
+  // crash between the scheduled→sending claim and the last delivery chunk)
+  // would otherwise be finalized with a partial audience. The reaper resumes
+  // the idempotent enqueue (UNIQUE(campaign_id, subscriber_id)) and then
+  // finalizes only once nothing is pending. Never touches cancelled/paused.
+  reapStuckCampaigns(db, nowIso, now.getTime());
 
   const rows = db
     .select({
@@ -53,6 +55,7 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
       title_b: campaigns.title_b,
       variants_json: campaigns.variants_json,
       topic: campaigns.topic,
+      audience_complete: campaigns.audience_complete,
     })
     .from(campaigns)
     .where(
@@ -96,42 +99,110 @@ export function runScheduler(db: PushDb, now: Date = new Date()): SchedulerStats
   return stats;
 }
 
-function reapStuckCampaigns(db: PushDb, nowIso: string): void {
+function reapStuckCampaigns(db: PushDb, nowIso: string, nowMs: number): void {
   // Multi-worker race guard: a campaign claimed seconds ago (scheduled→sending
-  // CAS done, first delivery chunk not yet inserted) looks identical to a
-  // crash-orphaned row. Only reap rows whose updated_at is older than 5 min —
-  // fresh claims are left alone for the owning worker to fill.
+  // CAS done, fan-out still running) looks identical to a crash-orphaned row.
+  // Only reap rows whose updated_at is older than 5 min — fresh claims are
+  // left alone for the owning worker to fill.
   const cutoff = new Date(Date.parse(nowIso) - 5 * 60_000).toISOString();
   const stuck = db
-    .select({ id: campaigns.id })
+    .select({
+      id: campaigns.id,
+      workspace_id: campaigns.workspace_id,
+      domain_id: campaigns.domain_id,
+      channel: campaigns.channel,
+      audience_json: campaigns.audience_json,
+      title_b: campaigns.title_b,
+      variants_json: campaigns.variants_json,
+      topic: campaigns.topic,
+      audience_complete: campaigns.audience_complete,
+    })
     .from(campaigns)
-    .where(
-      and(
-        eq(campaigns.status, "sending"),
-        sql`(${campaigns.updated_at} IS NULL OR ${campaigns.updated_at} <= ${cutoff})`,
-        sql`NOT EXISTS (SELECT 1 FROM deliveries WHERE ${deliveries.campaign_id} = ${campaigns.id} AND ${deliveries.status} IN ('queued', 'sending'))`,
-      ),
-    )
+    .where(and(eq(campaigns.status, "sending"), sql`(${campaigns.updated_at} IS NULL OR ${campaigns.updated_at} <= ${cutoff})`))
+    .orderBy(campaigns.id)
+    .limit(DUE_LIMIT)
     .all();
   for (const row of stuck) {
     try {
-      // Mirror finalizeCampaigns semantics exactly: a 410/404-cleaned
-      // (`unsubscribed`) delivery is a successful push-service handshake, not
-      // a failure — an all-dead-token campaign finishes `done` on both paths.
-      const [sentRow] = db
-        .select({ value: count() })
-        .from(deliveries)
-        .where(and(eq(deliveries.campaign_id, row.id), inArray(deliveries.status, ["sent", "unsubscribed"])))
+      // Email campaigns are owned by the email engine — never enqueue pushes.
+      if (row.channel && row.channel !== "push") continue;
+      if (!row.domain_id) {
+        markStuckFailed(db, row.id, nowIso);
+        continue;
+      }
+      const [dom] = db
+        .select({ status: domains.status })
+        .from(domains)
+        .where(eq(domains.id, row.domain_id))
+        .limit(1)
         .all();
-      const anySent = (sentRow?.value ?? 0) > 0;
-      db.update(campaigns)
-        .set({ status: anySent ? "done" : "failed", sent_at: nowIso })
-        .where(and(eq(campaigns.id, row.id), eq(campaigns.status, "sending")))
-        .run();
+      if (!dom) {
+        markStuckFailed(db, row.id, nowIso);
+        continue;
+      }
+      // Paused domain: leave the campaign `sending` so it resumes with the
+      // domain instead of being failed or force-delivered.
+      if (dom.status !== "active") continue;
+
+      if (!row.audience_complete) {
+        // Resume the interrupted fan-out. Re-resolving is safe and
+        // idempotent: ON CONFLICT DO NOTHING skips already-enqueued
+        // subscribers, and late subscribers simply join the remainder of an
+        // `all` broadcast.
+        const audience = resolveAudience(db, row, row.domain_id);
+        if (audience.length > 0) enqueueAudience(db, row, row.domain_id, audience, nowMs);
+        db.update(campaigns)
+          .set({ audience_complete: 1 })
+          .where(and(eq(campaigns.id, row.id), eq(campaigns.status, "sending")))
+          .run();
+      }
+      finalizeStuckCampaign(db, row.id, nowIso);
     } catch {
-      void 0;
+      try {
+        markStuckFailed(db, row.id, nowIso);
+      } catch {
+        void 0;
+      }
     }
   }
+}
+
+function markStuckFailed(db: PushDb, campaignId: number, nowIso: string): void {
+  db.update(campaigns)
+    .set({ status: "failed", sent_at: nowIso, audience_complete: 1 })
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.status, "sending")))
+    .run();
+}
+
+/**
+ * Finalize a reaped campaign once its (possibly resumed) fan-out has drained.
+ * Mirrors finalizeCampaigns semantics: a 410/404-cleaned (`unsubscribed`)
+ * delivery is a successful push-service handshake, and an empty audience is
+ * `done`, not `failed`.
+ */
+function finalizeStuckCampaign(db: PushDb, campaignId: number, nowIso: string): void {
+  const [pending] = db
+    .select({ value: count() })
+    .from(deliveries)
+    .where(and(eq(deliveries.campaign_id, campaignId), inArray(deliveries.status, ["queued", "sending"])))
+    .all();
+  if ((pending?.value ?? 0) !== 0) return;
+  const [sentRow] = db
+    .select({ value: count() })
+    .from(deliveries)
+    .where(and(eq(deliveries.campaign_id, campaignId), inArray(deliveries.status, ["sent", "unsubscribed"])))
+    .all();
+  const [totalRow] = db
+    .select({ value: count() })
+    .from(deliveries)
+    .where(eq(deliveries.campaign_id, campaignId))
+    .all();
+  const anySent = (sentRow?.value ?? 0) > 0;
+  const empty = (totalRow?.value ?? 0) === 0;
+  db.update(campaigns)
+    .set({ status: anySent || empty ? "done" : "failed", sent_at: nowIso, audience_complete: 1 })
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.status, "sending")))
+    .run();
 }
 
 function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { queued: number; skipped: number } {
@@ -204,38 +275,68 @@ function startCampaign(db: PushDb, campaign: CampaignRow, nowIso: string): { que
 
   if (audience.length === 0) {
     db.update(campaigns)
-      .set({ status: "done", sent_at: nowIso })
+      .set({ status: "done", sent_at: nowIso, audience_complete: 1 })
       .where(and(eq(campaigns.id, campaign.id), eq(campaigns.status, "sending")))
       .run();
     return { queued: 0, skipped: 1 };
   }
 
-  // LumaPush: up to 10 variants via variants_json [{key,weight}] or legacy title_b 50/50
-  const variants = parseVariants(campaign.variants_json, campaign.title_b);
+  const queued = enqueueAudience(db, campaign, campaign.domain_id, audience, Date.now());
+  // Mark only AFTER the final chunk commits: the reaper uses this flag to
+  // decide whether an interrupted fan-out needs resuming.
+  db.update(campaigns)
+    .set({ audience_complete: 1 })
+    .where(and(eq(campaigns.id, campaign.id), eq(campaigns.status, "sending")))
+    .run();
+  return { queued, skipped: 0 };
+}
 
-  // 1M scale: chunk 500 inserts per transaction to avoid 1M-row single tx lock (3min) + OOM
-  // Guard: non-numeric/zero/negative env must not produce a 0-step infinite loop.
+/**
+ * Idempotent audience fan-out: bounded chunks (one short transaction per
+ * chunk) with ON CONFLICT DO NOTHING against UNIQUE(campaign_id,
+ * subscriber_id). Returns the number of rows actually inserted.
+ *
+ * LumaPush: up to 10 variants via variants_json [{key,weight}] or legacy
+ * title_b 50/50. The 1M-scale chunk keeps the SQLite write lock window short
+ * and the guard keeps a garbage SCHEDULER_CHUNK from producing a 0-step loop.
+ */
+function enqueueAudience(
+  db: PushDb,
+  campaign: CampaignRow,
+  domainId: number,
+  audience: number[],
+  nowMs: number,
+): number {
+  const variants = parseVariants(campaign.variants_json, campaign.title_b);
   const rawChunk = Number(process.env.SCHEDULER_CHUNK ?? 500);
   const CHUNK = Number.isFinite(rawChunk) ? Math.min(Math.max(Math.floor(rawChunk), 1), 5000) : 500;
+  let queued = 0;
   for (let i = 0; i < audience.length; i += CHUNK) {
     const slice = audience.slice(i, i + CHUNK);
-    db.transaction((tx) => {
-      for (const subscriberId of slice) {
-        const variant = variants ? pickVariant(subscriberId, variants, campaign.id) : campaign.title_b ? (subscriberId % 2 === 0 ? "a" : "b") : null;
-        tx.insert(deliveries)
-          .values({
+    const changes = db.transaction((tx) =>
+      tx
+        .insert(deliveries)
+        .values(
+          slice.map((subscriberId) => ({
             campaign_id: campaign.id,
             subscriber_id: subscriberId,
-            domain_id: campaign.domain_id!,
-            requested_at: Date.now(),
-            variant,
-          })
-          .run();
-      }
-    });
+            domain_id: domainId,
+            requested_at: nowMs,
+            variant: variants
+              ? pickVariant(subscriberId, variants, campaign.id)
+              : campaign.title_b
+                ? subscriberId % 2 === 0
+                  ? "a"
+                  : "b"
+                : null,
+          })),
+        )
+        .onConflictDoNothing()
+        .run().changes,
+    );
+    queued += changes;
   }
-
-  return { queued: audience.length, skipped: 0 };
+  return queued;
 }
 
 /**

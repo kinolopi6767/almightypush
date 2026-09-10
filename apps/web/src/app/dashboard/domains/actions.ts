@@ -171,6 +171,9 @@ export async function sendTestPushAction(
       audience_json: JSON.stringify({ kind: "manual", ids: manualIds }),
       status: "sending",
       source: "panel",
+      // Deliveries are inserted immediately below — the fan-out is complete,
+      // so the sender may finalize this campaign once they drain.
+      audience_complete: 1,
     })
     .run();
   const campaignId = Number(campaign.lastInsertRowid);

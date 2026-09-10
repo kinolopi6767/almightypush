@@ -25,8 +25,14 @@ function envMs(name: string, fallback: number): number {
 
 const WORK_MS = envMs("WORKER_TICK_MS", 5_000);
 const IDLE_MS = envMs("WORKER_IDLE_TICK_MS", 60_000);
-/** Max seconds to wait for an in-flight tick on SIGTERM before force-exit. */
-const GRACE_EXIT_MS = 35_000;
+/**
+ * Max time to wait for an in-flight tick on SIGTERM before force-exit.
+ * Tunable so Docker's stop_grace_period and a large WORKER_BATCH_SIZE can be
+ * matched; the stale-claim reviver is the safety net for anything cut short.
+ */
+const GRACE_EXIT_MS = envMs("WORKER_GRACE_EXIT_MS", 35_000);
+/** Liveness heartbeat cadence — beats *during* a long tick, not just between. */
+const HEARTBEAT_MS = envMs("WORKER_HEARTBEAT_MS", 10_000);
 let running = false;
 let traceActive = false;
 let shuttingDown = false;
@@ -58,6 +64,14 @@ function main() {
   } catch (e) {
     if (e instanceof Error && e.message.startsWith("APP_URL")) throw e;
     throw new Error("APP_URL is invalid — must be an absolute http(s) URL");
+  }
+
+  // Without the encryption key every queued delivery would be marked failed
+  // (token decrypt) — burning the whole queue terminally instead of failing
+  // fast at boot. The shared env schema only enforces this in production, so
+  // guard here for dev/staging too.
+  if (!env.APP_ENC_KEY || !/^[0-9a-f]{64}$/i.test(env.APP_ENC_KEY)) {
+    throw new Error("APP_ENC_KEY is required (64 hex chars) — worker cannot decrypt push tokens without it");
   }
 
   const path = resolveDbPath(env.DATABASE_PATH);
@@ -159,15 +173,25 @@ function main() {
     }
   };
 
-  const loop = () => {
-    if (shuttingDown) return;
-    // Liveness heartbeat: compose healthcheck reads this file's mtime — a
-    // hung (not exited) worker is otherwise never restarted.
+  // Liveness heartbeat: compose healthcheck reads this file's mtime — a hung
+  // (not exited) worker is otherwise never restarted. Beat on a timer during
+  // ticks too: a legitimately long send cycle previously looked dead.
+  const heartbeatPath = nodePath.join(nodePath.dirname(path), "worker-heartbeat");
+  const beat = () => {
     try {
-      writeFileSync(nodePath.join(nodePath.dirname(path), "worker-heartbeat"), new Date().toISOString());
+      writeFileSync(heartbeatPath, new Date().toISOString());
     } catch {
       /* best-effort — read-only volumes etc. */
     }
+  };
+  beat();
+  // unref: must not keep the process alive on its own (the tick timer does).
+  const heartbeatTimer = setInterval(beat, HEARTBEAT_MS);
+  heartbeatTimer.unref?.();
+
+  const loop = () => {
+    if (shuttingDown) return;
+    beat();
     // NOTE: this timer must stay ref'd — it is the ONLY recurring handle in
     // the process. unref() here lets Node drain the loop and exit after the
     // first tick (empirically verified on Node 22).
@@ -187,6 +211,7 @@ function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info("worker shutting down");
+    clearInterval(heartbeatTimer);
     const force = setTimeout(() => process.exit(0), GRACE_EXIT_MS);
     force.unref?.();
     void (pendingTick ?? Promise.resolve()).finally(() => process.exit(0));

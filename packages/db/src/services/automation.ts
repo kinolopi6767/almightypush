@@ -83,6 +83,23 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
   const delaySeconds = opts.delaySeconds ?? config?.delay_seconds ?? 0;
 
   const delayed = delaySeconds > 0;
+
+  // Resolve/scope the audience BEFORE the campaign row is written. The
+  // previous order stored the raw caller id list in audience_json (including
+  // ids of other domains) and only scoped what it enqueued — any other
+  // consumer trusting audience_json could cross tenants.
+  let subscriberIds = opts.subscriberIds;
+  if (subscriberIds === undefined) {
+    // Delayed "all" campaigns are re-resolved by the scheduler, so loading
+    // every id here is pure waste (and an OOM risk at 1M subscribers).
+    if (!delayed) subscriberIds = activeSubscriberIds(db, opts.domainId);
+  } else {
+    // Scope caller-supplied IDs to the domain: filter out ids that are not
+    // active subscribers of THIS domain (prevents cross-tenant delivery when
+    // a stale/forged id list is passed).
+    subscriberIds = scopeSubscriberIdsToDomain(db, opts.domainId, subscriberIds);
+  }
+
   const values: typeof campaigns.$inferInsert = {
     workspace_id: opts.workspaceId,
     domain_id: opts.domainId,
@@ -91,24 +108,18 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
     icon_url: payload.icon_url || null,
     image_url: payload.image_url || null,
     launch_url: payload.launch_url || null,
-    audience_json: JSON.stringify(
-      opts.subscriberIds ? { kind: "manual", ids: opts.subscriberIds } : { kind: "all" },
-    ),
+    audience_json:
+      subscriberIds === undefined
+        ? JSON.stringify({ kind: "all" })
+        : JSON.stringify({ kind: "manual", ids: subscriberIds }),
     source: "automation",
     status: delayed ? "scheduled" : "sending",
     scheduled: delayed ? 1 : 0,
+    // Immediate runs fan out below and are complete on return; delayed runs
+    // are enqueued by the scheduler, which sets the flag after its fan-out.
+    audience_complete: delayed ? 0 : 1,
   };
   if (delayed) values.schedule_at = new Date(now.getTime() + delaySeconds * 1000).toISOString();
-
-  let subscriberIds = opts.subscriberIds;
-  if (subscriberIds === undefined) {
-    subscriberIds = activeSubscriberIds(db, opts.domainId);
-  } else {
-    // Scope caller-supplied IDs to the domain: filter out ids that are not
-    // active subscribers of THIS domain (prevents cross-tenant delivery when
-    // a stale/forged id list is passed).
-    subscriberIds = scopeSubscriberIdsToDomain(db, opts.domainId, subscriberIds);
-  }
 
   // Campaign row + delivery inserts. Deliveries are written in bounded
   // chunks (mirroring the scheduler) instead of one transaction over the
@@ -117,8 +128,11 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
   const CHUNK = 500;
   const inserted = db.insert(campaigns).values(values).run();
   const campaignId = Number(inserted.lastInsertRowid);
-  if (delayed) return { campaignId, queued: 0, delayed: subscriberIds.length };
-  if (subscriberIds.length === 0) {
+  if (delayed) {
+    const audienceSize = subscriberIds?.length ?? countActiveSubscribers(db, opts.domainId);
+    return { campaignId, queued: 0, delayed: audienceSize };
+  }
+  if (!subscriberIds || subscriberIds.length === 0) {
     // Empty audience: finish immediately. A `sending` campaign with zero
     // deliveries would never be finalized (nothing transitions it), so it
     // would sit "sending" forever.
@@ -129,16 +143,37 @@ export function enqueueAutomationCampaign(opts: EnqueueAutomationOptions): Enque
     return { campaignId, queued: 0, delayed: 0 };
   }
   let queued = 0;
-  for (let i = 0; i < subscriberIds.length; i += CHUNK) {
-    const chunk = subscriberIds.slice(i, i + CHUNK);
-    db.transaction((tx) => {
-      for (const subscriberId of chunk) {
-        tx.insert(deliveries)
-          .values({ campaign_id: campaignId, subscriber_id: subscriberId, domain_id: opts.domainId, requested_at: now.getTime() })
-          .run();
-      }
-    });
-    queued += chunk.length;
+  try {
+    for (let i = 0; i < subscriberIds.length; i += CHUNK) {
+      const chunk = subscriberIds.slice(i, i + CHUNK);
+      // ON CONFLICT DO NOTHING + UNIQUE(campaign_id, subscriber_id) makes a
+      // retried fan-out idempotent instead of double-pushing. `changes` is
+      // the true insert count (dedupe-aware).
+      const changes = db.transaction((tx) =>
+        tx
+          .insert(deliveries)
+          .values(
+            chunk.map((subscriberId) => ({
+              campaign_id: campaignId,
+              subscriber_id: subscriberId,
+              domain_id: opts.domainId,
+              requested_at: now.getTime(),
+            })),
+          )
+          .onConflictDoNothing()
+          .run().changes,
+      );
+      queued += changes;
+    }
+  } catch (error) {
+    // A partial fan-out must not leave a `sending` campaign that the reaper
+    // later finalizes as if it were complete. Mark it failed, then surface
+    // the error so the caller can retry with a fresh campaign.
+    db.update(campaigns)
+      .set({ status: "failed", sent_at: now.toISOString() })
+      .where(and(eq(campaigns.id, campaignId), eq(campaigns.status, "sending")))
+      .run();
+    throw error;
   }
   return { campaignId, queued, delayed: 0 };
 }

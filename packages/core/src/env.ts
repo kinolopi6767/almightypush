@@ -58,16 +58,6 @@ export const baseEnvSchema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["AUTH_SECRET"], message: "AUTH_SECRET must be at least 32 chars in production (openssl rand -hex 32)" });
       }
       if (!data.APP_URL) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_URL"], message: "APP_URL is required in production (https://...)" });
-      // ALLOW_PRIVATE_UPSTREAM disables the SSRF guard — it must never be on
-      // in production, even if set accidentally in the environment.
-      // Exception: the Playwright e2e harness runs a production build
-      // (`next start`, NODE_ENV=production) against a localhost mock push
-      // service, which the guard would reject. That harness sets E2E=1
-      // explicitly (playwright.config.ts) — a deliberate two-flag
-      // acknowledgment, not an accident. Real deployments never set E2E.
-      if ((process.env.ALLOW_PRIVATE_UPSTREAM ?? "") === "1" && (process.env.E2E ?? "") !== "1") {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ALLOW_PRIVATE_UPSTREAM"], message: "ALLOW_PRIVATE_UPSTREAM=1 is forbidden in production" });
-      }
     }
   });
 
@@ -76,6 +66,16 @@ export function parseEnv(schema: z.ZodType, raw: NodeJS.ProcessEnv = process.env
   if (!result.success) {
     const issues = result.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Invalid environment:\n${issues}`);
+  }
+  // ALLOW_PRIVATE_UPSTREAM disables the SSRF guard — it must never be on in
+  // production, even if set accidentally. Checked against the RAW env (not
+  // process.env) so programmatic/test callers are validated against what
+  // they actually passed. Exception: the Playwright e2e harness runs a
+  // production build against a localhost mock push service and sets E2E=1
+  // explicitly — a deliberate two-flag acknowledgment, not an accident.
+  const data = result.data as { NODE_ENV?: string };
+  if (data?.NODE_ENV === "production" && (raw.ALLOW_PRIVATE_UPSTREAM ?? "") === "1" && (raw.E2E ?? "") !== "1") {
+    throw new Error("Invalid environment:\n  ALLOW_PRIVATE_UPSTREAM: ALLOW_PRIVATE_UPSTREAM=1 is forbidden in production");
   }
   return result.data;
 }

@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createCipher, VapidPushProvider, type PushMessage, type PushProvider, type SendResult, type VapidConfig } from "@pushpanel/core";
 import {
   campaigns,
@@ -94,6 +94,10 @@ export async function runSendCycle(
         // per-tick claim churn. Dangling domains (deleted out-of-band) are
         // excluded the same way; deliverOne fails closed if one slips through.
         sql`EXISTS (SELECT 1 FROM domains d WHERE d.id = ${deliveries.domain_id} AND d.status = 'active')`,
+        // Only campaigns the scheduler actually started may send. Without
+        // this, a queued row that outlived its campaign (cancel backstop hit
+        // its 2000-row scan cap, or a failed campaign) would still be pushed.
+        sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${deliveries.campaign_id} AND c.status IN ('sending', 'scheduled'))`,
       ),
     )
     .orderBy(deliveries.id)
@@ -126,6 +130,49 @@ export async function runSendCycle(
   stats.claimed = rows.length;
   if (rows.length === 0) return stats;
 
+  // Everything after the claim runs with rows already marked `sending`. If
+  // any of it throws (locked DB, settings read, cache query, pool plumbing)
+  // without this guard, up to BATCH_SIZE rows would sit `sending` for the
+  // full 30-minute stale window. Park this cycle's claims back as queued and
+  // let the caller log/retry next tick.
+  try {
+    return await runClaimedBatch(db, provider, encKey, rows, now, stats);
+  } catch (error) {
+    try {
+      requeueClaimedRows(db, rows, now);
+    } catch {
+      void 0;
+    }
+    throw error;
+  }
+}
+
+/** Requeue this cycle's un-sent claims without touching rows another owner has. */
+function requeueClaimedRows(db: PushDb, rows: DeliveryRow[], now: number): void {
+  const ids = rows.map((r) => r.id);
+  const CHUNK = 500;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    db.update(deliveries)
+      .set({ status: "queued", claimed_at: null })
+      .where(
+        and(
+          inArray(deliveries.id, ids.slice(i, i + CHUNK)),
+          eq(deliveries.status, "sending"),
+          eq(deliveries.claimed_at, now),
+        ),
+      )
+      .run();
+  }
+}
+
+async function runClaimedBatch(
+  db: PushDb,
+  provider: PushProvider,
+  encKey: string | undefined,
+  rows: DeliveryRow[],
+  now: number,
+  stats: SendCycleStats,
+): Promise<SendCycleStats> {
   const rawConcurrency = resolveConcurrency(db);
   // Stale-claim safety: worst-case cycle time (BATCH/concurrency * 30s
   // provider timeout) must stay well under STALE_CLAIM_MS, or a live cycle's
@@ -236,9 +283,16 @@ function requeueStaleClaims(db: PushDb, now: number): void {
   // Preserve next_attempt_at: a delivery that was on 30s/60s backoff must not
   // become immediately due on revive, or every restart causes a thundering
   // herd of retries at once. Only rows with no scheduled retry become due.
+  // claimed_at IS NULL is included: a legacy/out-of-band `sending` row would
+  // otherwise be invisible to both the reviver and the claim forever.
   db.update(deliveries)
     .set({ status: "queued", claimed_at: null })
-    .where(and(eq(deliveries.status, "sending"), isNotNull(deliveries.claimed_at), sql`${deliveries.claimed_at} <= ${now - STALE_CLAIM_MS}`))
+    .where(
+      and(
+        eq(deliveries.status, "sending"),
+        sql`(${deliveries.claimed_at} IS NULL OR ${deliveries.claimed_at} <= ${now - STALE_CLAIM_MS})`,
+      ),
+    )
     .run();
 }
 
@@ -255,7 +309,11 @@ async function runPool<T>(items: T[], size: number, fn: (item: T) => Promise<Out
       const item = items[idx]!;
       try {
         results[idx] = { item, result: await fn(item) };
-      } catch {
+      } catch (error) {
+        // deliverOne has its own requeue wrapper; this is the last-resort net
+        // for unexpected plumbing errors. Log instead of silently counting a
+        // failed outcome (previously an invisible failure path).
+        console.error("[sender] delivery task threw", error);
         results[idx] = { item, result: "failed" };
       }
     }
@@ -313,7 +371,50 @@ export function withUtm(url: string | null | undefined, title: string, content: 
   }
 }
 
+/**
+ * Error-safe delivery wrapper: any throw from the prologue (subscriber read,
+ * domain/campaign config reads) or unexpected plumbing failure parks the row
+ * back as `queued` instead of leaving it `sending` for the stale window.
+ */
 async function deliverOne(
+  db: PushDb,
+  provider: PushProvider,
+  encKey: string | undefined,
+  row: DeliveryRow,
+  now: number,
+  utmEnabled = false,
+  campaignCache?: Map<number, CampaignCache>,
+  domainCache?: Map<number, string | null>,
+  fatigueCapCycle = 0,
+  panelOrigin?: string,
+  domainStatusCache?: Map<number, string>,
+): Promise<Outcome> {
+  try {
+    return await deliverOneInner(
+      db,
+      provider,
+      encKey,
+      row,
+      now,
+      utmEnabled,
+      campaignCache,
+      domainCache,
+      fatigueCapCycle,
+      panelOrigin,
+      domainStatusCache,
+    );
+  } catch (error) {
+    try {
+      requeueClaimedRows(db, [row], now);
+    } catch {
+      // The stale-claim reviver is the fallback if even the requeue fails.
+    }
+    console.error(`[sender] delivery ${row.id} threw, requeued`, error);
+    return "requeued";
+  }
+}
+
+async function deliverOneInner(
   db: PushDb,
   provider: PushProvider,
   encKey: string | undefined,
@@ -389,8 +490,15 @@ async function deliverOne(
     if (missWrite.changes > 0) bumpCampaignStat(db, row.campaign_id, "failed");
     return "failed";
   }
-  // Operator cancelled/paused while this batch was claimed: do not push.
-  if (campaign.status === "cancelled" || campaign.status === "paused") {
+  // Operator cancelled/paused/failed while this batch was claimed: do not
+  // push. `failed`/`draft` are terminal too — treating only cancelled/paused
+  // as terminal let a queued row of a failed campaign send.
+  if (
+    campaign.status === "cancelled" ||
+    campaign.status === "paused" ||
+    campaign.status === "failed" ||
+    campaign.status === "draft"
+  ) {
     const cancelWrite = db.update(deliveries)
       .set({ status: "cancelled", error: `campaign ${campaign.status}`, sent_at: now })
       .where(and(eq(deliveries.id, row.id), owned))
@@ -736,9 +844,12 @@ async function deliverOne(
     result.statusCode === 429 && typeof result.retryAfterMs === "number" && result.retryAfterMs > 0
       ? Math.min(Math.floor(result.retryAfterMs), BACKOFF_MAX_MS)
       : 0;
-  const base = Math.max(serverBackoff, Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS));
-  const jitter = Math.floor(base * (0.8 + Math.random() * 0.4));
-  const backoff = Math.min(jitter, BACKOFF_MAX_MS);
+  // Jitter only the exponential term. Jittering the server's Retry-After
+  // could retry *before* the service said it was safe (previously a 15-min
+  // header could be undercut to ~12 min).
+  const expBackoff = Math.min(BACKOFF_BASE_MS * 2 ** (row.attempts - 1), BACKOFF_MAX_MS);
+  const jittered = Math.floor(expBackoff * (0.8 + Math.random() * 0.4));
+  const backoff = Math.min(Math.max(serverBackoff, jittered), BACKOFF_MAX_MS);
   const requeueWrite = db
     .update(deliveries)
     .set({ status: "queued", claimed_at: null, next_attempt_at: now + backoff, error: result.error ?? null })
@@ -779,6 +890,16 @@ function bumpCampaignStat(db: PushDb, campaignId: number, key: "delivered" | "fa
 function finalizeCampaigns(db: PushDb, campaignIds: number[]) {
   const webhookConfig = getOutboundConfig(db);
   for (const id of campaignIds) {
+    // An interrupted fan-out (crash mid-enqueue) must not be finalized as if
+    // the audience were complete. Leave it `sending`; the scheduler reaper
+    // resumes the idempotent enqueue after the stale window.
+    const [fanout] = db
+      .select({ audience_complete: campaigns.audience_complete })
+      .from(campaigns)
+      .where(eq(campaigns.id, id))
+      .limit(1)
+      .all();
+    if (fanout?.audience_complete !== 1) continue;
     const [pending] = db
       .select({ value: count() })
       .from(deliveries)

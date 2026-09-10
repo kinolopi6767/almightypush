@@ -65,9 +65,13 @@ export async function assertPublicHttpUrl(raw: string): Promise<UrlCheckResult> 
  * subsequent fetch performs a SECOND DNS resolution — an authoritative DNS
  * server can answer different addresses per query (DNS rebinding / TOCTOU),
  * so the pre-check alone is advisory. This dispatcher re-validates every
- * address at the moment the connection is actually established, closing the
- * gap: the socket can only ever open to an IP that passed the private-range
- * check. When ALLOW_PRIVATE_UPSTREAM=1 (dev/e2e) no validation is applied.
+ * resolved address at connect time, closing the gap for hostnames.
+ *
+ * IMPORTANT: Node does not invoke `lookup` for IP-literal hosts, so this
+ * dispatcher alone does not protect them — callers MUST still pre-validate
+ * with `assertPublicHttpUrl` (which rejects private literals). `ssrfFetch`
+ * does exactly that. When ALLOW_PRIVATE_UPSTREAM=1 (dev/e2e) no validation
+ * is applied.
  */
 let validatingAgent: Agent | null = null;
 export function ssrfDispatcher(): Agent {
@@ -186,6 +190,7 @@ export function isPrivateIp(ip: string): boolean {
     if (a === 192 && b === 0 && c === 2) return true; // documentation TEST-NET-1 (192.0.2.0/24)
     if (a === 198 && b === 51 && c === 100) return true; // documentation TEST-NET-2 (198.51.100.0/24)
     if (a === 203 && b === 0 && c === 113) return true; // documentation TEST-NET-3 (203.0.113.0/24)
+    if (a === 192 && b === 88 && c === 99) return true; // 6to4 relay anycast (192.88.99.0/24)
     if (a >= 224) return true;
     return false;
   }
@@ -198,10 +203,15 @@ export function isPrivateIp(ip: string): boolean {
     // classified by its fe80 prefix, not by its embedded (public) v4 tail.
     if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA fc00::/7
     if (/^fe[89ab]/.test(lower)) return true; // link-local fe80::/10
-    if (lower.startsWith("2001:db8")) return true; // documentation ::/32
-    if (lower.startsWith("2001:10")) return true; // deprecated ORCHID 2001:10::/28
-    if (lower.startsWith("2001:20")) return true; // ORCHIDv2 2001:20::/28
-    if (lower.startsWith("2001:0:") || lower.startsWith("2001::")) return true; // Teredo 2001::/32 (v4 tunnel reach)
+    // 2001::/23 IETF-protocol block, decoded from the first two hextets so
+    // fully-expanded forms ("2001:0000:...") are caught too — the old
+    // startsWith("2001:0:") missed them and let Teredo through.
+    const hextets = firstHextets(lower);
+    if (hextets) {
+      const [h0, h1] = hextets;
+      if (h0 === 0x2001 && (h1 === 0x0000 || h1 === 0x0001 || h1 === 0x0002)) return true; // Teredo + IETF assignments
+      if (h0 === 0x2001 && (h1 === 0x0db8 || h1 === 0x0010 || h1 === 0x0020)) return true; // doc + ORCHID
+    }
     if (lower.startsWith("2002:")) return true; // 6to4 2002::/16 (v4 tunnel reach)
     if (lower.startsWith("64:ff9b")) return true; // NAT64 well-known prefix
     if (lower.startsWith("100:")) return true; // discard-only 100::/64
@@ -213,6 +223,17 @@ export function isPrivateIp(ip: string): boolean {
     return false;
   }
   return false;
+}
+
+/** Decode the first two 16-bit hextets of an IPv6 string (handles "::" compression). */
+function firstHextets(lower: string): [number, number] | null {
+  const head = lower.split("::")[0] ?? "";
+  const parts = head.split(":").filter((p) => p.length > 0);
+  if (parts.length === 0) return [0, 0];
+  const h0 = parseInt(parts[0] ?? "0", 16);
+  const h1 = parts.length > 1 ? parseInt(parts[1] ?? "0", 16) : 0;
+  if (!Number.isFinite(h0) || !Number.isFinite(h1)) return null;
+  return [h0, h1];
 }
 
 /** Extract an embedded IPv4 address from an IPv6 string, or null. */

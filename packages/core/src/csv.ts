@@ -16,6 +16,18 @@ export function parseCsv(text: string, opts: { maxBytes?: number; maxRows?: numb
   let inQuotes = false;
   const src = text.replace(/^\uFEFF/, "");
 
+  // Row cap is enforced at every point a row is committed — the previous
+  // check lived only in the generic-character branch, so a document whose
+  // delimiters/row-breaks consumed the whole input (e.g. "\n" x 1M) bypassed
+  // maxRows entirely and could allocate millions of row arrays.
+  const pushRow = (): void => {
+    row.push(cell);
+    rows.push(row);
+    row = [];
+    cell = "";
+    if (rows.length > maxRows) throw new Error(`CSV has too many rows (max ${maxRows})`);
+  };
+
   let i = 0;
   while (i < src.length) {
     const ch = src[i];
@@ -47,31 +59,25 @@ export function parseCsv(text: string, opts: { maxBytes?: number; maxRows?: numb
     }
     if (ch === "\r") {
       if (src[i + 1] === "\n") i += 1;
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
+      pushRow();
       i += 1;
       continue;
     }
     if (ch === "\n") {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
+      pushRow();
       i += 1;
       continue;
     }
     cell += ch;
     i += 1;
-    if (rows.length > maxRows) throw new Error(`CSV has too many rows (max ${maxRows})`);
   }
   if (inQuotes) {
-    row.push(cell);
-    rows.push(row);
-  } else if (cell.length > 0 || row.length > 0) {
-    row.push(cell);
-    rows.push(row);
+    // Truncated export/import: silently accepting the partial tail produced
+    // a plausible-looking final row. Fail instead so callers can reject.
+    throw new Error("CSV has an unterminated quoted cell");
+  }
+  if (cell.length > 0 || row.length > 0) {
+    pushRow();
   }
   return rows;
 }

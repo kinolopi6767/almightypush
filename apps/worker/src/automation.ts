@@ -281,9 +281,20 @@ async function handleAutomation(db: PushDb, row: AutomationRow, config: Automati
     }
   } catch (error) {
     const err = error as Error & { cause?: unknown };
-    const cause = err.cause instanceof Error ? ` (cause: ${err.cause.message})` : err.cause ? ` (cause: ${String(err.cause)})` : "";
-    return { ok: false, campaigns: 0, queued: 0, error: `${err.message}${cause}` };
+    const cause = err.cause instanceof Error ? err.cause.message : err.cause ? String(err.cause) : "";
+    // Feed/source URLs can carry secret tokens in query strings; this string
+    // is persisted to automation_runs and rendered in the panel. Strip URLs
+    // (and cap the stored length) before surfacing it.
+    return { ok: false, campaigns: 0, queued: 0, error: redactError(`${err.message}${cause ? ` (cause: ${cause})` : ""}`) };
   }
+}
+
+/** Remove URL-shaped substrings (may embed feed/webhook secrets) and cap length. */
+export function redactError(message: string): string {
+  return message
+    .replace(/https?:\/\/[^\s"')]+/gi, "[url]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [redacted]")
+    .slice(0, 500);
 }
 
 /** AutoMagic dynamic: newest `range` posts from a WordPress REST API, random pick. */
@@ -336,12 +347,15 @@ function saveAutomationConfig(db: PushDb, id: number, config: AutomationConfig):
     try {
       const current = parseAutomationConfig(live.config_json);
       if (current) {
+        // Only cursors are merged from the caller's (possibly stale) config.
+        // Content fields like rotation_json/source_url must always come from
+        // the live row — the caller's snapshot predates any operator edit
+        // made while the run was in flight.
         merged = {
           ...current,
           last_video_id: config.last_video_id ?? current.last_video_id,
           last_item_guid: config.last_item_guid ?? current.last_item_guid,
           rotation_index: config.rotation_index ?? current.rotation_index,
-          rotation_json: config.rotation_json ?? current.rotation_json,
         };
       }
     } catch {
@@ -464,6 +478,9 @@ async function safeFetch(sourceUrl: string, path: (base: URL) => URL): Promise<{
     } as RequestInit);
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get("location");
+      // Drain/cancel the redirect body before following: undici otherwise
+      // keeps the response (and socket) alive until GC/timeout on every poll.
+      void res.body?.cancel().catch(() => {});
       if (!location) throw new Error("Redirect without location");
       if (hops >= MAX_REDIRECTS) throw new Error("Too many redirects");
       current = new URL(location, target);

@@ -96,8 +96,12 @@ export function createDb(
  * persisted volume the same way it does in local dev.
  */
 export function resolveDbPath(raw: string | undefined): string {
-  const value = raw ?? process.env.DATABASE_PATH;
-  if (!value || value === ":memory:") return value ?? "./data/pushpanel.db";
+  // Trim first: `DATABASE_PATH=` (or whitespace) must fall back to the
+  // default file, never `new Database("")` — better-sqlite3 treats an empty
+  // string as a private in-memory DB, silently discarding every write.
+  const value = (raw ?? process.env.DATABASE_PATH ?? "").trim();
+  if (value === ":memory:") return value;
+  if (!value) return "./data/pushpanel.db";
   if (isAbsolute(value)) return value;
   let dir = process.cwd();
   for (;;) {
@@ -117,6 +121,14 @@ export function resolveDbPath(raw: string | undefined): string {
  * folder lookups — webpack/standalone-safe.
  */
 export function runMigrations(db: BetterSQLite3Database<typeof allTables>, client: Database.Database): void {
+  // Nested calls are a programming error: `BEGIN IMMEDIATE` inside a caller's
+  // transaction throws `cannot start a transaction within a transaction`, and
+  // the final checkpoint would throw `database table is locked`. Fail loudly
+  // instead of half-applying. (createDb opens outside any transaction.)
+  if (client.inTransaction) {
+    throw new Error("runMigrations must not be called inside an open transaction");
+  }
+  void db;
   client.exec(`
     CREATE TABLE IF NOT EXISTS __pushpanel_migrations (
       tag TEXT PRIMARY KEY,
@@ -151,8 +163,14 @@ export function runMigrations(db: BetterSQLite3Database<typeof allTables>, clien
     }
   }
 
-  // WAL checkpoint so the -wal file doesn't linger on a fresh run.
-  client.pragma("wal_checkpoint(TRUNCATE)");
+  // WAL checkpoint so the -wal file doesn't linger on a fresh run. Best
+  // effort: a concurrent reader (another process mid-migration) can hold the
+  // checkpoint lock — that must never fail application boot.
+  try {
+    client.pragma("wal_checkpoint(TRUNCATE)");
+  } catch {
+    void 0;
+  }
 }
 
 /**

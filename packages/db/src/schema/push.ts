@@ -121,6 +121,10 @@ export const deliveries = sqliteTable(
     // Migration-only indexes (0016) — retention pruning predicates.
     index("idx_deliveries_status_requested").on(t.status, t.requested_at),
     index("idx_deliveries_status_sent").on(t.status, t.sent_at),
+    // One row per (campaign, subscriber): fan-out is idempotent via
+    // ON CONFLICT DO NOTHING, so a retried/resumed enqueue can never
+    // double-push. NULL subscriber ids stay distinct (SQLite semantics).
+    uniqueIndex("idx_deliveries_camp_sub").on(t.campaign_id, t.subscriber_id),
   ],
 );
 
@@ -145,8 +149,6 @@ export const events = sqliteTable(
   (t) => [
     index("idx_events_domain_ts").on(t.domain_id, t.ts),
     index("idx_events_camp").on(t.campaign_id, t.type),
-    // Migration-only indexes (0009/0012) — retention pruning + SSE/analytics.
-    index("idx_events_subscriber_type").on(t.subscriber_id, t.type),
     // Fatigue counters range-filter ts per (subscriber, type) on every send —
     // without the trailing ts column each delivery scans 30d of rows.
     index("idx_events_subscriber_type_ts").on(t.subscriber_id, t.type, t.ts),

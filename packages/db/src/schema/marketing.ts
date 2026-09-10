@@ -24,6 +24,13 @@ export const campaigns = sqliteTable(
     buttons_json: text("buttons_json"),
     /** { kind: 'all' | 'manual' | 'segment' | 'non_clickers', ids: [] } */
     audience_json: text("audience_json").notNull().default("{}"),
+    /**
+     * 1 only after the full audience was enqueued. The scheduler claims
+     * scheduled→sending BEFORE inserting deliveries; a crash mid-fan-out
+     * leaves a partial audience, so finalize must not run and the reaper
+     * resumes the enqueue while this is 0.
+     */
+    audience_complete: integer("audience_complete").notNull().default(0),
     schedule_at: text("schedule_at"),
     schedule_tz: text("schedule_tz"),
     scheduled: integer("scheduled").notNull().default(0),
@@ -46,40 +53,46 @@ export const campaigns = sqliteTable(
     index("idx_campaigns_channel").on(t.channel),
     // Worker scheduler polls due campaigns every tick — needs (status, schedule_at).
     index("idx_campaigns_status_sched").on(t.status, t.schedule_at),
-    // Migration-only (0016) — terminated-campaign scan filters by status.
-    index("idx_campaigns_status").on(t.status),
   ],
 );
 
-export const templates = sqliteTable("templates", {
-  id: id(),
-  workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  title: text("title"),
-  message: text("message"),
-  icon_url: text("icon_url"),
-  image_url: text("image_url"),
-  launch_url: text("launch_url"),
-  buttons_json: text("buttons_json"),
-  ...timestamps(),
-});
+export const templates = sqliteTable(
+  "templates",
+  {
+    id: id(),
+    workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    title: text("title"),
+    message: text("message"),
+    icon_url: text("icon_url"),
+    image_url: text("image_url"),
+    launch_url: text("launch_url"),
+    buttons_json: text("buttons_json"),
+    ...timestamps(),
+  },
+  (t) => [index("idx_templates_ws").on(t.workspace_id)],
+);
 
 /**
  * Whitelist-based audience builder. conditions_json:
  * { groups: [{ logic: 'AND' | 'OR', conditions: [{ field, op, value }] }] }
  */
-export const segments = sqliteTable("segments", {
-  id: id(),
-  workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-  /** NULL = all domains */
-  domain_ids_json: text("domain_ids_json"),
-  name: text("name").notNull(),
-  conditions_json: text("conditions_json").notNull().default("[]"),
-  estimate_count: integer("estimate_count"),
-  estimate_at: text("estimate_at"),
-  last_used_at: text("last_used_at"),
-  ...timestamps(),
-});
+export const segments = sqliteTable(
+  "segments",
+  {
+    id: id(),
+    workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    /** NULL = all domains */
+    domain_ids_json: text("domain_ids_json"),
+    name: text("name").notNull(),
+    conditions_json: text("conditions_json").notNull().default("[]"),
+    estimate_count: integer("estimate_count"),
+    estimate_at: text("estimate_at"),
+    last_used_at: text("last_used_at"),
+    ...timestamps(),
+  },
+  (t) => [index("idx_segments_ws").on(t.workspace_id)],
+);
 
 export const automations = sqliteTable(
   "automations",
@@ -101,7 +114,10 @@ export const automations = sqliteTable(
     consecutive_failures: integer("consecutive_failures").notNull().default(0),
     ...timestamps(),
   },
-  (t) => [index("idx_automations_next").on(t.status, t.next_run_at)],
+  (t) => [
+    index("idx_automations_next").on(t.status, t.next_run_at),
+    index("idx_automations_ws").on(t.workspace_id),
+  ],
 );
 
 /** Per-run log for automations — one row per tick/webhook-triggered run. */
@@ -142,24 +158,28 @@ export const lpLinks = sqliteTable("lp_links", {
   /** set when the link is tombstoned (falls back to deleted_target_url) */
   deleted_at: text("deleted_at"),
   ...timestamps(),
-});
+}, (t) => [index("idx_lp_links_ws").on(t.workspace_id, t.deleted_at)]);
 
-export const youtubeChannels = sqliteTable("youtube_channels", {
-  id: id(),
-  workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-  domain_id: integer("domain_id"),
-  title: text("title"),
-  channel_url: text("channel_url").notNull(),
-  /** feed autodiscovered from the channel page */
-  feed_url: text("feed_url"),
-  prompt_text: text("prompt_text"),
-  force_subscribe: integer("force_subscribe").notNull().default(0),
-  lp_code: text("lp_code"),
-  clicks_count: integer("clicks_count").notNull().default(0),
-  desktop_subs: integer("desktop_subs").notNull().default(0),
-  mobile_subs: integer("mobile_subs").notNull().default(0),
-  status: text("status").notNull().default("active"),
-  last_video_at: text("last_video_at"),
-  last_polled_at: text("last_polled_at"),
-  ...timestamps(),
-});
+export const youtubeChannels = sqliteTable(
+  "youtube_channels",
+  {
+    id: id(),
+    workspace_id: workspaceRef().notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    domain_id: integer("domain_id"),
+    title: text("title"),
+    channel_url: text("channel_url").notNull(),
+    /** feed autodiscovered from the channel page */
+    feed_url: text("feed_url"),
+    prompt_text: text("prompt_text"),
+    force_subscribe: integer("force_subscribe").notNull().default(0),
+    lp_code: text("lp_code"),
+    clicks_count: integer("clicks_count").notNull().default(0),
+    desktop_subs: integer("desktop_subs").notNull().default(0),
+    mobile_subs: integer("mobile_subs").notNull().default(0),
+    status: text("status").notNull().default("active"),
+    last_video_at: text("last_video_at"),
+    last_polled_at: text("last_polled_at"),
+    ...timestamps(),
+  },
+  (t) => [index("idx_youtube_channels_ws").on(t.workspace_id, t.status)],
+);

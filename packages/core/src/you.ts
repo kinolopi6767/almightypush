@@ -67,8 +67,21 @@ export async function readCappedJson<T>(res: Response): Promise<T> {
 
 function resolveYouConfig(overrides?: Partial<YouConfig>): YouConfig {
   const apiKey = overrides?.apiKey ?? process.env.YDC_API_KEY ?? process.env.YOU_API_KEY ?? null;
-  const baseUrl = overrides?.baseUrl ?? process.env.YDC_API_BASE_URL ?? "https://api.you.com";
-  return { apiKey: apiKey || null, baseUrl: baseUrl.replace(/\/$/, "") };
+  const baseUrl = (overrides?.baseUrl ?? process.env.YDC_API_BASE_URL ?? "https://api.you.com").replace(/\/+$/, "");
+  // A key must never cross a plaintext network hop to a non-loopback host.
+  if (apiKey) {
+    let url: URL;
+    try {
+      url = new URL(baseUrl);
+    } catch {
+      throw new Error("you.com base URL is invalid");
+    }
+    const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]" || url.hostname === "::1";
+    if (url.protocol !== "https:" && !loopback) {
+      throw new Error("you.com base URL must be https when an API key is configured");
+    }
+  }
+  return { apiKey: apiKey || null, baseUrl };
 }
 
 /**
@@ -117,8 +130,10 @@ export async function youSearch(
     hits?: YouSearchResult[];
     results?: YouSearchResult[];
   };
-  // API returns hits or results depending on version
-  const hits = (data.hits ?? data.results ?? []) as YouSearchResult[];
+  // API returns hits or results depending on version. Malformed shapes must
+  // not throw a TypeError out of sanitize (the caller would turn a
+  // recoverable upstream glitch into a hard 502).
+  const hits = Array.isArray(data.hits) ? data.hits : Array.isArray(data.results) ? data.results : [];
   return sanitizeYouHits(hits, count);
 }
 
@@ -130,12 +145,28 @@ export function sanitizeYouHits(hits: YouSearchResult[], count: number): YouSear
   const str = (v: unknown, max: number): string | undefined => (typeof v === "string" ? v.slice(0, max) : undefined);
   const strList = (v: unknown): string[] | undefined =>
     Array.isArray(v) ? v.filter((s) => typeof s === "string").map((s) => (s as string).slice(0, 1000)).slice(0, 5) : undefined;
-  return hits.slice(0, count).map((h) => ({
-    title: str(h.title, 300),
-    url: str(h.url, 2048),
-    snippets: strList(h.snippets),
-    highlights: strList(h.highlights),
-  }));
+  // Only http(s) links may flow to the UI/LLM — a `javascript:`/`data:` URL
+  // from a compromised upstream must never become referenceable.
+  const safeUrl = (v: unknown): string | undefined => {
+    const raw = str(v, 2048);
+    if (!raw) return undefined;
+    try {
+      const parsed = new URL(raw);
+      return parsed.protocol === "http:" || parsed.protocol === "https:" ? raw : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  if (!Array.isArray(hits)) return [];
+  return hits
+    .filter((h): h is YouSearchResult => Boolean(h) && typeof h === "object")
+    .slice(0, Math.max(0, count))
+    .map((h) => ({
+      title: str(h.title, 300),
+      url: safeUrl(h.url),
+      snippets: strList(h.snippets),
+      highlights: strList(h.highlights),
+    }));
 }
 
 /**

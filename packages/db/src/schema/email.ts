@@ -21,10 +21,11 @@ export const emailContacts = sqliteTable(
   },
   (t) => [
     index("idx_email_contacts_ws").on(t.workspace_id),
-    index("idx_email_contacts_ws_email").on(t.workspace_id, t.email),
     index("idx_email_contacts_status").on(t.status),
     // 0014: exact-duplicate guard (migration adds the UNIQUE separately so
     // existing DBs with dupes don't fail migration — app upserts first).
+    // This also covers the old idx_email_contacts_ws_email prefix (dropped
+    // in 0017 as redundant write amplification).
     uniqueIndex("idx_email_contacts_ws_email_uniq").on(t.workspace_id, t.email),
   ],
 );

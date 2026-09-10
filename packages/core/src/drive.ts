@@ -96,8 +96,15 @@ export async function uploadToGDrive(opts: {
   }
   const metadata: Record<string, unknown> = { name: opts.fileName };
   if (opts.folderId) metadata.parents = [opts.folderId];
+  // The MIME type is interpolated into the multipart preamble verbatim: a
+  // CR/LF or extra header there would let caller-influenced input inject
+  // parts. Allowlist the shape and fall back to the snapshot type.
+  const mimeType =
+    typeof opts.mimeType === "string" && /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i.test(opts.mimeType)
+      ? opts.mimeType
+      : "application/x-sqlite3";
 
-  const bodyStart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${opts.mimeType ?? "application/x-sqlite3"}\r\n\r\n`;
+  const bodyStart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`;
   const bodyEnd = `\r\n--${boundary}--`;
   const body = Buffer.concat([Buffer.from(bodyStart), opts.fileBuffer, Buffer.from(bodyEnd)]);
 

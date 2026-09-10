@@ -97,6 +97,13 @@ export async function createSnapshot(db: PushDb, dbFile: string, kind: "manual" 
     // hourly after a failure rather than hammering every tick.
     // Failure recording itself is best-effort (the DB may be the thing that
     // is broken) — it must never throw out of the scheduler tick.
+    // Remove the partial file first: a half-written snapshot is corrupt and
+    // would otherwise be orphaned on disk (no row reaches pruneBackups).
+    try {
+      unlinkSync(target);
+    } catch {
+      void 0;
+    }
     try {
       db.insert(backups).values({ kind, status: "failed", size_bytes: 0, location: target }).run();
     } catch {
@@ -123,6 +130,20 @@ export async function createSnapshot(db: PushDb, dbFile: string, kind: "manual" 
   try {
     db.insert(backups).values({ kind, status: "done", size_bytes: size, location: target }).run();
   } catch {
+    // The snapshot exists but no row references it — pruneBackups can never
+    // see it, so the scheduler would create another full-size file every
+    // cooldown until the disk fills. Delete it and record the attempt so the
+    // retry is hourly, not every tick.
+    try {
+      unlinkSync(target);
+    } catch {
+      void 0;
+    }
+    try {
+      writeSetting(db, "last_backup_attempt_at", new Date(nowMs).toISOString());
+    } catch {
+      void 0;
+    }
     return false;
   }
   try {

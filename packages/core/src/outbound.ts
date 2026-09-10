@@ -60,17 +60,33 @@ export function emitWebhookEvent(
     }
     // ssrfFetch: connect-time IP re-validation + per-hop redirect validation
     // (a configured endpoint must never bounce onto a private address).
-    // Drain the body so the undici socket returns to the pool — an unread
-    // response body pins the connection until GC.
+    // Drain the body with a byte cap so the socket returns to the pool: the
+    // previous arrayBuffer() buffered the entire response (a hostile
+    // endpoint could stream hundreds of MB within the timeout).
     void ssrfFetch(target.toString(), {
       method: "POST",
       headers,
       body,
       signal: AbortSignal.timeout(3_000),
     })
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) opts.onError?.(new Error(`webhook ${event} failed: ${res.status}`));
-        return res.arrayBuffer().catch(() => undefined);
+        const reader = res.body?.getReader();
+        if (!reader) return;
+        let seen = 0;
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            seen += value.byteLength;
+            if (seen > 64 * 1024) {
+              await reader.cancel();
+              break;
+            }
+          }
+        } catch {
+          // body already consumed/errored — socket cleanup is best-effort
+        }
       })
       .catch((e) => opts.onError?.(e instanceof Error ? e : new Error(String(e))));
   } catch (e) {

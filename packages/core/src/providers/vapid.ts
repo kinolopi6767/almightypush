@@ -43,36 +43,44 @@ export function fitPushPayload(message: PushMessage, budget: number = MAX_PUSH_P
     if (maxChars <= 0) return "";
     return `${chars.slice(0, Math.max(0, maxChars - 1)).join("")}…`;
   };
-  // Binary-search the body length: multibyte chars make byte math nonlinear.
-  let body = message.body;
-  if (body) {
+  // Binary-search a string field against the budget. Returns the best value.
+  const shrink = (m: PushMessage, field: "body" | "title", value: string | undefined): string | undefined => {
+    if (!value) return value;
     let lo = 0;
-    let hi = body.length;
+    let hi = Array.from(value).length;
     while (lo < hi) {
       const mid = Math.floor((lo + hi + 1) / 2);
-      if (size({ ...message, body: cut(body, mid) }) <= budget) lo = mid;
+      if (size({ ...m, [field]: cut(value, mid) }) <= budget) lo = mid;
       else hi = mid - 1;
     }
-    body = cut(body, lo);
-  }
-  const shrunk: PushMessage = { ...message, body };
-  if (size(shrunk) <= budget) return shrunk;
-  // Still over (giant URLs/buttons): degrade gracefully instead of failing
-  // 100% of deliveries — drop image, then buttons, then title, then body.
-  const noImage: PushMessage = { ...shrunk, image: undefined };
-  if (size(noImage) <= budget) return noImage;
-  const noButtons: PushMessage = { ...noImage, buttons: undefined };
-  if (size(noButtons) <= budget) return noButtons;
-  // Still over: trim the title as a last resort.
-  const title = message.title;
-  let lo = 0;
-  let hi = title.length;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi + 1) / 2);
-    if (size({ ...shrunk, title: cut(title, mid) ?? title }) <= budget) lo = mid;
-    else hi = mid - 1;
-  }
-  return { ...shrunk, title: cut(title, lo) ?? title };
+    return cut(value, lo);
+  };
+
+  // Tiered degradation: body → image → buttons → title → icon → url. Every
+  // tier is re-measured, and fields are dropped cumulatively so the final
+  // result is guaranteed under budget (previous code measured the title
+  // against the *un-dropped* message and could still return an oversized
+  // payload when image/buttons alone exceeded the budget).
+  let current: PushMessage = { ...message, body: shrink(message, "body", message.body) };
+  if (size(current) <= budget) return current;
+
+  current = { ...current, image: undefined };
+  if (size(current) <= budget) return current;
+
+  current = { ...current, buttons: undefined };
+  if (size(current) <= budget) return current;
+
+  current = { ...current, title: shrink(current, "title", current.title) ?? "" };
+  if (size(current) <= budget) return current;
+
+  current = { ...current, icon: undefined };
+  if (size(current) <= budget) return current;
+
+  current = { ...current, url: undefined };
+  if (size(current) <= budget) return current;
+
+  // Absolute last resort (pathological tracking ids): empty body.
+  return { ...current, body: undefined };
 }
 
 /**
@@ -131,7 +139,8 @@ export class VapidPushProvider implements PushProvider {
     // Production endpoints are https: (http allowed only for loopback dev).
     try {
       const u = new URL(subscription.endpoint);
-      const loopback = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "::1";
+      // URL.hostname keeps the brackets for IPv6 literals ("[::1]").
+      const loopback = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "::1" || u.hostname === "[::1]";
       if (u.protocol !== "https:" && !(u.protocol === "http:" && loopback)) {
         return { ok: false, error: "Subscription endpoint must be https:" };
       }

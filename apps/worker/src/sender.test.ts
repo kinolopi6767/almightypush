@@ -64,6 +64,7 @@ function enqueueCampaign(db: PushDb, workspaceId: number, domainId: number, subs
       message: "works",
       launch_url: "https://demo.test/post",
       status: "sending",
+      audience_complete: 1,
     })
     .run();
   const campaignId = Number(campaign.lastInsertRowid);

@@ -15,6 +15,10 @@ export class InvalidTimezoneError extends Error {
 
 const VALID_ZONES = new Set<string>();
 const INVALID_ZONES = new Set<string>();
+/** Bounded cache: `isValidTimezone` is fed attacker-controlled strings from
+ *  the public subscribe API, so an uncapped invalid-zone set would leak. */
+const MAX_ZONE_CACHE = 500;
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
 
 /**
  * True when `tz` is a valid IANA timezone name (empty is allowed).
@@ -27,9 +31,11 @@ export function isValidTimezone(tz: string | undefined | null): boolean {
   if (INVALID_ZONES.has(tz)) return false;
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    if (VALID_ZONES.size >= MAX_ZONE_CACHE) VALID_ZONES.clear();
     VALID_ZONES.add(tz);
     return true;
   } catch {
+    if (INVALID_ZONES.size >= MAX_ZONE_CACHE) INVALID_ZONES.clear();
     INVALID_ZONES.add(tz);
     return false;
   }
@@ -46,7 +52,11 @@ export function naiveLocalToUtcMs(naive: string, timeZone?: string): number {
   if (timeZone !== undefined && timeZone !== "" && !isValidTimezone(timeZone)) {
     throw new InvalidTimezoneError(timeZone);
   }
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(naive.trim());
+  // Fractional seconds are accepted and truncated (a `datetime-local` value
+  // never has them, but API clients send ISO strings) — without this the
+  // function silently fell back to server-local Date.parse and ignored the
+  // supplied timezone.
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d{1,3})?$/.exec(naive.trim());
   if (!match) {
     const fallback = Date.parse(naive);
     return Number.isNaN(fallback) ? NaN : Math.round(fallback / 1000) * 1000;
@@ -64,16 +74,20 @@ export function naiveLocalToUtcMs(naive: string, timeZone?: string): number {
   if (timeZone === undefined || timeZone === "") return Math.round(Date.parse(naive) / 1000) * 1000;
 
   const offsetAt = (instantMs: number): number => {
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hourCycle: "h23",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+    let dtf = FORMATTERS.get(timeZone);
+    if (!dtf) {
+      dtf = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+      FORMATTERS.set(timeZone, dtf);
+    }
     const parts: Record<string, string> = {};
     for (const part of dtf.formatToParts(instantMs)) parts[part.type] = part.value;
     const asUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
@@ -81,17 +95,27 @@ export function naiveLocalToUtcMs(naive: string, timeZone?: string): number {
   };
 
   // wall(instant) = instant + offset(instant);  instant = wallAsUtc - offset(instant).
+  // Fixed-point iterate and collect every candidate. For zones east of UTC
+  // the naive single-pass result is already past the transition, so both
+  // samples can carry the post-transition offset; collecting candidates from
+  // each iteration keeps the pre-transition interpretation available.
+  const candidates = new Set<number>();
   let utc = wallAsUtc - offsetAt(wallAsUtc);
-  const secondPass = wallAsUtc - offsetAt(utc);
-  if (secondPass !== utc) utc = secondPass;
-
-  // DST spring-forward gap guard: inside the gap the fixed-point iteration
-  // oscillates and never converges. Verify the result round-trips to the
-  // requested wall clock; if not, snap forward to the post-transition
-  // instant (conventional gap resolution — 02:30 becomes 03:30 local).
-  const verify = offsetAt(utc);
-  if (utc + verify !== wallAsUtc) {
-    utc = wallAsUtc - Math.min(verify, offsetAt(wallAsUtc));
+  candidates.add(utc);
+  for (let pass = 0; pass < 3; pass++) {
+    const next = wallAsUtc - offsetAt(utc);
+    candidates.add(next);
+    if (next === utc) break;
+    utc = next;
   }
-  return utc;
+  // Normal day + fall-back overlap: a candidate that round-trips is correct.
+  for (const candidate of candidates) {
+    if (candidate + offsetAt(candidate) === wallAsUtc) return candidate;
+  }
+  // DST spring-forward gap (requested wall clock does not exist): no
+  // candidate round-trips. Snap FORWARD to the latest candidate, i.e. the
+  // smallest offset — 02:30 becomes 03:30 local in both east and west zones
+  // (the old Math.min(verify, offsetAt(wallAsUtc)) picked the pre-transition
+  // offset for positive-UTC zones and moved the clock backwards).
+  return Math.max(...candidates);
 }

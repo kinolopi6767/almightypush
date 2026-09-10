@@ -176,9 +176,9 @@ describe("runScheduler", () => {
     const backdate = (client: { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, id: number) =>
       client.prepare("UPDATE campaigns SET updated_at = ? WHERE id = ?").run(new Date(Date.now() - 10 * 60_000).toISOString(), id);
 
-    it("fails a sending campaign left with zero deliveries by a crash", () => {
+    it("resumes a crash-interrupted fan-out instead of dropping the audience", () => {
       const { db, client } = createMemoryDb();
-      const { workspaceId, domainId } = seed(db);
+      const { workspaceId, domainId } = seed(db); // one active subscriber
       const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
       backdate(client as unknown as { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, stuckId);
 
@@ -186,15 +186,36 @@ describe("runScheduler", () => {
       expect(stats).toEqual({ campaignsStarted: 0, deliveriesQueued: 0, skipped: 0 });
 
       const [stuck] = db.select().from(campaigns).where(eq(campaigns.id, stuckId)).all();
-      expect(stuck?.status).toBe("failed");
-      expect(stuck?.sent_at).toBeTruthy();
+      expect(stuck?.status).toBe("sending");
+      expect(stuck?.audience_complete).toBe(1);
+      const rows = db.select().from(deliveries).where(eq(deliveries.campaign_id, stuckId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.status).toBe("queued");
       client.close();
     });
 
-    it("marks done (not failed) when something was already sent", () => {
+    it("finishes a crash-interrupted campaign with an empty audience as done", () => {
+      const { db, client } = createMemoryDb();
+      const { workspaceId, domainId } = seed(db);
+      // eslint-disable-next-line drizzle/enforce-delete-with-where -- intentional full-table reset in test setup.
+      db.delete(subscribers).run();
+      const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      backdate(client as unknown as { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, stuckId);
+
+      runScheduler(db);
+
+      const [stuck] = db.select().from(campaigns).where(eq(campaigns.id, stuckId)).all();
+      expect(stuck?.status).toBe("done");
+      client.close();
+    });
+
+    it("marks done (not failed) when a completed campaign already sent", () => {
       const { db, client } = createMemoryDb();
       const { workspaceId, domainId } = seed(db);
       const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      db.update(campaigns).set({ audience_complete: 1 }).where(eq(campaigns.id, stuckId)).run();
+      // Backdate LAST: a drizzle update bumps updated_at, which would make the
+      // campaign look freshly claimed and skip the reaper.
       backdate(client as unknown as { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, stuckId);
       db.insert(deliveries).values({ campaign_id: stuckId, subscriber_id: null, domain_id: domainId, status: "sent", sent_at: Date.now() }).run();
 
@@ -209,6 +230,8 @@ describe("runScheduler", () => {
       const { db, client } = createMemoryDb();
       const { workspaceId, domainId } = seed(db);
       const stuckId = insertCampaign(db, workspaceId, domainId, { status: "sending" });
+      db.update(campaigns).set({ audience_complete: 1 }).where(eq(campaigns.id, stuckId)).run();
+      // Backdate LAST: a drizzle update bumps updated_at (see test above).
       backdate(client as unknown as { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } }, stuckId);
       db.insert(deliveries).values({ campaign_id: stuckId, subscriber_id: null, domain_id: domainId, status: "unsubscribed", sent_at: Date.now() }).run();
 

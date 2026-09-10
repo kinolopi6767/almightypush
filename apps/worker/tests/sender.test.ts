@@ -34,7 +34,7 @@ function setup() {
     .all();
   const [campaign] = db
     .insert(campaigns)
-    .values({ workspace_id: ws!.id, domain_id: domain!.id, title: "t", message: "m", launch_url: "https://a.example.test/go", audience_json: "{}", status: "sending", scheduled: 0, source: "panel" })
+    .values({ workspace_id: ws!.id, domain_id: domain!.id, title: "t", message: "m", launch_url: "https://a.example.test/go", audience_json: "{}", status: "sending", scheduled: 0, source: "panel", audience_complete: 1 })
     .returning()
     .all();
   const insertSub = (unsubscribed = false, withToken = true) =>
@@ -138,9 +138,12 @@ describe("runSendCycle", () => {
     const { db, insertSub, queue } = setup();
     const sent: FakeSend[] = [];
     const provider = { send: async (sub: { endpoint: string }, msg: PushMessage): Promise<SendResult> => (sent.push({ subscription: sub, message: msg }), { ok: true, statusCode: 201 }) };
-    const sub = insertSub();
-    queue(sub.id);
-    const d2 = queue(sub.id);
+    // Two distinct subscribers: UNIQUE(campaign, subscriber) forbids two
+    // deliveries for the same subscriber in one campaign.
+    const sub1 = insertSub();
+    const sub2 = insertSub();
+    queue(sub1.id);
+    const d2 = queue(sub2.id);
 
     // A parallel worker already claimed d2 (but crashes before sending).
     const claimedAt = Date.now() - 60_000;
@@ -176,8 +179,7 @@ describe("runSendCycle", () => {
         return { ok: true, statusCode: 201 };
       },
     };
-    const sub = insertSub();
-    for (let i = 0; i < 50; i++) queue(sub.id);
+    for (let i = 0; i < 50; i++) queue(insertSub().id);
 
     const stats = await runSendCycle(db, ENC_KEY, provider);
     expect(stats.claimed).toBe(50);
