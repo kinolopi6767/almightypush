@@ -36,8 +36,12 @@ export async function enableTfaStartAction(_prev: TfaState, formData: FormData):
   // (secret → attacker's authenticator → confirmed enrollment locks the real
   // owner out), so a hijacked session alone must not reach it.
   if (!user.password_hash) return { error: "Account has no password set" };
-  const password = String(formData.get("password") ?? "");
-  if (!(await verifyPassword(user.password_hash, password))) {
+  // Cap before argon2: an unbounded body would burn ~64MB per verify.
+  const rawPassword = formData.get("password");
+  if (typeof rawPassword !== "string" || rawPassword.length === 0 || rawPassword.length > 256) {
+    return { error: "Enter your current password to set up 2FA" };
+  }
+  if (!(await verifyPassword(user.password_hash, rawPassword))) {
     return { error: "Enter your current password to set up 2FA" };
   }
 
@@ -95,8 +99,11 @@ export async function disableTfaAction(_prev: TfaState, formData: FormData): Pro
   // Disabling 2FA is a security downgrade — require the current password so
   // a hijacked session alone cannot strip the second factor.
   if (!user.password_hash) return { error: "Account has no password set" };
-  const password = String(formData.get("password") ?? "");
-  if (!(await verifyPassword(user.password_hash, password))) {
+  const rawPassword = formData.get("password");
+  if (typeof rawPassword !== "string" || rawPassword.length === 0 || rawPassword.length > 256) {
+    return { error: "Enter your current password to disable 2FA" };
+  }
+  if (!(await verifyPassword(user.password_hash, rawPassword))) {
     return { error: "Enter your current password to disable 2FA" };
   }
 

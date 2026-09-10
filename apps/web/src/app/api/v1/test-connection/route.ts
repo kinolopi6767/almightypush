@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { z } from "zod";
 import { getAiConfig, getMailConfig, getYouConfig, getGDriveConfig } from "@/lib/secrets";
 import { youSearch } from "@pushpanel/core";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +34,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 10) });
   }
 
+  const rawBody = await readJsonResult(req, BODY_LIMITS.api);
+  if (!rawBody.ok) return NextResponse.json({ ok: false, error: rawBody.error }, { status: rawBody.status });
   let parsed: z.infer<typeof bodySchema>;
   try {
-    parsed = bodySchema.parse(await req.json());
+    parsed = bodySchema.parse(rawBody.data);
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid provider" }, { status: 400 });
   }

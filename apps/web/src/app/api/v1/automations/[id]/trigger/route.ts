@@ -39,15 +39,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: false, error: "Stale or missing timestamp" }, { status: 401 });
   }
 
-  // Fail fast on declared size before buffering (req.text() already consumed
-  // memory by the time a post-hoc length check runs).
-  const declared = Number(req.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > 1024 * 1024) {
-    return NextResponse.json({ ok: false, error: "Payload too large" }, { status: 413 });
-  }
-  const body = await req.text();
-  if (body.length > 1024 * 1024) {
-    return NextResponse.json({ ok: false, error: "Payload too large" }, { status: 413 });
+  // Streamed byte cap: the old Content-Length check was bypassed by chunked
+  // requests, which buffered the entire body before the post-hoc length check.
+  const { readTextCapped, BODY_LIMITS, BodyTooLargeError } = await import("@/lib/read-body");
+  let body: string;
+  try {
+    body = await readTextCapped(req, BODY_LIMITS.webhook);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return NextResponse.json({ ok: false, error: "Payload too large" }, { status: 413 });
+    }
+    return NextResponse.json({ ok: false, error: "Invalid body" }, { status: 400 });
   }
 
   const [automation] = db

@@ -45,26 +45,26 @@ export function requireApiKey(headers: Headers): ApiKeyResult {
     return { ok: false, error: "Missing or malformed X-Api-Key", status: 401 };
   }
 
-  // Throttle invalid guesses per client IP: without this, key-guessing is
-  // unbounded (each guess costs a DB lookup). Valid keys are throttled per
-  // key below; this bucket only gates failures. A global backstop pairs it:
-  // with TRUST_PROXY=1 a directly-exposed panel lets attackers rotate the
-  // per-IP bucket via forged X-Forwarded-For, so the global bucket (which
-  // cannot be rotated) caps aggregate guessing + indexed-lookup burn.
-  if (!rateLimit(`apikey-invalid:${clientIp(headers)}`, envRateLimit("API_KEY_INVALID_RPM", 60), 60_000)) {
-    return { ok: false, error: "Rate limit exceeded", status: 429 };
-  }
-  if (!rateLimit("apikey-invalid:all", envRateLimit("API_KEY_INVALID_GLOBAL_RPM", 600), 60_000)) {
-    return { ok: false, error: "Rate limit exceeded", status: 429 };
-  }
-
   const [key] = db
     .select({ id: apiKeys.id, workspace_id: apiKeys.workspace_id, domain_id: apiKeys.domain_id, expires_at: apiKeys.expires_at, last_used_at: apiKeys.last_used_at })
     .from(apiKeys)
     .where(eq(apiKeys.token_hash, sha256Hex(token)))
     .limit(1)
     .all();
-  if (!key) return { ok: false, error: "Invalid API key", status: 401 };
+
+  // Failure buckets are consumed ONLY when validation actually fails. They
+  // previously ran before the lookup, so 600 random-key requests/min drained
+  // the global bucket and 429'd every legitimate API call (a trivial
+  // unauthenticated DoS). Valid keys now bypass the invalid buckets entirely.
+  if (!key) {
+    if (!rateLimit(`apikey-invalid:${clientIp(headers)}`, envRateLimit("API_KEY_INVALID_RPM", 60), 60_000)) {
+      return { ok: false, error: "Rate limit exceeded", status: 429 };
+    }
+    if (!rateLimit("apikey-invalid:all", envRateLimit("API_KEY_INVALID_GLOBAL_RPM", 600), 60_000)) {
+      return { ok: false, error: "Rate limit exceeded", status: 429 };
+    }
+    return { ok: false, error: "Invalid API key", status: 401 };
+  }
 
   if (key.expires_at && key.expires_at <= new Date().toISOString()) {
     return { ok: false, error: "API key expired", status: 401 };

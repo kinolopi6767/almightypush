@@ -46,9 +46,10 @@ export async function inviteTeamMemberAction(_prev: TeamFormState, formData: For
   const parsed = inviteSchema.safeParse({ email: formData.get("email"), role: formData.get("role") });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
-  // Privilege escalation guard: only the owner may mint owner-level invites.
-  if (parsed.data.role === "owner" && ctx.session.user.role !== "owner") {
-    return { error: "Only the owner can grant owner access" };
+  // Privilege escalation guard: only the INSTANCE owner may mint owner-level
+  // invites (a workspace "owner" from a past invite cannot propagate the role).
+  if (parsed.data.role === "owner" && !(ctx.session.user.isInstanceOwner && ctx.session.user.role === "owner")) {
+    return { error: "Only the instance owner can grant owner access" };
   }
 
   // Noisy-but-harmless otherwise: inviting an address that already has an

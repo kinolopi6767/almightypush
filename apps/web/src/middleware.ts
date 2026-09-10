@@ -34,7 +34,9 @@ function isPublicPath(pathname: string): boolean {
     return true;
   }
   if (pathname.startsWith("/api/v1/") || pathname === "/api/v1") {
-    return PUBLIC_V1_PREFIXES.some((p) => pathname === p || pathname.startsWith(p));
+    // Segment-aware match (same as KEY_V1_PREFIXES): "/api/v1/info-anything"
+    // or "/api/v1/tagsadmin" must NOT be treated as public at the edge.
+    return PUBLIC_V1_PREFIXES.some((p) => pathname === p || pathname.startsWith(p.endsWith("/") ? p : `${p}/`));
   }
   return false;
 }

@@ -5,6 +5,7 @@ import { campaigns, domains, segments } from "@pushpanel/db/schema";
 import { requireApiKey, domainAllowed } from "@/lib/api-auth";
 import { rateLimitWithHeaders, envRateLimit } from "@/lib/rate-limit";
 import { logAudit } from "@/lib/audit";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -84,12 +85,9 @@ async function createCampaign(req: Request) {
     }
   }
 
-  let body: SendBody;
-  try {
-    body = (await req.json()) as SendBody;
-  } catch {
-    return json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult<SendBody>(req, BODY_LIMITS.api);
+  if (!rawBody.ok) return json({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const body = rawBody.data;
   if (!body || typeof body !== "object") {
     return json({ ok: false, error: "Invalid body" }, { status: 400 });
   }

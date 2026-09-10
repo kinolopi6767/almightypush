@@ -12,6 +12,8 @@ declare module "next-auth" {
       id: string;
       role: string;
       workspaceId: string | null;
+      /** First user (bootstrap owner): sole access to instance-global settings/backups. */
+      isInstanceOwner: boolean;
     } & DefaultSession["user"];
   }
 }

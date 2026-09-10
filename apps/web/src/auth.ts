@@ -29,6 +29,28 @@ const loginSchema = z.object({
 const credentialVersionOf = (u: { password_hash: string | null }) =>
   createHash("sha256").update(u.password_hash ?? "").digest("hex").slice(0, 16);
 
+/**
+ * Instance owner = the first user created by /setup. Role "owner" is a
+ * workspace-scoped role (invites can mint it); instance-global resources —
+ * settings, the secrets vault, backups/restore, workspace switching — are
+ * reserved for this one account so an invited workspace owner can never
+ * read or replace other workspaces' data.
+ * Cached for 60s: one tiny indexed query per minute instead of per request.
+ */
+let instanceOwnerCache: { id: number | null; at: number } | null = null;
+async function getInstanceOwnerId(): Promise<number | null> {
+  if (instanceOwnerCache && Date.now() - instanceOwnerCache.at < 60_000) return instanceOwnerCache.id;
+  let id: number | null = null;
+  try {
+    const [row] = await db.select({ id: users.id }).from(users).orderBy(users.id).limit(1);
+    id = row?.id ?? null;
+  } catch {
+    id = null;
+  }
+  instanceOwnerCache = { id, at: Date.now() };
+  return id;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: "/login" },
@@ -36,7 +58,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
       credentials: { email: {}, password: {}, totp: {} },
-      authorize: async (credentials) => {
+      authorize: async (credentials, request) => {
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
@@ -44,18 +66,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Without a throttle, credential stuffing also becomes a memory-DoS.
         // (In-memory bucket: single-process; sufficient for single-tenant.)
         try {
-          const { rateLimitWithHeaders, envRateLimit } = await import("@/lib/rate-limit");
-          // No request headers available in authorize() — use a global login
-          // bucket plus per-email throttle as defense in depth.
+          const { rateLimitWithHeaders, envRateLimit, clientIp } = await import("@/lib/rate-limit");
+          // Key the burst bucket by client IP (not a single global key): a
+          // global bucket let one attacker send 60 wrong logins/min and lock
+          // the real owner out entirely. Per-email stays as the account lock.
           // Both honor env overrides (same pattern as the form actions in
           // (auth)/actions.ts): the e2e harness raises them
           // (LOGIN_RATE_LIMIT/ACCOUNT_RATE_LIMIT=1000) because every spec
           // signs in as the same owner in rapid succession — without the
           // override the per-email bucket throttles the suite's own logins
           // and specs time out waiting for /dashboard. Production defaults
-          // (60/min global, 10/15min per email) are unchanged.
-          const rlGlobal = rateLimitWithHeaders("login:global", envRateLimit("LOGIN_RATE_LIMIT", 60), 60_000);
-          if (!rlGlobal.allowed) return null;
+          // (60/min per IP, 10/15min per email) are unchanged.
+          const ip = request?.headers ? clientIp(request.headers) : "unknown";
+          const rlIp = rateLimitWithHeaders(`login:ip:${ip}`, envRateLimit("LOGIN_RATE_LIMIT", 60), 60_000);
+          if (!rlIp.allowed) return null;
           const emailKey = parsed.data.email.toLowerCase().slice(0, 200);
           const rlEmail = rateLimitWithHeaders(`login:email:${emailKey}`, envRateLimit("ACCOUNT_RATE_LIMIT", 10), 15 * 60_000);
           if (!rlEmail.allowed) return null;
@@ -146,6 +170,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // a viewer — never an owner.
         session.user.role = row?.role ?? (token.role as string) ?? "viewer";
         session.user.workspaceId = row?.workspaceId != null ? String(row.workspaceId) : null;
+        const ownerId = await getInstanceOwnerId();
+        session.user.isInstanceOwner = ownerId !== null && ownerId === Number(token.id);
       }
       return session;
     },

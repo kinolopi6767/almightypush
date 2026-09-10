@@ -6,6 +6,7 @@ import { clientIp, envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { assertPublicHttpUrl, createCipher, sha256Hex } from "@pushpanel/core";
 import { requestOriginAllowed } from "@/lib/subscribe-origin";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -40,18 +41,25 @@ const bodySchema = z.object({
  *    an idempotent subscribe (dedupe via the partial unique index).
  */
 export async function POST(req: Request) {
+  // Outer net: a cipher/DB/locked-file throw must surface as the JSON
+  // envelope, never a Next.js 500 HTML page (matches the subscribe route).
+  try {
+    return await handleResubscribe(req);
+  } catch {
+    return corsJson({ ok: false, error: "Internal error — try again" }, { status: 500 });
+  }
+}
+
+async function handleResubscribe(req: Request) {
   const ip = clientIp(req.headers);
   const rl = rateLimitWithHeaders(`resub:${ip}`, envRateLimit("SUBSCRIBE_RATE_LIMIT", 30), 60_000);
   if (!rl.allowed) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
   }
 
-  let parsed;
-  try {
-    parsed = bodySchema.safeParse(await req.json());
-  } catch {
-    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult(req, BODY_LIMITS.sdk);
+  if (!rawBody.ok) return corsJson({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const parsed = bodySchema.safeParse(rawBody.data);
   if (!parsed.success) {
     return corsJson({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
@@ -97,12 +105,18 @@ export async function POST(req: Request) {
       .limit(1)
       .all();
     if (oldRow?.unsubscribed_at) return corsJson({ ok: true, suppressed: true });
-    const migrated = db
-      .update(subscribers)
-      .set({ token: newTokenEnc, token_hash: newHash, provider: "vapid", last_active_at: nowIso })
-      .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, oldHash), isNull(subscribers.unsubscribed_at)))
-      .run();
-    if (migrated.changes > 0) return corsJson({ ok: true, migrated: true });
+    try {
+      const migrated = db
+        .update(subscribers)
+        .set({ token: newTokenEnc, token_hash: newHash, provider: "vapid", last_active_at: nowIso })
+        .where(and(eq(subscribers.domain_id, domainId), eq(subscribers.token_hash, oldHash), isNull(subscribers.unsubscribed_at)))
+        .run();
+      if (migrated.changes > 0) return corsJson({ ok: true, migrated: true });
+    } catch (e) {
+      // The new endpoint already has an active row (rotation raced another
+      // device): the refresh path below reconciles it instead of 500ing.
+      if (!(e instanceof Error) || !/UNIQUE constraint failed/i.test(e.message)) throw e;
+    }
     // Old row gone (already pruned) — fall through to insert path.
   }
 

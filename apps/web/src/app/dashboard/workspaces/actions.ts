@@ -31,10 +31,11 @@ function slugify(name: string): string {
 export async function createWorkspaceAction(_prev: unknown, formData: FormData) {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in" };
-  // Workspace creation is owner-only + throttled: an invited viewer must not
-  // spam workspaces or move themselves out of their assigned workspace.
-  if ((session.user.role ?? "viewer").toLowerCase() !== "owner") {
-    return { error: "Only the workspace owner can create workspaces" };
+  // Workspace creation is reserved for the instance owner + throttled: an
+  // invited member must not spam workspaces or move themselves out of their
+  // assigned workspace.
+  if (!session.user.isInstanceOwner || (session.user.role ?? "viewer").toLowerCase() !== "owner") {
+    return { error: "Only the instance owner can create workspaces" };
   }
   const { rateLimit } = await import("@/lib/rate-limit");
   if (!rateLimit(`ws-create:${session.user.id}`, 5, 3_600_000)) {
@@ -64,13 +65,13 @@ export async function switchWorkspaceAction(workspaceId: number) {
   if (!session?.user) return { error: "Not signed in" };
   const wsId = Number(workspaceId);
   if (!Number.isInteger(wsId) || wsId <= 0) return { error: "Invalid workspace" };
-  // Ownership gate: without a membership table, only the instance owner may
+  // Ownership gate: without a membership table, only the INSTANCE owner may
   // move between workspaces. Invited members (admin/editor/viewer) must stay
-  // in the workspace they were invited to — otherwise any invited user could
-  // reassign themselves into an unrelated client workspace (IDOR).
-  // Fail closed: a role-less session is treated as non-owner.
-  if ((session.user.role ?? "viewer").toLowerCase() !== "owner") {
-    return { error: "Only the workspace owner can switch workspaces" };
+  // in the workspace they were invited to — otherwise any invited user with
+  // a workspace "owner" role could reassign themselves into an unrelated
+  // client workspace (cross-tenant IDOR).
+  if (!session.user.isInstanceOwner || (session.user.role ?? "viewer").toLowerCase() !== "owner") {
+    return { error: "Only the instance owner can switch workspaces" };
   }
   const [ws] = db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, wsId)).limit(1).all();
   if (!ws) return { error: "Workspace not found" };

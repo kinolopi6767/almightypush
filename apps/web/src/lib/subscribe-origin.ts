@@ -6,12 +6,20 @@
  *   domain's own host (or a subdomain) or on the panel's own host (the
  *   built-in sandbox demo / self-hosted sites). A site on any other origin
  *   cannot forge this from a browser.
- * - When `Origin` is absent (older clients, non-browser callers), fall back
- *   to validating the client-supplied `subscribeUrl` against the same sets.
- *   Such callers can always fabricate the URL, but they are bounded by the
- *   global per-domain rate window.
+ * - When `Origin` is absent (older clients, non-browser callers), the caller
+ *   may opt into `requireOrigin` to fail closed instead of trusting the
+ *   client-supplied `subscribeUrl` (which such callers can always fabricate).
+ *   State-mutating SDK endpoints that require a secret capability
+ *   (subscribe/resubscribe/unsubscribe/tags carry the push endpoint token)
+ *   may keep the fallback; telemetry endpoints that mutate only counters
+ *   (optin) must require Origin.
  */
-export function requestOriginAllowed(req: Request, subscribeUrl: string, domainName: string): boolean {
+export function requestOriginAllowed(
+  req: Request,
+  subscribeUrl: string,
+  domainName: string,
+  opts: { requireOrigin?: boolean } = {},
+): boolean {
   const name = domainName.toLowerCase().replace(/^\./, "");
   const appUrlHost = appUrlHostname();
   const host = parseHostHeader(req.headers.get("host"));
@@ -37,6 +45,7 @@ export function requestOriginAllowed(req: Request, subscribeUrl: string, domainN
 
   // No Origin (non-browser / legacy callers): the request Host is fully
   // attacker-controlled, so only the domain name and APP_URL may vouch.
+  if (opts.requireOrigin) return false;
   if (!subscribeUrl) return false;
   try {
     const hostname = new URL(subscribeUrl).hostname.toLowerCase();

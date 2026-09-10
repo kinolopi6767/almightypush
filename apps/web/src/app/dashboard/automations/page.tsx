@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { domains } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
 import { AUTOMATION_TYPE_LABEL } from "@pushpanel/core";
+import { canEdit } from "@/lib/roles";
 import { AutomationForm } from "./automation-form";
 import { AutomationRow } from "./row-actions";
 import { EmptyState } from "@/components/empty-state";
@@ -17,6 +18,10 @@ export default async function AutomationsPage() {
  if (!session?.user) redirect("/login");
  const wsId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
  if (!wsId) redirect("/setup");
+ // Viewers must not receive the webhook signing secret (it is a credential:
+ // anyone holding it can trigger the automation). It previously shipped in
+ // the RSC payload to every session, including read-only users.
+ const canManageAutomations = canEdit(session.user.role);
 
  const [rows, domainRows] = await Promise.all([
   db
@@ -96,11 +101,11 @@ export default async function AutomationsPage() {
          id={row.id}
          status={row.status}
          type={row.type}
-         secret={
-          row.type === "push_on_publish"
-           ? parseSecret(row.config_json)
-           : null
-         }
+          secret={
+           row.type === "push_on_publish" && canManageAutomations
+            ? parseSecret(row.config_json)
+            : null
+          }
         />
        </div>
       </div>

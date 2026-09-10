@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clientIp, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-limit";
 import { parseHostHeader } from "@/lib/subscribe-origin";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 import { lpLinks } from "@pushpanel/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -35,13 +36,10 @@ export async function POST(req: Request) {
     return corsJson({ ok: false, error: "origin not allowed" }, { status: 403 });
   }
 
-  let body: { code?: string };
-  try {
-    body = (await req.json()) as { code?: string };
-  } catch {
-    return corsJson({ ok: false, error: "bad json" }, { status: 400 });
-  }
-  const code = typeof body.code === "string" && body.code.length > 0 ? body.code : "";
+  const rawBody = await readJsonResult<{ code?: string }>(req, BODY_LIMITS.sdk);
+  if (!rawBody.ok) return corsJson({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const body = rawBody.data;
+  const code = typeof body?.code === "string" && body.code.length > 0 ? body.code : "";
   if (!code || !/^[A-Za-z0-9_-]{1,64}$/.test(code)) return corsJson({ ok: false, error: "code required" }, { status: 400 });
 
   const ip = clientIp(req.headers);

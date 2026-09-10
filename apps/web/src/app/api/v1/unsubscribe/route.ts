@@ -7,6 +7,7 @@ import { clientIp, rateLimitWithHeaders, rateLimitHeaders } from "@/lib/rate-lim
 import { sha256Hex } from "@pushpanel/core";
 import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { requestOriginAllowed } from "@/lib/subscribe-origin";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +34,9 @@ async function handleUnsubscribe(req: Request) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 30) });
   }
 
-  let parsed;
-  try {
-    parsed = bodySchema.safeParse(await req.json());
-  } catch {
-    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult(req, BODY_LIMITS.sdk);
+  if (!rawBody.ok) return corsJson({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const parsed = bodySchema.safeParse(rawBody.data);
   if (!parsed.success) {
     return corsJson({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
   }

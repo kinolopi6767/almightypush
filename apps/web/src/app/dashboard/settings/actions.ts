@@ -24,10 +24,19 @@ export type SettingsFormState =
     }
   | undefined;
 
+/**
+ * Settings/secrets/backups are INSTANCE-global (no workspace scoping in the
+ * settings table, and restore replaces the entire DB). They are reserved for
+ * the bootstrap instance owner — not merely any user with role "owner" from
+ * a team invite, who could otherwise read other workspaces' data or restore
+ * a backup over them.
+ */
 async function requireOwner() {
   const session = await auth();
   if (!session?.user) throw new Error("Not signed in");
-  if (session.user.role !== "owner") throw new Error("Owner access required");
+  if (session.user.role !== "owner" || !session.user.isInstanceOwner) {
+    throw new Error("Instance owner access required");
+  }
   return session;
 }
 

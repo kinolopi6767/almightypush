@@ -9,6 +9,7 @@ import { domains, events, subscribers } from "@pushpanel/db/schema";
 import { automations } from "@pushpanel/db/schema";
 import { enqueueAutomationCampaign } from "@pushpanel/db";
 import { requestOriginAllowed } from "@/lib/subscribe-origin";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,9 @@ const bodySchema = z.object({
     .optional()
     .or(z.literal("")),
   city: z.string().trim().max(80).optional().or(z.literal("")),
+  /** Optional geo (SDK/geo-IP integrations); also derived from CF-IPCountry. */
+  country: z.string().trim().toUpperCase().max(2).optional().or(z.literal("")),
+  state: z.string().trim().max(80).optional().or(z.literal("")),
   timezone: z.string().trim().max(64).optional().or(z.literal("")),
   locale: z.string().trim().max(20).optional().or(z.literal("")),
   screenWidth: z.coerce.number().int().min(0).max(10000).optional(),
@@ -65,12 +69,9 @@ async function handleSubscribe(req: Request) {
     return corsJson({ ok: false, error: "Too many subscribe attempts" }, { status: 429, headers: rateLimitHeaders(rl0, 30) });
   }
 
-  let parsed;
-  try {
-    parsed = bodySchema.safeParse(await req.json());
-  } catch {
-    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult(req, BODY_LIMITS.sdk);
+  if (!rawBody.ok) return corsJson({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const parsed = bodySchema.safeParse(rawBody.data);
   if (!parsed.success) {
     return corsJson({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
   }
@@ -127,24 +128,34 @@ async function handleSubscribe(req: Request) {
     return corsJson({ ok: false, error: "This site has reached its subscriber limit" }, { status: 429 });
   }
 
+  // Only overwrite metadata the SDK actually sent. A page-load sync that
+  // sends just {domainId, subscription} previously nulled every captured
+  // field (device/browser/os/city/timezone/locale/screen), so dashboards and
+  // segmentation silently lost data. `undefined` means "not provided — keep".
+  const refresh: Partial<typeof subscribers.$inferInsert> = {
+    token: enc.encrypt(token),
+    last_active_at: now,
+  };
+  if (data.device !== undefined) refresh.device = data.device || null;
+  if (data.browser !== undefined) refresh.browser = data.browser || null;
+  if (data.os !== undefined) refresh.os = data.os || null;
+  if (data.city !== undefined) refresh.city = data.city || null;
+  if (data.state !== undefined) refresh.state = data.state || null;
+  if (data.timezone !== undefined) refresh.timezone = data.timezone || null;
+  if (data.locale !== undefined) refresh.locale = data.locale || null;
+  if (data.screenWidth !== undefined) refresh.screen_width = data.screenWidth;
+  if (data.screenHeight !== undefined) refresh.screen_height = data.screenHeight;
+  if (data.country !== undefined) refresh.country = data.country || null;
+  else {
+    // Cloudflare is authoritative when present and the SDK sent nothing.
+    const cf = (req.headers.get("cf-ipcountry") ?? "").toUpperCase();
+    if (/^[A-Z]{2}$/.test(cf) && cf !== "XX") refresh.country = cf;
+  }
+
   let subscriberId: number;
   if (existing) {
     subscriberId = existing.id;
-    db.update(subscribers)
-      .set({
-        token: enc.encrypt(token),
-        last_active_at: now,
-        device: data.device || null,
-        browser: data.browser || null,
-        os: data.os || null,
-        city: (data as { city?: string }).city || null,
-        timezone: (data as { timezone?: string }).timezone || null,
-        locale: (data as { locale?: string }).locale || null,
-        screen_width: (data as { screenWidth?: number }).screenWidth ?? null,
-        screen_height: (data as { screenHeight?: number }).screenHeight ?? null,
-      })
-      .where(eq(subscribers.id, existing.id))
-      .run();
+    db.update(subscribers).set(refresh).where(eq(subscribers.id, existing.id)).run();
   } else {
     let inserted;
     try {
@@ -152,20 +163,11 @@ async function handleSubscribe(req: Request) {
         .insert(subscribers)
         .values({
           domain_id: domain.id,
-          token: enc.encrypt(token),
           token_hash: tokenHash,
           provider: "vapid",
-          device: data.device || null,
-          browser: data.browser || null,
-          os: data.os || null,
-          city: (data as { city?: string }).city || null,
-          timezone: (data as { timezone?: string }).timezone || null,
-          locale: (data as { locale?: string }).locale || null,
-          screen_width: (data as { screenWidth?: number }).screenWidth ?? null,
-          screen_height: (data as { screenHeight?: number }).screenHeight ?? null,
+          ...refresh,
           subscribe_url: data.subscribeUrl || null,
           subscribe_at: now,
-          last_active_at: now,
         })
         .run();
     } catch {
@@ -179,21 +181,7 @@ async function handleSubscribe(req: Request) {
         .limit(1)
         .all();
       if (!winner) throw new Error("subscriber insert failed without a winner");
-      db.update(subscribers)
-        .set({
-          token: enc.encrypt(token),
-          last_active_at: now,
-          device: data.device || null,
-          browser: data.browser || null,
-          os: data.os || null,
-          city: (data as { city?: string }).city || null,
-          timezone: (data as { timezone?: string }).timezone || null,
-          locale: (data as { locale?: string }).locale || null,
-          screen_width: (data as { screenWidth?: number }).screenWidth ?? null,
-          screen_height: (data as { screenHeight?: number }).screenHeight ?? null,
-        })
-        .where(eq(subscribers.id, winner.id))
-        .run();
+      db.update(subscribers).set(refresh).where(eq(subscribers.id, winner.id)).run();
       return corsJson({ ok: true, id: winner.id });
     }
     subscriberId = Number(inserted.lastInsertRowid);
@@ -204,9 +192,15 @@ async function handleSubscribe(req: Request) {
   if (!existing) {
     db.insert(events).values({ domain_id: domain.id, subscriber_id: subscriberId, type: "subscribed" }).run();
   }
-  // Incrementally maintain counter instead of re-counting full table (1M+ scan)
-  const newCount = existing ? currentActive : currentActive + 1;
-  db.update(domains).set({ subscribers_count: newCount }).where(eq(domains.id, domain.id)).run();
+  // Incrementally maintain the counter instead of re-counting the full table
+  // (1M+ scan). SQL-side increment: the previous read-modify-write raced
+  // concurrent subscribes and drifted the dashboard count.
+  if (!existing) {
+    db.update(domains)
+      .set({ subscribers_count: sql`${domains.subscribers_count} + 1` })
+      .where(eq(domains.id, domain.id))
+      .run();
+  }
 
   if (!existing) {
     fireWelcomeAutomations(domain.id, domain.workspace_id, subscriberId);

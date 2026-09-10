@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { clientIp, rateLimitHeaders, rateLimitWithHeaders } from "@/lib/rate-limit";
 import { domains, events } from "@pushpanel/db/schema";
 import { requestOriginAllowed } from "@/lib/subscribe-origin";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +34,9 @@ async function handleOptin(req: Request) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 60) });
   }
 
-  let parsed;
-  try {
-    parsed = bodySchema.safeParse(await req.json());
-  } catch {
-    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult(req, BODY_LIMITS.sdk);
+  if (!rawBody.ok) return corsJson({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const parsed = bodySchema.safeParse(rawBody.data);
   if (!parsed.success) {
     return corsJson({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
@@ -53,9 +51,11 @@ async function handleOptin(req: Request) {
   if (!domain || domain.status !== "active") return corsJson({ ok: false, error: "Unknown domain" }, { status: 404 });
 
   // Funnel-poisoning guard: anyone could otherwise inflate/poison grant-rate
-  // analytics for any domain. Unconditional origin check (no-Origin fails
-  // closed via requestOriginAllowed fallback).
-  if (!requestOriginAllowed(req, `https://${domain.name}/`, domain.name)) {
+  // analytics for any domain. Optin mutates only counters, so there is no
+  // secret capability to fall back on: a missing Origin FAILS CLOSED (the old
+  // fallback compared against a URL derived from the domain itself, so it
+  // always matched — curls bypassed the check entirely).
+  if (!requestOriginAllowed(req, `https://${domain.name}/`, domain.name, { requireOrigin: true })) {
     return corsJson({ ok: false, error: "Origin not allowed for this domain" }, { status: 403 });
   }
 

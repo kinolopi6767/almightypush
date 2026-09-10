@@ -6,6 +6,7 @@ import { clientIp, envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "
 import { domains, subscribers, subscriberTags } from "@pushpanel/db/schema";
 import { sha256Hex } from "@pushpanel/core";
 import { requestOriginAllowed } from "@/lib/subscribe-origin";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +34,9 @@ export async function POST(req: Request) {
     return corsJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rl, 30) });
   }
   // Body is needed for the domain id before the resource-level bucket — read it once here.
-  let bodyJson: unknown;
-  try {
-    bodyJson = await req.json();
-  } catch {
-    return corsJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult(req, BODY_LIMITS.sdk);
+  if (!rawBody.ok) return corsJson({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const bodyJson = rawBody.data;
 
   const parsed = bodySchema.safeParse(bodyJson);
   if (!parsed.success) {

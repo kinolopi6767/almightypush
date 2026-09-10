@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { aiGenerations } from "@pushpanel/db/schema";
 import { getAiConfig } from "@/lib/secrets";
 import { z } from "zod";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +20,9 @@ export async function POST(req: Request) {
   const wsId = gate.session.user.workspaceId ? Number(gate.session.user.workspaceId) : null;
   if (!wsId) return NextResponse.json({ ok: false, error: "No workspace" }, { status: 400 });
 
-  let parsed;
-  try {
-    parsed = bodySchema.safeParse(await req.json());
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult(req, BODY_LIMITS.api);
+  if (!rawBody.ok) return NextResponse.json({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const parsed = bodySchema.safeParse(rawBody.data);
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message }, { status: 400 });
 
   const aiConfig = getAiConfig();

@@ -6,6 +6,7 @@ import { clientIp, envRateLimit, rateLimitHeaders, rateLimitWithHeaders } from "
 import { domains, events, subscriberTags, subscribers } from "@pushpanel/db/schema";
 import { sha256Hex } from "@pushpanel/core";
 import { requireApiKey } from "@/lib/api-auth";
+import { readJsonResult, BODY_LIMITS } from "@/lib/read-body";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +51,9 @@ async function trackEvent(req: Request) {
     return apiJson({ ok: false, error: "Too many requests" }, { status: 429, headers: rateLimitHeaders(rlIp, 600) });
   }
 
-  let parsed;
-  try {
-    parsed = bodySchema.safeParse(await req.json());
-  } catch {
-    return apiJson({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const rawBody = await readJsonResult(req, BODY_LIMITS.api);
+  if (!rawBody.ok) return apiJson({ ok: false, error: rawBody.error }, { status: rawBody.status });
+  const parsed = bodySchema.safeParse(rawBody.data);
   if (!parsed.success) {
     return apiJson({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
