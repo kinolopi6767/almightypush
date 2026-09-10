@@ -220,7 +220,7 @@ export const OPENAPI_SPEC = {
                   topic: { type: "string", maxLength: 64, description: "collapse key — replaces queued notifications with the same topic" },
                   ttl: { type: "integer", minimum: 0, maximum: 2419200, description: "time-to-live seconds (default 86400)" },
                   urgency: { type: "string", enum: ["very-low", "low", "normal", "high"], description: "push urgency (default normal)" },
-                  channel: { type: "string", enum: ["push", "email"], description: "delivery channel (default push)" },
+                  channel: { type: "string", enum: ["push"], description: "delivery channel — only \"push\" is supported by this endpoint; email campaigns live in the email studio" },
                   variants: {
                     type: "array",
                     minItems: 2,
