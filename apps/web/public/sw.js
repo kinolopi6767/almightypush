@@ -79,8 +79,7 @@ self.addEventListener("notificationclick", (event) => {
       // does not exist on customer sites. Without panelOrigin there is no
       // correct target, so skip rather than 404 against the customer's site.
       if (!panelOrigin) return;
-      const base = new URL(panelOrigin).origin;
-      const beaconUrl = new URL(`api/v1/click/${deliveryId}${query}`, base).toString();
+      const beaconUrl = panelApiUrl(panelOrigin, `api/v1/click/${deliveryId}${query}`);
       event.waitUntil(fetch(beaconUrl, { method: "GET", keepalive: true }).catch(() => undefined));
     } catch {
       // malformed panelOrigin — never break the click flow
@@ -133,13 +132,23 @@ self.addEventListener("notificationclose", (event) => {
   // keep current behavior.
   if (typeof data.issuedAt === "number" && Date.now() - data.issuedAt < 5_000) return;
   try {
-    const base = new URL(data.panelOrigin).origin;
-    const beaconUrl = new URL(`api/v1/click/${data.deliveryId}?close=1`, base).toString();
+    const beaconUrl = panelApiUrl(data.panelOrigin, `api/v1/click/${data.deliveryId}?close=1`);
     event.waitUntil(fetch(beaconUrl, { method: "GET", keepalive: true }).catch(() => undefined));
   } catch {
     void 0;
   }
 });
+
+/**
+ * Build a panel API URL from the configured panel origin, PRESERVING any
+ * sub-path. `new URL(path, origin)` silently dropped a deployment path
+ * (e.g. https://host/pushpanel → https://host/api/...), so click beacons
+ * 404ed for sub-path deployments while every other SDK call worked.
+ */
+function panelApiUrl(panelOrigin, path) {
+  const base = String(panelOrigin).replace(/\/+$/, "");
+  return `${base}/${String(path).replace(/^\/+/, "")}`;
+}
 
 /* ── Subscription reconciliation ────────────────────────────────────────────
  * Push services rotate endpoints; browsers may drop registrations. The SDK
@@ -163,27 +172,16 @@ function idbOpen() {
   });
 }
 
-async function idbGet(key) {
-  try {
-    const db = await idbOpen();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, "readonly");
-      const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = () => resolve(req.result ?? null);
-      req.onerror = () => reject(req.error);
-    });
-  } catch {
-    return null;
-  }
-}
-
 /* Per-domain subscription configs (SDK writes `subscription_<domainId>` plus
  * the legacy `subscription` key). Enumerate all of them so multi-domain pages
- * reconcile every domain, not just the last one initialized. */
+ * reconcile every domain, not just the last one initialized. One connection
+ * for the whole read and always closed: the previous per-key idbGet leaked an
+ * open IndexedDB connection per call. */
 async function idbGetAllSubscriptionConfigs() {
   const configs = [];
+  let db;
   try {
-    const db = await idbOpen();
+    db = await idbOpen();
     const keys = await new Promise((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, "readonly");
       const req = tx.objectStore(IDB_STORE).getAllKeys();
@@ -193,7 +191,12 @@ async function idbGetAllSubscriptionConfigs() {
     const wanted = keys.filter((k) => k === "subscription" || (typeof k === "string" && k.indexOf("subscription_") === 0));
     const seen = new Set();
     for (const key of wanted) {
-      const cfg = await idbGet(key);
+      const cfg = await new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, "readonly");
+        const req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => reject(req.error);
+      });
       if (!cfg || !cfg.domainId || !cfg.publicKey || !cfg.baseUrl) continue;
       // The legacy key duplicates the newest per-domain entry — send once.
       const fingerprint = `${cfg.domainId}|${cfg.publicKey}|${cfg.baseUrl}`;
@@ -203,6 +206,12 @@ async function idbGetAllSubscriptionConfigs() {
     }
   } catch {
     // storage gone — nothing to reconcile
+  } finally {
+    try {
+      if (db) db.close();
+    } catch {
+      /* already closed */
+    }
   }
   return configs;
 }

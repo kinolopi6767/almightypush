@@ -4,10 +4,10 @@ Tags: push notifications, web push, webhook
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.2.0
+Stable tag: 0.3.0
 License: GPLv2 or later
 
-Fires a PushPanel push_on_publish automation webhook whenever a post, page or custom post type is published.
+Fires a PushPanel push_on_publish automation webhook whenever a post, page or custom post type is published, and hosts the PushPanel web-push service worker at /sw.js.
 
 == Description ==
 
@@ -24,8 +24,16 @@ the automation card in your PushPanel dashboard.
 2. In the PushPanel dashboard create a **push_on_publish** automation.
 3. Copy the automation's **webhook URL** and **secret**.
 4. Go to *Settings → PushPanel* in WordPress, paste both values, save.
+5. The plugin serves the push service worker at `https://your-site/sw.js`
+   (proxied from your panel and cached for an hour), so the SDK snippet from
+   the domain page works without uploading any file.
 
 == Changelog ==
+
+= 0.3.0 =
+* New: serves the panel's service worker at /sw.js (Service-Worker-Allowed: /) so the SDK needs no manual file upload; cached hourly with a no-op fallback when the panel is unreachable.
+* New: optional Panel URL setting (derived from the webhook URL when blank).
+* Fix: webhook timestamp is now a plain integer string — a float cast could render locale/exponent variants that break HMAC verification.
 
 = 0.2.0 =
 * transition_post_status → fires for posts, pages and public custom post types (publish_post missed pages/CPTs).

@@ -191,6 +191,16 @@ export default async function DomainDetailPage({ params }: Props) {
       </p>
       <pre className="mt-3 overflow-x-auto rounded-md border bg-muted/40 p-3.5 text-xs leading-relaxed">{snippet}</pre>
       <p className="mt-3 text-xs text-muted-foreground">
+       Service workers must be same-origin with the page they control. Download{" "}
+       <a href={`${baseUrl}/sw.js`} download="sw.js" className="font-medium text-primary hover:underline">
+        sw.js
+       </a>{" "}
+       and upload it to your site root so it is served at{" "}
+       <code className="rounded bg-muted px-1 font-mono text-[11px]">https://{domain.name}/sw.js</code>. Keep{" "}
+       <code className="rounded bg-muted px-1 font-mono text-[11px]">serviceWorkerPath</code> pointing at that file
+       (default <code className="rounded bg-muted px-1 font-mono text-[11px]">/sw.js</code>).
+      </p>
+      <p className="mt-3 text-xs text-muted-foreground">
        Prefer to see it live? Open the sandbox demo:{" "}
        <Link href={`/demo?domain=${domain.id}`} className="font-medium text-primary hover:underline">
         /demo?domain={domain.id}

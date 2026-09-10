@@ -208,13 +208,25 @@ export async function sendTestPushAction(
 
 function sanitizeCustomCss(css: string): string | undefined {
   if (!css.trim()) return undefined;
-  // Block dangerous constructs while preserving legitimate styling.
+  // This CSS runs on every visitor page of the customer's site: any
+  // network-fetching construct is an exfiltration/beaconing vector, so block
+  // url()/image-set()/@import outright (they were previously allowed) along
+  // with script-capable legacy properties. Note the SDK applies the same
+  // blocklist as defense-in-depth.
   const lower = css.toLowerCase();
-  const blocked = ["expression(", "javascript:", "behavior:", "binding:", "-moz-binding", "vbscript:"];
+  const blocked = [
+    "expression(",
+    "javascript:",
+    "behavior:",
+    "binding:",
+    "-moz-binding",
+    "vbscript:",
+    "url(",
+    "image-set(",
+    "@import",
+    "</style",
+  ];
   for (const b of blocked) if (lower.includes(b)) return undefined;
-  // Strip @import with external URLs (could load untrusted styles) — keep only safe @imports
-  // For premium hardening, disallow @import entirely (admin can paste full rules inline)
-  if (/@import/i.test(css)) return css.replace(/@import[^;]+;/gi, "/* @import blocked */");
   return css.slice(0, 5000);
 }
 

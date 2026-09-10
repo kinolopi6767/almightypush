@@ -88,24 +88,7 @@ var PushPanel = (() => {
     const apple = window.AppleNotificationPermission;
     return apple === "granted";
   }
-  function injectStyles(customCss) {
-    const id = "pp-sdk-styles";
-    if (document.getElementById(id) && !customCss) return;
-    let style = document.getElementById(id);
-    if (!style) {
-      style = document.createElement("style");
-      style.id = id;
-      document.head.appendChild(style);
-    }
-    let safeCss = customCss != null ? customCss : "";
-    if (safeCss && /(@import|url\s*\(|expression|javascript\s*:|behavior\s*:|-moz-binding|vbscript\s*:|<\/style)/i.test(safeCss)) {
-      try {
-        console.warn("[PushPanel] customCss blocked: unsafe construct detected");
-      } catch (e) {
-      }
-      safeCss = "";
-    }
-    style.textContent = `
+  var PP_BASE_CSS = `
 .pp-sdk{all:initial;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:inherit;z-index:2147483647}
 .pp-sdk *{all:unset;box-sizing:border-box}
 .pp-sdk-card{position:fixed;z-index:2147483647;width:min(340px,92vw);display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:14px;background:var(--pp-sdk-bg,#ffffff);color:var(--pp-sdk-fg,#1a1a1a);box-shadow:0 10px 30px rgba(0,0,0,.18);border:1px solid rgba(0,0,0,.08)}
@@ -123,8 +106,35 @@ var PushPanel = (() => {
 .pp-sdk-backdrop{position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
 .pp-sdk-fullscreen{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 600px at 50% -10%, #1d4ed8, #0f172a);color:#fff;padding:24px}
 .pp-sdk-fullscreen-inner{max-width:460px;text-align:center}
-${safeCss}
 `;
+  function injectStyles(customCss, domain) {
+    const baseId = "pp-sdk-styles";
+    if (!document.getElementById(baseId)) {
+      const base = document.createElement("style");
+      base.id = baseId;
+      base.textContent = PP_BASE_CSS;
+      document.head.appendChild(base);
+    }
+    const customId = `pp-sdk-custom-${domain != null ? domain : 0}`;
+    let custom = document.getElementById(customId);
+    if (!customCss) {
+      if (custom) custom.textContent = "";
+      return;
+    }
+    let safeCss = customCss;
+    if (/@import|url\s*\(|image-set\s*\(|expression|javascript\s*:|behavior\s*:|-moz-binding|vbscript\s*:|<\/style/i.test(safeCss)) {
+      try {
+        console.warn("[PushPanel] customCss blocked: unsafe construct detected");
+      } catch (e) {
+      }
+      safeCss = "";
+    }
+    if (!custom) {
+      custom = document.createElement("style");
+      custom.id = customId;
+      document.head.appendChild(custom);
+    }
+    custom.textContent = safeCss;
   }
   function positionClass(position) {
     return `pp-sdk-${position}`;
@@ -190,6 +200,15 @@ ${safeCss}
   }
   function init(options) {
     var _a, _b, _c, _d, _e;
+    if (typeof window === "undefined") {
+      return {
+        state: () => "unsupported",
+        isInstalledPwa: () => false,
+        subscribe: async () => "unsupported",
+        unsubscribe: async () => "unsupported",
+        setTags: async () => false
+      };
+    }
     const w = window;
     if (!w.__pushpanel_instances__) w.__pushpanel_instances__ = /* @__PURE__ */ new Map();
     const existing = w.__pushpanel_instances__.get(options.domain);
@@ -282,7 +301,7 @@ ${safeCss}
       }
       if (prompt.noRePromptIfDenied && ("Notification" in window ? Notification.permission === "denied" : true)) return;
       uiMounted = true;
-      injectStyles(prompt.customCss);
+      injectStyles(prompt.customCss, options.domain);
       if (type === "bell") {
         mountBell();
         trackOptin("prompt_shown");
@@ -518,6 +537,7 @@ ${safeCss}
           return current;
         }
         const registration = await navigator.serviceWorker.register(swPath);
+        await registration.update().catch(() => void 0);
         if (!registration.active) {
           await waitForActive(registration);
         }

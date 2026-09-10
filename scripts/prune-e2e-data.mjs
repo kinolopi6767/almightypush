@@ -16,7 +16,15 @@ const dataDir = path.join(root, "data");
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const daysArg = args.find((a) => a.startsWith("--days="));
-const maxAgeMs = Number(daysArg?.split("=")[1] ?? 3) * 86_400_000;
+const parsedDays = Number(daysArg?.split("=")[1] ?? 3);
+// `--days=abc` yielded NaN and `--days=` yielded 0, making the age check
+// always false — the script then deleted EVERYTHING regardless of age.
+// Fall back to the 3-day default on garbage and refuse a non-positive value.
+if (!Number.isFinite(parsedDays) || parsedDays <= 0) {
+  console.error(`[prune-e2e] invalid --days value: ${daysArg ?? "(unset)"} — expected a positive number`);
+  process.exit(1);
+}
+const maxAgeMs = parsedDays * 86_400_000;
 const now = Date.now();
 
 let removed = 0;

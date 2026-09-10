@@ -173,28 +173,7 @@ function appleNotificationAllowed(): boolean {
   return apple === "granted";
 }
 
-function injectStyles(customCss?: string): void {
-  const id = "pp-sdk-styles";
-  if (document.getElementById(id) && !customCss) return;
-  let style = document.getElementById(id) as HTMLStyleElement | null;
-  if (!style) {
-    style = document.createElement("style");
-    style.id = id;
-    document.head.appendChild(style);
-  }
-  // Defense-in-depth: editor-controlled customCss runs on the customer
-  // origin. Drop it when it contains exfiltration-capable constructs
-  // (server also sanitizes, but the SDK must not trust the wire).
-  let safeCss = customCss ?? "";
-  if (safeCss && /(@import|url\s*\(|expression|javascript\s*:|behavior\s*:|-moz-binding|vbscript\s*:|<\/style)/i.test(safeCss)) {
-    try {
-      console.warn("[PushPanel] customCss blocked: unsafe construct detected");
-    } catch {
-      void 0;
-    }
-    safeCss = "";
-  }
-  style.textContent = `
+const PP_BASE_CSS = `
 .pp-sdk{all:initial;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:inherit;z-index:2147483647}
 .pp-sdk *{all:unset;box-sizing:border-box}
 .pp-sdk-card{position:fixed;z-index:2147483647;width:min(340px,92vw);display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:14px;background:var(--pp-sdk-bg,#ffffff);color:var(--pp-sdk-fg,#1a1a1a);box-shadow:0 10px 30px rgba(0,0,0,.18);border:1px solid rgba(0,0,0,.08)}
@@ -212,8 +191,42 @@ function injectStyles(customCss?: string): void {
 .pp-sdk-backdrop{position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
 .pp-sdk-fullscreen{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 600px at 50% -10%, #1d4ed8, #0f172a);color:#fff;padding:24px}
 .pp-sdk-fullscreen-inner{max-width:460px;text-align:center}
-${safeCss}
 `;
+
+function injectStyles(customCss?: string, domain?: number): void {
+  const baseId = "pp-sdk-styles";
+  if (!document.getElementById(baseId)) {
+    const base = document.createElement("style");
+    base.id = baseId;
+    base.textContent = PP_BASE_CSS;
+    document.head.appendChild(base);
+  }
+  // Per-domain custom CSS lives in its own tag: a page embedding two
+  // domains previously had the second domain's styles overwrite the first.
+  const customId = `pp-sdk-custom-${domain ?? 0}`;
+  let custom = document.getElementById(customId) as HTMLStyleElement | null;
+  if (!customCss) {
+    if (custom) custom.textContent = "";
+    return;
+  }
+  // Defense-in-depth: editor-controlled customCss runs on the customer
+  // origin. Drop it when it contains exfiltration-capable constructs
+  // (server also sanitizes, but the SDK must not trust the wire).
+  let safeCss = customCss;
+  if (/@import|url\s*\(|image-set\s*\(|expression|javascript\s*:|behavior\s*:|-moz-binding|vbscript\s*:|<\/style/i.test(safeCss)) {
+    try {
+      console.warn("[PushPanel] customCss blocked: unsafe construct detected");
+    } catch {
+      void 0;
+    }
+    safeCss = "";
+  }
+  if (!custom) {
+    custom = document.createElement("style");
+    custom.id = customId;
+    document.head.appendChild(custom);
+  }
+  custom.textContent = safeCss;
 }
 
 function positionClass(position: NonNullable<PushPromptConfig["position"]>): string {
@@ -300,6 +313,18 @@ function schedulePeriodicSync(
 }
 
 export function init(options: PushPanelOptions): PushPanelApi {
+  // SSR/worker import safety: the documented "unsupported" state must be
+  // reachable without a DOM. The previous code dereferenced `window` before
+  // the capability check and threw ReferenceError during server rendering.
+  if (typeof window === "undefined") {
+    return {
+      state: () => "unsupported" as PushPanelState,
+      isInstalledPwa: () => false,
+      subscribe: async () => "unsupported" as PushPanelState,
+      unsubscribe: async () => "unsupported" as PushPanelState,
+      setTags: async () => false,
+    };
+  }
   // Singleton per domain: landing pages call init() inside click handlers,
   // host pages sometimes double-init — duplicates stacked prompt cards/bells.
   const w = window as PushPanelWindow;
@@ -422,7 +447,7 @@ export function init(options: PushPanelOptions): PushPanelApi {
     }
     if (prompt.noRePromptIfDenied && ("Notification" in window ? Notification.permission === "denied" : true)) return;
     uiMounted = true;
-    injectStyles(prompt.customCss);
+    injectStyles(prompt.customCss, options.domain);
 
     if (type === "bell") {
       mountBell();
@@ -683,6 +708,10 @@ export function init(options: PushPanelOptions): PushPanelApi {
         return current;
       }
       const registration = await navigator.serviceWorker.register(swPath);
+      // Ask for a fresh worker: without update() a changed sw.js can go
+      // unnoticed for up to 24h (browser's default check interval), so click
+      // beacon/path fixes would not reach existing visitors promptly.
+      await registration.update().catch(() => undefined);
       // wait for the worker to be active — pushManager.subscribe requires one
       if (!registration.active) {
         await waitForActive(registration);
