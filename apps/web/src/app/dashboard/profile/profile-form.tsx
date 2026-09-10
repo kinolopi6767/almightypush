@@ -61,8 +61,14 @@ export function ProfileForm({ name }: { name: string }) {
     {pending ? "Saving…" : "Save profile"}
    </button>
 
-   {state?.ok && <p className="form-ok">Profile updated.</p>}
-   {state?.error && <p className="form-alert">{state.error}</p>}
+  {state?.ok && (
+    <p className="form-ok">
+      {state.passwordChanged
+        ? "Password updated. All other sessions are invalidated — you will be asked to sign in again on your next page load."
+        : "Profile updated."}
+    </p>
+  )}
+  {state?.error && <p className="form-alert">{state.error}</p>}
   </form>
  );
 }

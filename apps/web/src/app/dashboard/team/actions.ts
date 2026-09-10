@@ -10,6 +10,7 @@ import { logAudit } from "@/lib/audit";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { hashPassword, sha256Hex } from "@pushpanel/core";
 import { randomBytes } from "node:crypto";
+import { revalidatePath } from "next/cache";
 
 export type TeamFormState = { error?: string; ok?: boolean; token?: string } | undefined;
 
@@ -65,6 +66,8 @@ export async function inviteTeamMemberAction(_prev: TeamFormState, formData: For
 
   db.insert(teamInvites).values({ workspace_id: workspaceId, email: emailLower, role: parsed.data.role, token_hash: tokenHash, expires_at: expiresAt }).run();
   logAudit(db, { workspaceId, action: "team.invite", entityType: "team_invite", meta: { email: parsed.data.email, role: parsed.data.role, invited: true } });
+  // Without this the "Pending invites" panel stayed stale until a full reload.
+  revalidatePath("/dashboard/team");
 
   return { ok: true, token };
 }
@@ -74,6 +77,7 @@ export async function revokeInviteAction(inviteId: number): Promise<TeamFormStat
     const { workspaceId } = await requireOwnerOrAdmin();
     db.delete(teamInvites).where(and(eq(teamInvites.id, inviteId), eq(teamInvites.workspace_id, workspaceId))).run();
     logAudit(db, { workspaceId, action: "team.revoke", entityType: "team_invite", entityId: inviteId });
+    revalidatePath("/dashboard/team");
     return { ok: true };
   } catch (e) {
     return { error: (e as Error).message };

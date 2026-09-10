@@ -18,6 +18,8 @@ import {
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
+import { rateLimit } from "@/lib/rate-limit";
+import { revalidatePath } from "next/cache";
 
 export type DomainFormState = { error?: string; ok?: boolean; id?: number; count?: number } | undefined;
 
@@ -94,6 +96,7 @@ export async function createDomainAction(
     .run();
   if (!inserted.lastInsertRowid) return { error: "Failed to create domain" };
   logAudit(db, { workspaceId, action: "domain.create", entityType: "domain", entityId: Number(inserted.lastInsertRowid), meta: { name: parsed.data.name } });
+  revalidatePath("/dashboard/domains");
 
   return { ok: true, id: Number(inserted.lastInsertRowid) };
 }
@@ -127,6 +130,11 @@ export async function sendTestPushAction(
   if (requireEditorRole(session.user.role)) return { error: "Viewers cannot create or manage content" };
   const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
   if (!workspaceId) return { error: "No workspace" };
+  // Test pushes create real campaigns; throttle per workspace so a stuck
+  // button (or scripted editor) cannot mint them at line rate.
+  if (!rateLimit(`test-push:${workspaceId}`, 10, 60_000)) {
+    return { error: "Too many test pushes — wait a minute and try again" };
+  }
 
   const parsed = testPushSchema.safeParse({
     title: formData.get("title"),
@@ -185,6 +193,15 @@ export async function sendTestPushAction(
         .run();
     }
   });
+  logAudit(db, {
+    workspaceId,
+    action: "domain.test_push",
+    entityType: "campaign",
+    entityId: campaignId,
+    meta: { domain_id: domainId, count: audience.length },
+  });
+  revalidatePath(`/dashboard/domains/${domainId}`);
+  revalidatePath("/dashboard/campaigns");
 
   return { ok: true, id: campaignId, count: audience.length };
 }
@@ -253,6 +270,8 @@ export async function updateDomainPromptAction(
 
   db.update(domains).set({ app_config_json: JSON.stringify(cfg) }).where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId))).run();
   logAudit(db, { workspaceId, action: "domain.update", entityType: "domain", entityId: domainId, meta: { prompt: parsed.data.kind } });
+  revalidatePath(`/dashboard/domains/${domainId}`);
+  revalidatePath("/dashboard/domains");
   return { ok: true, id: domainId };
 }
 
@@ -279,6 +298,8 @@ export async function setDomainStatusAction(domainId: number, status: "active" |
     .run();
   if (changed.changes === 0) return { error: "Domain not found" };
   logAudit(db, { workspaceId, action: "domain.update", entityType: "domain", entityId: domainId, meta: { status } });
+  revalidatePath(`/dashboard/domains/${domainId}`);
+  revalidatePath("/dashboard/domains");
   return { ok: true, id: domainId };
 }
 
@@ -338,6 +359,7 @@ export async function deleteDomainAction(domainId: number): Promise<DomainFormSt
   });
 
   logAudit(db, { workspaceId, action: "domain.delete", entityType: "domain", entityId: domainId, meta: { name: domain.name } });
+  revalidatePath("/dashboard/domains");
   return { ok: true, id: domainId };
 }
 
@@ -416,5 +438,6 @@ export async function cloneDomainAction(
   if (!inserted.lastInsertRowid) return { error: "Failed to clone domain" };
   const newId = Number(inserted.lastInsertRowid);
   logAudit(db, { workspaceId, action: "domain.clone", entityType: "domain", entityId: newId, meta: { from: sourceId, name: parsed.data.name } });
+  revalidatePath("/dashboard/domains");
   return { ok: true, id: newId };
 }

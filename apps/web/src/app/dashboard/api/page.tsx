@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auth } from "@/auth";
-import { apiKeys, domains } from "@pushpanel/db/schema";
+import { apiKeys, domains, settings } from "@pushpanel/db/schema";
 import { OPENAPI_SPEC } from "@/lib/openapi";
 import { readApiAccessEnabled } from "@/lib/api-auth";
 import { CreateApiKeyForm, RevokeApiKeyButton } from "./key-form";
@@ -19,6 +19,10 @@ export default async function ApiPage() {
  if (!workspaceId) redirect("/setup");
 
  const accessEnabled = readApiAccessEnabled();
+ // Expiry inputs are interpreted in the panel timezone (see actions.ts);
+ // display them in the same zone so they round-trip.
+ const [tzRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "timezone")).limit(1).all();
+ const panelTimeZone = tzRow?.value || undefined;
 
  const keys = workspaceId
   ? db
@@ -74,8 +78,8 @@ export default async function ApiPage() {
            <p className="truncate text-xs text-muted-foreground">
             created {new Date(k.created_at).toLocaleDateString()}
             {k.domain_id ? " · scoped to one domain" : " · all domains"}
-            {k.expires_at && ` · expires ${new Date(k.expires_at).toLocaleDateString()}`}
-            {k.last_used_at ? ` · last used ${new Date(k.last_used_at).toLocaleString()}` : " · never used"}
+            {k.expires_at && ` · expires ${new Date(k.expires_at).toLocaleDateString(undefined, { timeZone: panelTimeZone })}`}
+            {k.last_used_at ? ` · last used ${new Date(k.last_used_at).toLocaleString(undefined, { timeZone: panelTimeZone })}` : " · never used"}
            </p>
           </div>
           <RevokeApiKeyButton keyId={k.id} label={k.label} />

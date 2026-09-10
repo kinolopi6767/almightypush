@@ -7,6 +7,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { InvalidTimezoneError, naiveLocalToUtcMs } from "@pushpanel/core";
 import { rateLimit } from "@/lib/rate-limit";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 export type CampaignFormState = { error?: string; ok?: boolean; id?: number } | undefined;
@@ -89,6 +90,11 @@ export async function createCampaignAction(
     variantsJson: formData.get("variantsJson") ?? "",
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  // Reject the email channel instead of storing a row the push scheduler
+  // permanently skips: it would sit `scheduled` forever with no error.
+  if (parsed.data.channel === "email") {
+    return { error: "Email campaigns are created in the Email studio — the push composer is push-only" };
+  }
 
   const [domain] = db
     .select({ id: domains.id })
@@ -204,6 +210,7 @@ export async function createCampaignAction(
   if (!campaign.lastInsertRowid) return { error: "Failed to create campaign" };
   logAudit(db, { workspaceId, action: "campaign.create", entityType: "campaign", entityId: Number(campaign.lastInsertRowid), meta: { title: parsed.data.title } });
 
+  revalidatePath("/dashboard/campaigns");
   return { ok: true, id: Number(campaign.lastInsertRowid) };
 }
 
@@ -243,6 +250,8 @@ export async function cancelCampaignAction(campaignId: number): Promise<Campaign
   });
 
   logAudit(db, { workspaceId, action: "campaign.cancel", entityType: "campaign", entityId: campaignId });
+  revalidatePath(`/dashboard/campaigns/${campaignId}`);
+  revalidatePath("/dashboard/campaigns");
   return { ok: true };
 }
 
@@ -299,6 +308,8 @@ export async function retryFailedDeliveriesAction(campaignId: number): Promise<C
     entityId: campaignId,
     meta: { retried: requeued },
   });
+  revalidatePath(`/dashboard/campaigns/${campaignId}`);
+  revalidatePath("/dashboard/campaigns");
   return { ok: true, id: campaignId };
 }
 
@@ -366,6 +377,7 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
     .run();
   if (!insert.lastInsertRowid) return { error: "Failed to duplicate campaign" };
   logAudit(db, { workspaceId, action: "campaign.duplicate", entityType: "campaign", entityId: Number(insert.lastInsertRowid), meta: { from: campaignId } });
+  revalidatePath("/dashboard/campaigns");
   return { ok: true, id: Number(insert.lastInsertRowid) };
 }
 
@@ -440,5 +452,6 @@ export async function resendToNonClickersAction(campaignId: number): Promise<Cam
     .run();
   if (!insert.lastInsertRowid) return { error: "Failed to create resend" };
   logAudit(db, { workspaceId, action: "campaign.duplicate", entityType: "campaign", entityId: Number(insert.lastInsertRowid), meta: { from: campaignId, retarget: "non_clickers" } });
+  revalidatePath("/dashboard/campaigns");
   return { ok: true, id: Number(insert.lastInsertRowid) };
 }

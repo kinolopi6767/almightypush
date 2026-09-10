@@ -1,14 +1,22 @@
 "use client";
 
-import { useActionState } from "react";
+import { useEffect, useActionState } from "react";
+import { useRouter } from "next/navigation";
 import { cloneDomainAction, deleteDomainAction, setDomainStatusAction, type DomainFormState } from "./actions";
 
 export function DomainStatusForm({ domainId, status }: { domainId: number; status: string }) {
   const paused = status === "paused";
+  const router = useRouter();
   const [state, formAction, pending] = useActionState<DomainFormState, FormData>(
     () => setDomainStatusAction(domainId, paused ? "active" : "paused"),
     undefined,
   );
+  // Refresh server data after a successful toggle so the heading, button and
+  // status text flip immediately instead of showing the stale state until a
+  // manual reload.
+  useEffect(() => {
+    if (state?.ok) router.refresh();
+  }, [state, router]);
 
   return (
     <form action={formAction} className="panel p-4">
@@ -19,7 +27,7 @@ export function DomainStatusForm({ domainId, status }: { domainId: number; statu
           : "Pause everything: new campaigns won't start, queued deliveries wait (nothing is lost), and new subscriptions are refused. Unsubscribe keeps working."}
       </p>
       {state?.ok ? (
-        <p className="mt-3 form-ok">{paused ? "Domain resumed." : "Domain paused."}</p>
+        <p className="mt-3 form-ok">Domain status updated.</p>
       ) : state?.error ? (
         <p role="alert" className="mt-3 form-alert">
           {state.error}

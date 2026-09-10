@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { apiKeys, domains } from "@pushpanel/db/schema";
+import { apiKeys, domains, settings } from "@pushpanel/db/schema";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { generateApiKeyToken, sha256Hex } from "@pushpanel/core";
+import { generateApiKeyToken, naiveLocalToUtcMs, sha256Hex } from "@pushpanel/core";
 import { logAudit } from "@/lib/audit";
 
 export type ApiKeyFormState =
@@ -58,28 +58,23 @@ export async function createApiKeyAction(
   }
 
   // The date input is a datetime-local (YYYY-MM-DDTHH:mm) or plain date
-  // (YYYY-MM-DD); pin plain dates to end-of-day UTC so the key never dies
-  // early. Round-trip check: Date normalizes overflows ("2026-13-99" becomes
-  // a real 2027 date), which would silently mint a wrongly-dated key.
+  // (YYYY-MM-DD). Both are NAIVE wall-clock values: interpret them in the
+  // panel's configured timezone (same as campaign scheduling) — treating
+  // them as UTC made keys expire hours off for non-UTC operators.
   let expiresAt: string | null = null;
   if (parsed.data.expiresAt) {
     const raw = parsed.data.expiresAt;
-    let endOfDay: Date;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-      endOfDay = new Date(`${raw}T23:59:59.999Z`);
-      if (Number.isNaN(endOfDay.getTime()) || endOfDay.toISOString().slice(0, 10) !== raw) {
-        return { error: "Invalid expiry date" };
-      }
-    } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
-      // datetime-local from the form: interpret as UTC (panel displays UTC).
-      const withSec = raw.length === 16 ? `${raw}:00` : raw;
-      endOfDay = new Date(`${withSec}Z`);
-      if (Number.isNaN(endOfDay.getTime())) return { error: "Invalid expiry date" };
-    } else {
-      return { error: "Invalid expiry date" };
-    }
-    if (endOfDay.getTime() <= Date.now()) return { error: "Expiry must be in the future" };
-    expiresAt = endOfDay.toISOString();
+    const [tzRow] = db.select({ value: settings.value }).from(settings).where(eq(settings.key, "timezone")).limit(1).all();
+    const timeZone = tzRow?.value || process.env.DEFAULT_TIMEZONE || undefined;
+    const endOfDay =
+      /^\d{4}-\d{2}-\d{2}$/.test(raw)
+        ? naiveLocalToUtcMs(`${raw}T23:59:59`, timeZone)
+        : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(raw)
+          ? naiveLocalToUtcMs(raw, timeZone)
+          : NaN;
+    if (!Number.isFinite(endOfDay)) return { error: "Invalid expiry date" };
+    if (endOfDay <= Date.now()) return { error: "Expiry must be in the future" };
+    expiresAt = new Date(endOfDay).toISOString();
   }
 
   const token = generateApiKeyToken();

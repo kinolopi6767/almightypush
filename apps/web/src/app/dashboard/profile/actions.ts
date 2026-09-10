@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 
-export type ProfileFormState = { ok?: boolean; error?: string } | undefined;
+export type ProfileFormState = { ok?: boolean; error?: string; passwordChanged?: boolean } | undefined;
 
 const profileSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
@@ -66,5 +66,5 @@ export async function updateProfileAction(
   }
 
   revalidatePath("/dashboard/profile");
-  return { ok: true };
+  return { ok: true, passwordChanged };
 }

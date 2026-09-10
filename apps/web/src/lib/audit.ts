@@ -7,6 +7,13 @@ export type AuditAction =
   | "domain.update"
   | "domain.delete"
   | "domain.clone"
+  | "domain.test_push"
+  | "subscriber.import"
+  | "subscriber.clean"
+  | "subscriber.unsubscribe"
+  | "secret.update"
+  | "workspace.create"
+  | "workspace.switch"
   | "campaign.create"
   | "campaign.cancel"
   | "campaign.retry"
@@ -57,7 +64,7 @@ export function logAudit(
     action: AuditAction;
     entityType?: string;
     entityId?: number;
-    meta?: Record<string, string | number | boolean | null>;
+    meta?: Record<string, string | number | boolean | null | string[]>;
   },
 ): void {
   try {
@@ -67,9 +74,9 @@ export function logAudit(
     // JSON either way — never a truncated fragment).
     let metaJson: string | null = null;
     if (opts.meta) {
-      const safe: Record<string, string | number | boolean | null> = {};
+      const safe: Record<string, string | number | boolean | null | string[]> = {};
       for (const [k, v] of Object.entries(opts.meta)) {
-        safe[k.slice(0, 64)] = typeof v === "string" ? v.slice(0, 500) : v;
+        safe[k.slice(0, 64)] = Array.isArray(v) ? v.slice(0, 50).map((s) => String(s).slice(0, 120)) : typeof v === "string" ? v.slice(0, 500) : v;
       }
       metaJson = JSON.stringify(safe);
       if (metaJson.length > 4000) metaJson = JSON.stringify({ truncated: true, keys: Object.keys(safe) });

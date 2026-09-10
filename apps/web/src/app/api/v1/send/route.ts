@@ -209,7 +209,12 @@ async function createCampaign(req: Request) {
     if (!["very-low", "low", "normal", "high"].includes(u)) return json({ ok: false, error: "urgency must be very-low|low|normal|high" }, { status: 400 });
     urgency = u;
   }
-  const channel = body.channel === "email" ? "email" : "push";
+  // Email is not a push-scheduler channel; silently coercing it to push sent
+  // a push the caller never asked for. Reject explicitly.
+  if (body.channel !== undefined && String(body.channel).trim().toLowerCase() === "email") {
+    return json({ ok: false, error: "channel 'email' is not supported by this endpoint" }, { status: 400 });
+  }
+  const channel = "push";
 
   // LumaPush: up to 10 variants A/B/C... with weights
   let variantsJson: string | null = null;

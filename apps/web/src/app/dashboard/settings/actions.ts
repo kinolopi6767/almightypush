@@ -119,7 +119,9 @@ export async function updateSettingsAction(
       .run();
   }
 
-  if (workspaceId) logAudit(db, { workspaceId, action: "settings.update" });
+  // Record WHICH settings changed (values may be sensitive) so the audit
+  // trail can answer "who turned X on/off" without a value dump.
+  if (workspaceId) logAudit(db, { workspaceId, action: "settings.update", meta: { keys: values.map((v) => v.key) } });
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }
@@ -154,11 +156,17 @@ const secretsSchema = z.object({
   clear_ai_api_key: z.enum(["on"]).optional(),
   clear_ydc_api_key: z.enum(["on"]).optional(),
   clear_mail_api_key: z.enum(["on"]).optional(),
+  clear_ai_model: z.enum(["on"]).optional(),
+  clear_ai_base_url: z.enum(["on"]).optional(),
+  clear_mail_provider: z.enum(["on"]).optional(),
+  clear_mail_from: z.enum(["on"]).optional(),
 });
 
 export async function updateSecretsAction(_prev: SettingsFormState, formData: FormData): Promise<NonNullable<SettingsFormState>> {
+  let secretsWorkspaceId = 0;
   try {
-    await requireOwner();
+    const ownerSession = await requireOwner();
+    secretsWorkspaceId = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : 0;
   } catch {
     return { error: "Not signed in or not an owner" };
   }
@@ -173,23 +181,44 @@ export async function updateSecretsAction(_prev: SettingsFormState, formData: Fo
     clear_ai_api_key: formData.get("clear_ai_api_key") ?? undefined,
     clear_ydc_api_key: formData.get("clear_ydc_api_key") ?? undefined,
     clear_mail_api_key: formData.get("clear_mail_api_key") ?? undefined,
+    clear_ai_model: formData.get("clear_ai_model") ?? undefined,
+    clear_ai_base_url: formData.get("clear_ai_base_url") ?? undefined,
+    clear_mail_provider: formData.get("clear_mail_provider") ?? undefined,
+    clear_mail_from: formData.get("clear_mail_from") ?? undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
   // The UI promises "leave blank to keep the existing value" — empty fields
   // must be skipped, not treated as deletion. Deletion is explicit via the
   // per-key "Clear" checkbox; a pasted replacement value always wins.
-  const saveOrClear = (key: "ai_api_key" | "ydc_api_key" | "mail_api_key", value: string | undefined, clear: "on" | undefined) => {
+  const saveOrClear = (key: string, value: string | undefined, clear: "on" | undefined) => {
     if (value) setSecret(key, value);
     else if (clear === "on") setSecret(key, null);
   };
   saveOrClear("ai_api_key", d.ai_api_key, d.clear_ai_api_key);
-  if (d.ai_model) setSecret("ai_model", d.ai_model);
-  if (d.ai_base_url) setSecret("ai_base_url", d.ai_base_url);
+  saveOrClear("ai_model", d.ai_model, d.clear_ai_model);
+  saveOrClear("ai_base_url", d.ai_base_url, d.clear_ai_base_url);
   saveOrClear("ydc_api_key", d.ydc_api_key, d.clear_ydc_api_key);
-  if (d.mail_provider) setSecret("mail_provider", d.mail_provider);
+  saveOrClear("mail_provider", d.mail_provider, d.clear_mail_provider);
   saveOrClear("mail_api_key", d.mail_api_key, d.clear_mail_api_key);
-  if (d.mail_from) setSecret("mail_from", d.mail_from);
+  saveOrClear("mail_from", d.mail_from, d.clear_mail_from);
+  // Secret rotation is security-relevant; record which keys changed (never values).
+  if (secretsWorkspaceId) {
+    logAudit(db, {
+      workspaceId: secretsWorkspaceId,
+      action: "secret.update",
+      entityType: "settings",
+      meta: {
+        ai_api_key: Boolean(d.ai_api_key || d.clear_ai_api_key),
+        ydc_api_key: Boolean(d.ydc_api_key || d.clear_ydc_api_key),
+        mail_api_key: Boolean(d.mail_api_key || d.clear_mail_api_key),
+        ai_model: Boolean(d.ai_model),
+        ai_base_url: Boolean(d.ai_base_url),
+        mail_provider: Boolean(d.mail_provider),
+        mail_from: Boolean(d.mail_from),
+      },
+    });
+  }
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }
@@ -201,8 +230,10 @@ const gdriveSchema = z.object({
 });
 
 export async function updateGDriveAction(_prev: SettingsFormState, formData: FormData): Promise<NonNullable<SettingsFormState>> {
+  let gdriveWorkspaceId = 0;
   try {
-    await requireOwner();
+    const ownerSession = await requireOwner();
+    gdriveWorkspaceId = ownerSession.user.workspaceId ? Number(ownerSession.user.workspaceId) : 0;
   } catch {
     return { error: "Not signed in or not an owner" };
   }
@@ -223,6 +254,14 @@ export async function updateGDriveAction(_prev: SettingsFormState, formData: For
       return { error: "Invalid JSON for Service Account" };
     }
     setSecret("gdrive_service_json", d.gdrive_service_json);
+  }
+  if (gdriveWorkspaceId) {
+    logAudit(db, {
+      workspaceId: gdriveWorkspaceId,
+      action: "secret.update",
+      entityType: "settings",
+      meta: { gdrive_enabled: d.gdrive_enabled === "on", service_json: Boolean(d.gdrive_service_json) },
+    });
   }
   revalidatePath("/dashboard/settings");
   return { ok: true };

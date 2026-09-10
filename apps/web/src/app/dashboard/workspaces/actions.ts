@@ -6,6 +6,7 @@ import { workspaces, users } from "@pushpanel/db/schema";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { logAudit } from "@/lib/audit";
 
 const createSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -50,6 +51,7 @@ export async function createWorkspaceAction(_prev: unknown, formData: FormData) 
     const newId = Number(inserted.lastInsertRowid);
     // Switch the creator to the new workspace immediately
     db.update(users).set({ workspace_id: newId }).where(eq(users.id, Number(session.user.id))).run();
+    logAudit(db, { workspaceId: newId, action: "workspace.create", entityType: "workspace", entityId: newId, meta: { slug } });
     revalidatePath("/dashboard/workspaces");
     revalidatePath("/dashboard");
     return { ok: true, id: newId };
@@ -76,6 +78,7 @@ export async function switchWorkspaceAction(workspaceId: number) {
   const [ws] = db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, wsId)).limit(1).all();
   if (!ws) return { error: "Workspace not found" };
   db.update(users).set({ workspace_id: wsId }).where(eq(users.id, Number(session.user.id))).run();
+  logAudit(db, { workspaceId: wsId, action: "workspace.switch", entityType: "workspace", entityId: wsId });
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/workspaces");
   return { ok: true };

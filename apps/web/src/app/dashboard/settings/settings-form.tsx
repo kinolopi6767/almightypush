@@ -467,6 +467,12 @@ export function SecretsForm({
        AI Model
       </label>
       <input id="ai_model" name="ai_model" defaultValue={aiModel} placeholder="gpt-4o-mini" className="input" />
+      {aiModel && (
+       <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" name="clear_ai_model" value="on" className="h-3.5 w-3.5" />
+        Clear on save
+       </label>
+      )}
      </div>
      <div className="field sm:col-span-2">
       <label htmlFor="ai_base_url" className="label">
@@ -479,6 +485,12 @@ export function SecretsForm({
        placeholder="https://api.openai.com/v1"
        className="input"
       />
+      {aiBaseUrl && (
+       <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" name="clear_ai_base_url" value="on" className="h-3.5 w-3.5" />
+        Clear on save
+       </label>
+      )}
      </div>
      <div className="field sm:col-span-2">
       <label htmlFor="ydc_api_key" className="label">
@@ -512,6 +524,12 @@ export function SecretsForm({
        <option value="ses">AWS SES</option>
        <option value="smtp">SMTP</option>
       </select>
+      {mailProvider && (
+       <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" name="clear_mail_provider" value="on" className="h-3.5 w-3.5" />
+        Clear on save
+       </label>
+      )}
      </div>
      <div className="field">
       <label htmlFor="mail_api_key" className="label">
@@ -536,6 +554,12 @@ export function SecretsForm({
        Mail From (verified domain)
       </label>
       <input id="mail_from" name="mail_from" type="email" defaultValue={mailFrom} placeholder="news@yourdomain.com" className="input" />
+      {mailFrom && (
+       <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" name="clear_mail_from" value="on" className="h-3.5 w-3.5" />
+        Clear on save
+       </label>
+      )}
      </div>
     </div>
     </div>

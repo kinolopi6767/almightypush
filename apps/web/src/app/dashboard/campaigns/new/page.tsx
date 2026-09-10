@@ -21,7 +21,19 @@ export default async function NewCampaignPage({ searchParams }: { searchParams?:
   .where(eq(segments.workspace_id, workspaceId))
   .all();
  const templateRows = db
-  .select({ id: templates.id, name: templates.name, title: templates.title, message: templates.message, launch_url: templates.launch_url })
+  .select({
+   id: templates.id,
+   name: templates.name,
+   title: templates.title,
+   message: templates.message,
+   launch_url: templates.launch_url,
+   // The form applies these too — omitting them from the select silently
+   // dropped a template's icon/image/buttons on apply (the form read them
+   // via an unchecked cast that was always undefined).
+   icon_url: templates.icon_url,
+   image_url: templates.image_url,
+   buttons_json: templates.buttons_json,
+  })
   .from(templates)
   .where(eq(templates.workspace_id, workspaceId))
   .all();

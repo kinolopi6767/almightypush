@@ -22,21 +22,24 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
  if (!Number.isInteger(domainId)) notFound();
 
  const session = await auth();
- if (!session?.user) notFound();
- const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  if (!session?.user) notFound();
+  const workspaceId = session.user.workspaceId ? Number(session.user.workspaceId) : null;
+  // Fail closed: a session without a workspace must never satisfy an
+  // ownership check (the old `workspaceId && …` short-circuit skipped it).
+  if (!workspaceId) notFound();
 
- const [domain] = db
-  .select({
-   id: domains.id,
-   name: domains.name,
-   workspace_id: domains.workspace_id,
-   subscribers_count: domains.subscribers_count,
-  })
-  .from(domains)
-  .where(eq(domains.id, domainId))
-  .limit(1)
-  .all();
- if (!domain || (workspaceId && domain.workspace_id !== workspaceId)) notFound();
+  const [domain] = db
+    .select({
+     id: domains.id,
+     name: domains.name,
+     workspace_id: domains.workspace_id,
+     subscribers_count: domains.subscribers_count,
+    })
+    .from(domains)
+    .where(and(eq(domains.id, domainId), eq(domains.workspace_id, workspaceId)))
+    .limit(1)
+    .all();
+  if (!domain) notFound();
 
  const sp = await searchParams;
  const q = (sp.q ?? "").trim();
@@ -124,8 +127,6 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
   return s ? `?${s}` : "";
  };
 
- const subsPath = `/dashboard/domains/${domainId}/subscribers`;
-
  return (
   <div className="space-y-6">
    <div className="flex items-start justify-between">
@@ -190,9 +191,10 @@ export default async function SubscribersPage({ params, searchParams }: Props) {
         return (
          <tr key={s.id} className="border-b transition-colors last:border-0 hover:bg-accent/30">
           <td className="px-4 py-2">
-           <Link href={subsPath} title={client} className="line-clamp-1 max-w-[220px] text-primary hover:underline">
+           {/* Plain text: the old Link pointed back at this same page. */}
+           <span title={client} className="line-clamp-1 block max-w-[220px] text-muted-foreground">
             {client}
-           </Link>
+           </span>
           </td>
           <td className="px-4 py-2 text-muted-foreground">{location}</td>
           <td className="max-w-[220px] truncate px-4 py-2 text-muted-foreground" title={s.subscribe_url ?? ""}>

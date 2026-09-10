@@ -37,7 +37,7 @@ export function CampaignForm({
  const [fetching, setFetching] = useState(false);
  const [fetchError, setFetchError] = useState<string | null>(null);
  // Advanced delivery controls (LumaPush parity: topic/TTL/urgency/channel/variants)
- const [channel, setChannel] = useState<"push" | "email">("push");
+
  const [topic, setTopic] = useState("");
  const [ttl, setTtl] = useState("86400");
  const [urgency, setUrgency] = useState<"very-low" | "low" | "normal" | "high">("normal");
@@ -134,7 +134,6 @@ export function CampaignForm({
   Boolean(topic) ||
   ttl !== "86400" ||
   urgency !== "normal" ||
-  channel !== "push" ||
   variants.length > 0 ||
   buttons.some((b) => b.label.trim() || b.url.trim()) ||
   audienceKind !== "all" ||
@@ -145,7 +144,10 @@ export function CampaignForm({
   <form action={formAction} className="panel">
    <UseDirtyGuard dirty={() => isDirty} />
    {/* Hidden fields for advanced variant/ delivery plumbing */}
-   <input type="hidden" name="channel" value={channel} />
+   {/* Push-only composer: the email channel is served by email_campaigns
+       (worker/src/email.ts); a `campaigns.channel='email'` row would sit
+       scheduled forever because the push scheduler skips it. */}
+   <input type="hidden" name="channel" value="push" />
    <input type="hidden" name="topic" value={topic} />
    <input type="hidden" name="ttl" value={ttl} />
    <input type="hidden" name="urgency" value={urgency} />
@@ -216,21 +218,6 @@ export function CampaignForm({
        ))}
       </select>
       )}
-     </div>
-     <div>
-      <label htmlFor="channel" className="label">
-       Channel
-      </label>
-      <select
-       id="channel"
-       value={channel}
-       onChange={(e) => setChannel(e.target.value as "push" | "email")}
-       className="input mt-1 w-full"
-      >
-       <option value="push">Push (VAPID)</option>
-       <option value="email">Email</option>
-      </select>
-      <p className="hint mt-1">Push uses VAPID; email uses verified sending domain.</p>
      </div>
     </div>
     <div>
@@ -396,7 +383,7 @@ export function CampaignForm({
     </div>
     <div className="border-t pt-5">
      <p className="micro-label">Action buttons</p>
-     <p className="hint mt-1">Shown below the notification on desktop. Up to 3.</p>
+     <p className="hint mt-1">Shown below the notification on desktop. Up to 2.</p>
      {buttons.map((b, i) => (
       <div key={b.rid} className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
        <input

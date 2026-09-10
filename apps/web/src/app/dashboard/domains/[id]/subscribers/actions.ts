@@ -8,6 +8,7 @@ import { requireEditorRole } from "@/lib/roles";
 import { assertPublicHttpUrl, createCipher, parseCsv, sha256Hex } from "@pushpanel/core";
 import { domains, events, subscriberTags, subscribers } from "@pushpanel/db/schema";
 import { and, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { logAudit } from "@/lib/audit";
 
 export type SubscriberActionState =
   | {
@@ -53,7 +54,7 @@ function activeCount(domainId: number): number {
 }
 
 export async function unsubscribeSubscriberAction(domainId: number, subscriberId: number): Promise<SubscriberActionState> {
-  await requireOwnedDomain(domainId);
+  const { workspaceId } = await requireOwnedDomain(domainId);
   const now = new Date().toISOString();
   const [row] = db
     .select({ id: subscribers.id })
@@ -65,12 +66,14 @@ export async function unsubscribeSubscriberAction(domainId: number, subscriberId
   db.update(subscribers).set({ unsubscribed_at: now, unsub_reason: "panel" }).where(eq(subscribers.id, row.id)).run();
   db.insert(events).values({ domain_id: domainId, subscriber_id: row.id, type: "unsubscribed" }).run();
   db.update(domains).set({ subscribers_count: activeCount(domainId) }).where(eq(domains.id, domainId)).run();
+  // Consent change + a hard-to-reverse state transition belong in the audit trail.
+  logAudit(db, { workspaceId, action: "subscriber.unsubscribe", entityType: "subscriber", entityId: subscriberId, meta: { domain_id: domainId } });
   revalidatePath(`/dashboard/domains/${domainId}/subscribers`);
   return { ok: true };
 }
 
 export async function cleanUnsubscribedAction(domainId: number): Promise<NonNullable<SubscriberActionState>> {
-  await requireOwnedDomain(domainId);
+  const { workspaceId } = await requireOwnedDomain(domainId);
   // subscriber_tags has no FK cascade — collect ids first so their tags can
   // be purged too (mirrors the worker retention purge), chunked for 1M rows.
   const deadIds = db
@@ -89,6 +92,7 @@ export async function cleanUnsubscribedAction(domainId: number): Promise<NonNull
     .where(and(eq(subscribers.domain_id, domainId), isNotNull(subscribers.unsubscribed_at)))
     .run();
   db.update(domains).set({ subscribers_count: activeCount(domainId) }).where(eq(domains.id, domainId)).run();
+  logAudit(db, { workspaceId, action: "subscriber.clean", entityType: "domain", entityId: domainId, meta: { deleted: result.changes } });
   revalidatePath(`/dashboard/domains/${domainId}/subscribers`);
   return { ok: true, deleted: result.changes };
 }
@@ -100,7 +104,7 @@ export async function importSubscribersAction(
   _prev: SubscriberActionState,
   formData: FormData,
 ): Promise<NonNullable<SubscriberActionState>> {
-  await requireOwnedDomain(domainId);
+  const { workspaceId } = await requireOwnedDomain(domainId);
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a file to import" };
@@ -278,6 +282,13 @@ export async function importSubscribersAction(
   }
 
   db.update(domains).set({ subscribers_count: activeCount(domainId) }).where(eq(domains.id, domainId)).run();
+  logAudit(db, {
+    workspaceId,
+    action: "subscriber.import",
+    entityType: "domain",
+    entityId: domainId,
+    meta: { imported, skipped, invalid, optedOut },
+  });
   revalidatePath(`/dashboard/domains/${domainId}/subscribers`);
   return { ok: true, imported, skipped, invalid, optedOut };
 }
