@@ -4,7 +4,7 @@
 >
 > Legend: 🟢 done (verified by e2e/unit tests or direct code evidence) · 🟡 partial (core shipped, a sub-item pending) · ⚪ backlog (not started) · ➕ our improvement over LaraPush
 >
-> **Personal use — all limits removed (verified 2026-08-21):** single-tenant private deployment, no pricing/plans, unlimited domains/subscribers/campaigns/manual IDs 1M/variants 20/tags unlimited/import 100k/fetch 10M. All rows below are 🟢 for personal use (business tier gating removed). See `docs/lumapush-deep-research.md`.
+> **Personal use — all limits removed (verified 2026-08-21):** single-tenant private deployment, no pricing/plans, unlimited domains/subscribers/campaigns/manual IDs 1M/variants 20/tags unlimited/import 100k/fetch 10M. Limiting/gating rows are 🟢 (business tier gating removed); feature rows keep their true status (see the totals footer — not every row is implemented). See `docs/lumapush-deep-research.md`.
 
 ## A. Core model
 

@@ -34,12 +34,16 @@ Build a **better-than-LaraPush** web push notification panel for personal use ac
 ```sh
 pnpm install
 cp .env.example .env        # set DATABASE_PATH, AUTH_SECRET, APP_ENC_KEY, OWNER_EMAIL
-pnpm --filter @pushpanel/db generate   # (optional) rebuild migration bundle
+pnpm --filter @pushpanel/db sync-migrations   # after editing packages/db/src/migrations
 pnpm --filter @pushpanel/web build     # e2e uses the production build
-pnpm --filter @pushpanel/web exec playwright test   # full e2e suite (40 tests)
+pnpm --filter @pushpanel/web exec playwright test   # full e2e suite (44 tests)
 ```
 
 First run: open `/setup` once to create the owner account (sign-up is disabled afterwards).
+The instance owner (first user) is the only account that can manage panel-wide
+settings, the secrets vault, backups/restore and workspace switching; invited
+members keep their workspace role (admin/editor/viewer) but never gain those
+instance-global powers.
 
 ## Deployment
 
@@ -51,4 +55,10 @@ docker compose up -d --build   # web :3000 + worker share a SQLite volume
 
 **M0–M7 shipped + LumaPush / OneSignal / Aplu full parity + unlimited personal use.** No pricing, no plans, no caps: unlimited domains / subscribers / campaigns / manual IDs (1M) / variants (20) / tags (unlimited) / imports (100k) / fetch (10M). All AI (hook/spam/translate/url→campaign/automagic/smart-send/image/fatigue) offline-heuristic + LLM (`AI_API_KEY`). Every feature is unlocked — single-person private deployment, no business tier gating.
 
-Verified 2026-09-07: `typecheck 5/5` `lint 0 errors` `test:unit 248/248` `test:e2e 44/44`. See `docs/lumapush-deep-research.md` + `docs/parity-matrix.md` (now 🟢 89/89 personal).
+The email engine and journey canvas remain stubs (counters/claiming work; no
+SMTP transport or canvas execution). The push composer and `/api/v1/send`
+reject the email channel explicitly instead of creating rows that never send.
+
+Verified 2026-09-10: `typecheck 5/5` `lint 0 errors` `test:unit 278/278` `test:e2e 44/44`
+(4 retried under local CPU load). Feature status per `docs/parity-matrix.md`
+(rows mix 🟢/🟡/⚪ — not all 89 are implemented).

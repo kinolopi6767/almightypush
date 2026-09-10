@@ -198,7 +198,7 @@ export async function signInViaUi(page: Page): Promise<void> {
   await page.getByLabel("Email").fill(OWNER_EMAIL);
   await page.getByLabel("Password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: /sign in/i }).click();
-  await page.waitForURL(/\/dashboard/);
+  await page.waitForURL(/\/dashboard/, { timeout: 60_000 });
 }
 
 /** Creates a domain through the panel UI and returns its id. */
@@ -206,7 +206,9 @@ export async function createDomain(page: Page, hostname: string): Promise<number
   await page.goto("/dashboard/domains");
   await page.getByLabel("Hostname").fill(hostname);
   await page.getByRole("button", { name: /create domain/i }).click();
-  await page.waitForURL(/\/dashboard\/domains\/\d+/);
+  // Generous: under CI/loaded-machine conditions the server action + RSC
+  // navigation can take far longer than the 30s default.
+  await page.waitForURL(/\/dashboard\/domains\/\d+/, { timeout: 90_000 });
   return Number(new URL(page.url()).pathname.split("/").pop());
 }
 

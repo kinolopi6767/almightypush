@@ -158,5 +158,33 @@ production build) plus package unit tests (core 53, db 14, worker 16):
   the two remaining drizzle delete-with-where warnings are intentional
   full-table test/rate-limiter clears).
 
+## 9. Hardening pass (2026-09-10)
+
+Verified by the full suite: `typecheck 5/5`, `lint 0 errors`, `test:unit 278/278`,
+`test:e2e 44/44` (4 retried under local CPU load).
+
+- **Schema (migration 0017):** `users.role` DB default is now least-privilege
+  `viewer` (was `owner` for raw inserts), emails unique case-insensitively;
+  `deliveries` is UNIQUE per `(campaign_id, subscriber_id)` so fan-out is
+  idempotent; `campaigns.audience_complete` makes an interrupted fan-out
+  resumable by the scheduler reaper instead of finalizing a partial audience.
+- **Instance ownership:** only the bootstrap owner can reach settings/secrets/
+  backups/restore/workspace switching; invited workspace "owners" cannot.
+- **Input limits:** every API route reads bodies through a streamed byte-cap
+  helper (Content-Length fast path + true chunked cap). `/api/v1/optin` fails
+  closed without an Origin header. CSRF compares the full origin (scheme +
+  host + port) and rejects sibling subdomains.
+- **API keys:** invalid-key rate buckets are consumed only on failures, so an
+  unauthenticated flood can no longer 429 legitimate API traffic.
+- **Sender:** post-claim failures requeue instead of stranding a batch for
+  30 minutes; Retry-After is never jittered below the server's floor; claims
+  are restricted to live campaigns; stale reviver catches NULL `claimed_at`.
+- **Worker lifecycle:** `APP_ENC_KEY` is required at boot; the heartbeat beats
+  during long ticks; shutdown grace is tunable and `start.sh` forwards SIGTERM
+  to both processes (verified with a signal harness).
+- **Delivery SDK:** the service worker preserves a panel sub-path for click
+  beacons and closes IndexedDB connections; `init()` is SSR-safe; the
+  WordPress plugin can host `/sw.js` for the customer site.
+
 ---
-*See BUILD-PLAN.md for decisions, feature spec and milestones; docs/parity-matrix.md for the 57-feature backlog.*
+*See BUILD-PLAN.md for decisions, feature spec and milestones; docs/parity-matrix.md for the feature backlog.*

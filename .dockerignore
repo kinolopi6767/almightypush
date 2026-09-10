@@ -22,3 +22,13 @@ secrets
 **/secrets
 Dockerfile
 docker-compose.yml
+# Test/ops artifacts: Playwright traces can contain session cookies and must
+# never bake into image layers; docs/research only bloat the build context.
+test-results
+playwright-report
+**/test-results
+**/playwright-report
+research
+docs
+.github
+BUILD-PLAN.md

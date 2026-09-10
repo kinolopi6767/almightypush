@@ -5,7 +5,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**", "!**/.next/cache/**"]
+      "outputs": [".next/**", "dist/**", "!**/.next/cache/**", "../../apps/web/public/sdk/**"]
     },
     "dev": {
       "cache": false,
@@ -15,6 +15,9 @@
     "typecheck": {},
     "test": {},
     "test:unit": {},
-    "test:e2e": {}
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false
+    }
   }
 }

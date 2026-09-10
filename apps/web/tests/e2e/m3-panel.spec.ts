@@ -130,14 +130,19 @@ test("backups: create, list, download valid sqlite, delete", async ({ page }) =>
   test.setTimeout(120_000);
   await signInViaUi(page);
   await page.goto("/dashboard/settings");
-  await expect(page.getByText("No backups yet", { exact: true })).toBeVisible();
+  // Count-based instead of "No backups yet": a retried test must be
+  // idempotent even if a previous attempt left a row behind.
+  const rowsBefore = await page.locator("tbody tr").count();
 
   await page.getByRole("button", { name: "Create backup" }).click();
   await expect(page.getByText(/Backup created \(#/)).toBeVisible({ timeout: 20_000 });
 
+  // The backups list is server-rendered and refreshed by the action's
+  // revalidate + router.refresh — give the refresh headroom on loaded CI.
+  await expect(page.locator("tbody tr")).toHaveCount(rowsBefore + 1, { timeout: 20_000 });
   const row = page.locator("tbody tr").first();
-  await expect(row.getByText("manual")).toBeVisible();
-  await expect(row.getByText("done")).toBeVisible();
+  await expect(row.getByText("manual")).toBeVisible({ timeout: 20_000 });
+  await expect(row.getByText("done")).toBeVisible({ timeout: 20_000 });
 
   // download via the API (request-level — UI download events are flaky under
   // the Next app router's RSC interception) and verify the SQLite magic header
@@ -150,7 +155,7 @@ test("backups: create, list, download valid sqlite, delete", async ({ page }) =>
   // delete
   page.once("dialog", (d) => d.accept());
   await row.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByText("No backups yet", { exact: true })).toBeVisible();
+  await expect(page.locator("tbody tr")).toHaveCount(rowsBefore, { timeout: 20_000 });
 });
 
 test("profile: update name and password, re-login works", async ({ page }) => {

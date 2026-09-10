@@ -7,8 +7,16 @@ services:
     # compose topology the dedicated worker service below handles all
     # background work; exactly ONE worker may poll the shared SQLite queue.
     command: ["node", "--max-old-space-size=384", "./apps/web/server.js"]
+    # Bind to loopback by default (the intended topology is a host/Coolify
+    # reverse proxy). Set WEB_BIND=0.0.0.0 to expose the port directly, which
+    # also means TRUST_PROXY must be 0 unless a proxy overwrites X-Forwarded-For.
     ports:
-      - "3000:3000"
+      - "${WEB_BIND:-127.0.0.1}:3000:3000"
+    # Give start.sh time to forward SIGTERM to web + worker (worker internal
+    # grace defaults to 35s; raise WORKER_GRACE_EXIT_MS and this together).
+    stop_grace_period: 2m
+    security_opt:
+      - no-new-privileges:true
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
@@ -28,6 +36,8 @@ services:
       # automatically, and without them tuning .env has no effect.
       WORKER_TICK_MS: ${WORKER_TICK_MS:-}
       WORKER_IDLE_TICK_MS: ${WORKER_IDLE_TICK_MS:-}
+      WORKER_GRACE_EXIT_MS: ${WORKER_GRACE_EXIT_MS:-}
+      WORKER_HEARTBEAT_MS: ${WORKER_HEARTBEAT_MS:-}
       TRUST_PROXY: ${TRUST_PROXY:-1}
       MAX_SUBSCRIBERS_PER_DOMAIN: ${MAX_SUBSCRIBERS_PER_DOMAIN:-}
     volumes:
@@ -57,6 +67,9 @@ services:
     container_name: pushpanel-worker
     restart: unless-stopped
     command: ["node", "--max-old-space-size=256", "./worker/index.cjs"]
+    stop_grace_period: 2m
+    security_opt:
+      - no-new-privileges:true
     environment:
       NODE_ENV: production
       APP_URL: ${APP_URL:-http://localhost:3000}
@@ -71,6 +84,8 @@ services:
       SCHEDULER_CHUNK: ${SCHEDULER_CHUNK:-500}
       WORKER_TICK_MS: ${WORKER_TICK_MS:-}
       WORKER_IDLE_TICK_MS: ${WORKER_IDLE_TICK_MS:-}
+      WORKER_GRACE_EXIT_MS: ${WORKER_GRACE_EXIT_MS:-}
+      WORKER_HEARTBEAT_MS: ${WORKER_HEARTBEAT_MS:-}
       TRUST_PROXY: ${TRUST_PROXY:-1}
       MAX_SUBSCRIBERS_PER_DOMAIN: ${MAX_SUBSCRIBERS_PER_DOMAIN:-}
     volumes:

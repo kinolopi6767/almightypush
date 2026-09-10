@@ -210,7 +210,9 @@ export async function createCampaignAction(
   if (!campaign.lastInsertRowid) return { error: "Failed to create campaign" };
   logAudit(db, { workspaceId, action: "campaign.create", entityType: "campaign", entityId: Number(campaign.lastInsertRowid), meta: { title: parsed.data.title } });
 
-  revalidatePath("/dashboard/campaigns");
+  // No revalidate here: the form navigates straight to the new campaign's
+  // detail page (router.push on state.id). An RSC refresh racing that push
+  // could remount the form and drop the returned id.
   return { ok: true, id: Number(campaign.lastInsertRowid) };
 }
 
@@ -377,7 +379,6 @@ export async function duplicateCampaignAction(campaignId: number): Promise<Campa
     .run();
   if (!insert.lastInsertRowid) return { error: "Failed to duplicate campaign" };
   logAudit(db, { workspaceId, action: "campaign.duplicate", entityType: "campaign", entityId: Number(insert.lastInsertRowid), meta: { from: campaignId } });
-  revalidatePath("/dashboard/campaigns");
   return { ok: true, id: Number(insert.lastInsertRowid) };
 }
 
@@ -452,6 +453,5 @@ export async function resendToNonClickersAction(campaignId: number): Promise<Cam
     .run();
   if (!insert.lastInsertRowid) return { error: "Failed to create resend" };
   logAudit(db, { workspaceId, action: "campaign.duplicate", entityType: "campaign", entityId: Number(insert.lastInsertRowid), meta: { from: campaignId, retarget: "non_clickers" } });
-  revalidatePath("/dashboard/campaigns");
   return { ok: true, id: Number(insert.lastInsertRowid) };
 }

@@ -46,8 +46,19 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: SDK bundle is not stale
+        # The committed public SDK must match packages/sdk-client sources.
+        run: git diff --exit-code -- apps/web/public/sdk/pushpanel-sdk.js
+
+      - name: PHP syntax (WordPress plugin)
+        run: php -l plugins/wordpress/pushpanel.php
+
+      - name: Commitlint (PR range)
+        if: github.event_name == 'pull_request'
+        run: npx --yes @commitlint/cli@19 --config .commitlintrc.cjs --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
   docker:
-    name: Docker build + compose config
+    name: Docker build + compose config + smoke
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: verify
@@ -63,6 +74,27 @@ jobs:
           APP_ENC_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           AUTH_SECRET: cismoketest-secret-cismoketest-secret
         run: docker compose config --quiet && echo "compose config OK"
+
+      - name: Container smoke test (health + ready + non-root)
+        run: |
+          docker run -d --name pp-ci \
+            -e NODE_ENV=production \
+            -e APP_URL=http://127.0.0.1:3000 \
+            -e APP_ENC_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            -e AUTH_SECRET=cismoketest-secret-cismoketest-secret \
+            -p 3000:3000 pushpanel:ci
+          ok=0
+          for i in $(seq 1 30); do
+            sleep 2
+            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then ok=1; break; fi
+          done
+          if [ "$ok" != "1" ]; then echo "health never came up"; docker logs pp-ci; exit 1; fi
+          curl -fsS http://127.0.0.1:3000/api/health/ready >/dev/null
+          # The entrypoint drops PID 1 to the `app` user (uid 1001) via su-exec:
+          # verify the web server itself is not running as root.
+          uid="$(docker exec pp-ci sh -c "grep '^Uid:' /proc/1/status | awk '{print \$2}'")"
+          test "$uid" = "1001" || { echo "PID 1 is not running as app (uid=$uid)"; exit 1; }
+          docker rm -f pp-ci
 
   e2e:
     name: E2E (playwright, chromium)

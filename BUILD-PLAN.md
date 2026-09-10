@@ -6,7 +6,7 @@
 >
 > Research baseline: `research/01..13`, especially `03-features.md` (full parity list), `09-panel-feature-spec.md` (module spec), `10-gaps-and-opportunities.md` (what we fix), `11-api-endpoints.md` (their API contract), `12-our-architecture.md` (delivery model), `13-product-roadmap.md` (phases).
 
-> **Status (verified 2026-08-11):** milestones **M0–M7 shipped** on `main` (plus a working M7 exit item — TOTP 2FA, e2e `m11-tfa` passes). The full e2e suite is **43/43 green** on a production build, all packages typecheck + lint clean (0 errors), and a hardening pass added: anonymous-visitor `dev=1` deny, browser-support gate on subscribe, cross-domain LP channel guard with key-signature verification, origin boots allow-list, and adaptive worker cadence (fast poll on work / 60s idle — see `docs/architecture.md` §8). The live feature inventory lives in `docs/parity-matrix.md` (89 rows: 🟢 36 · 🟡 17 · ⚪ 36). Deferred backlog after §20.
+> **Status (verified 2026-09-10):** milestones **M0–M7 shipped** on `main` (including TOTP 2FA). The full e2e suite is **44/44 green** on a production build, all packages typecheck + lint clean (0 errors), unit tests **278/278**. A second hardening pass (2026-09-10) fixed schema defaults, added resumable/idempotent campaign fan-out, instance-owner authorization, streamed body caps, Origin/CSRF tightening, sender crash-safety and worker lifecycle robustness — see `docs/architecture.md` §8 and §9. The live feature inventory lives in `docs/parity-matrix.md` (89 rows: 🟢 36 · 🟡 17 · ⚪ 36; email transport and journey execution are the main stubs). Deferred backlog after §20.
 
 ---
 
